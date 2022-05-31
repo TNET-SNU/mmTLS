@@ -126,55 +126,10 @@
 #define MAX_HEADER_LEN      100
 #define MAX_METADATA_SIZE   1400
 
-/* #define MAX_TLS_PAYLOAD_LEN 15000 */
-#define MAX_TLS_PAYLOAD_LEN 10000
-#define MAX_TLS_RECORD_LEN  16000
-#define TLS_HEADER_LEN 5
-#define TLS_1_2_CAP_LEN TLS_HEADER_LEN + TLS_1_2_RECORD_IV_LEN
-#define TLS_1_3_CAP_LEN TLS_HEADER_LEN
-#define TLS_1_2_RECORD_IV_LEN 8
-
-#define TLS_AEAD_TAG_LEN 16
-
-#define TLS_1_2_MAJOR_VERION 3
-#define TLS_1_3_MAJOR_VERION 3
-#define TLS_1_2_MINOR_VERION 3
-#define TLS_1_3_MINOR_VERION 4
-
-#define TLS_AES_128_SIZE        16
-#define TLS_AES_256_SIZE        32
-#define TLS_CBC_SERVER_IV_SIZE  16
-#define TLS_AEAD_SERVER_IV_SIZE 4
-
-/* tls 1.2 */
-#define TLS_RSA_WITH_AES_128_GCM_SHA256         0x009c
-#define TLS_RSA_WITH_AES_256_GCM_SHA384         0x009d
-#define TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 0xc02b
-#define TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 0xc02c
-#define TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256   0xc02f
-#define TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384   0xc030
-/* tls 1.3 */
-#define TLS_AES_128_GCM_SHA256                  0x1301
-#define TLS_AES_256_GCM_SHA384                  0x1302
-
-
 /* ToDo: remove this */
-#define WORK_IN_FOREST4_MACHINE 0
-#if WORK_IN_FOREST4_MACHINE
-#define HOST_IP ("10.0.45.4")
-#define NIC_IP ("10.0.45.43")
-#define HOST_MAC ((uint8_t[]){0x0c, 0x42, 0xa1, 0xca, 0xe8, 0x6c})
-#define NIC_MAC ((uint8_t[]){0x0c, 0x42, 0xa1, 0xca, 0xe8, 0x70})
-#else
-#define HOST_IP ("10.0.45.110")
-#define NIC_IP ("10.0.45.111")
 #define HOST_MAC ((uint8_t[]){0x0c, 0x42, 0xa1, 0xe7, 0x1e, 0x16})
-#define NIC_MAC ((uint8_t[]){0x0c, 0x42, 0xa1, 0xe7, 0x1e, 0x1a})
-#endif
-
-/* MAC addr of forest1 ConnectX-5 */
-#define CLIENT_IP ("10.0.45.1")
 #define CLIENT_MAC ((uint8_t[]){0x98, 0x03, 0x9b, 0x7f, 0xc4, 0x90})
+#define SERVER_MAC ((uint8_t[]){0x98, 0x03, 0x9b, 0x1e, 0xde, 0x3c}) /* Tree3 */
 
 enum {TCP_RECV, TCP_SEND};
 enum {SESS_CLIENT, SESS_BACKEND};
@@ -218,7 +173,6 @@ enum ssl_session_state {
 struct ssl_session {
     struct tcp_session* parent;
     struct thread_context* ctx;
-	struct rte_eth_tls_ctx tls_ctx;
 
     int         state;
 	uint32_t    tls_add_byte;	/* TLS header + MAC length */
@@ -593,6 +547,12 @@ insert_tcp_session(struct thread_context *ctx, uint16_t portid,
 void
 remove_session(struct tcp_session* sess);
 
+void
+print_xstats(int port_id);
+
+void
+clean_thread(void);
+
 /*--------------------------------------------------------------------------*/
 /* dpdk_io.c */
 void
@@ -620,12 +580,9 @@ uint8_t *
 get_wptr_tso(uint16_t core_id, uint16_t port,
 					   uint32_t pktsize, uint16_t l4_len);
 
-void
-print_xstats(int port_id);
-
-void
-clean_thread(void);
-
+int
+insert_wm_tso(uint16_t core_id, uint16_t port,
+              uint32_t pktsize, uint16_t l4_len, struct rte_mbuf *m);
 /*--------------------------------------------------------------------------*/
 
 #endif /* __TCPSTACK_H__ */

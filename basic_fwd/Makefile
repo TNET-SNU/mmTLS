@@ -2,7 +2,7 @@
 # Copyright(c) 2010-2014 Intel Corporation
 
 # binary name
-APP = proxyoff
+APP = basic_fwd
 
 # all source are stored in SRCS-y
 SRCS-y := main.c tcpstack.c dpdk_io.c fhash.c
@@ -60,7 +60,7 @@ CFLAGS_main.o += -Wno-return-type
 endif
 
 #EXTRA_CFLAGS += -O3 -g -Wfatal-errors -lgmp
-EXTRA_CFLAGS += -lgmp -lssl -lcrypto -lPKA -DGNU_SOURCE -libverbs
+EXTRA_CFLAGS += -lgmp -lssl -lcrypto -DGNU_SOURCE -libverbs
 
 include $(RTE_SDK)/mk/rte.extapp.mk
 endif

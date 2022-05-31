@@ -13,12 +13,14 @@
 
 #define PRINT (stdout)
 
-#define VERBOSE_MBUF        FALSE
+#define VERBOSE_MBUF        TRUE
 #define VERBOSE_DPDK        FALSE
-#define VERBOSE_TCP         FALSE
-#define VERBOSE_RECV        FALSE
+#define VERBOSE_TCP         TRUE
+#define VERBOSE_RECV        TRUE
 #define VERBOSE_SEND        FALSE
-#define VERBOSE_DEBUG       FALSE
+
+#define VERBOSE_STAT        FALSE
+#define VERBOSE_DEBUG       TRUE
 #define VERBOSE_ERROR       TRUE
 
 #if VERBOSE_DPDK

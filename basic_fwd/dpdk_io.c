@@ -165,11 +165,6 @@ get_rm(uint16_t core_id, uint16_t port, int index, uint32_t *len) {
 
     stat->rx_bytes[port] += *len;
 
-	if (m != NULL) {
-		m->tls_resync = 0;
-		m->udata64 = 0;
-	}
-
     return m;	
 }
 
@@ -247,9 +242,6 @@ get_wptr_tso(uint16_t core_id, uint16_t port,
 	}
 #endif
 
-	m->tls_resync = 0;
-	m->udata64 = 0;
-
     len_mbuf = dpc->wmbufs[port].len;
     dpc->wmbufs[port].m_table[len_mbuf] = m;
     dpc->wmbufs[port].len += 1;
@@ -259,81 +251,9 @@ get_wptr_tso(uint16_t core_id, uint16_t port,
     return (uint8_t *)ptr;
 }
 
-struct rte_mbuf *
-get_wm_tso(uint16_t core_id, uint16_t port, 
-				   uint32_t pktsize, uint16_t l4_len) {
-    struct dpdk_private_context *dpc;
-    struct rte_mbuf *m;
-    int len_mbuf;
-    struct tcp_stat *stat = &ctx_array[core_id]->stat;
-
-    dpc = ctx_array[core_id]->dpc;
-
-    if (unlikely(dpc->wmbufs[port].len == MAX_PKT_BURST)) {
-		flush_wmbuf(core_id, port);
-    }
-
-    /* sanity check */
-	if (unlikely(dpc->wmbufs[port].len == MAX_PKT_BURST)) {
-		/* debug */
-		ERROR_PRINT("get_wm_relay_tso can't get buffer!\n");
-		exit(EXIT_FAILURE);
-
-		return NULL;
-	}
-
-	/* alloc new m to fwd */
-	m = rte_pktmbuf_alloc(pktmbuf_pool[core_id]);
-	if (unlikely(m == NULL)) {
-		ERROR_PRINT("[CPU %d] Failed to allocate wmbuf_relay on port %d\n",
-					core_id, port);
-		exit(EXIT_FAILURE);
-		return NULL;
-	}
-	DPDK_PRINT("[get wm relay tso] m->buf_addr: %lx, m->data_off: %x\n",
-            (uint64_t)m->buf_addr, m->data_off);
-
-    m->pkt_len = m->data_len = pktsize;
-    m->nb_segs = 1;
-    m->next = NULL;
-
-	/* /\* enable TSO *\/ */
-	m->l2_len = ETHERNET_HEADER_LEN;
-	m->l3_len = IP_HEADER_LEN;
-	m->l4_len = l4_len;
-	m->tso_segsz = MTU_SIZE - (m->l3_len + m->l4_len);
-
-#if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
-	m->ol_flags = RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM;
-	if(pktsize > MTU_SIZE + ETHERNET_HEADER_LEN) {
-		m->ol_flags |= RTE_MBUF_F_TX_TCP_SEG;
-	} else {
-		m->ol_flags |= RTE_MBUF_F_TX_TCP_CKSUM;
-	}
-#else	
-	m->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM;
-	if(pktsize > MTU_SIZE + ETHERNET_HEADER_LEN) {
-		m->ol_flags |= PKT_TX_TCP_SEG;
-	} else {
-		m->ol_flags |= PKT_TX_TCP_CKSUM;
-	}
-#endif
-
-	m->tls_resync = 0;
-	m->udata64 = 0;
-
-    len_mbuf = dpc->wmbufs[port].len;
-    dpc->wmbufs[port].m_table[len_mbuf] = m;
-    dpc->wmbufs[port].len += 1;
-
-    stat->tx_bytes[port] += pktsize;
-
-    return m;
-}
-
-int
+inline int
 insert_wm_tso(uint16_t core_id, uint16_t port,
-			  uint32_t pktsize, uint16_t l4_len, struct rte_mbuf *m) {
+              uint32_t pktsize, uint16_t l4_len, struct rte_mbuf *m) {
 
     struct dpdk_private_context *dpc;
     int len_mbuf;
@@ -342,45 +262,45 @@ insert_wm_tso(uint16_t core_id, uint16_t port,
     dpc = ctx_array[core_id]->dpc;
 
     if (unlikely(dpc->wmbufs[port].len == MAX_PKT_BURST)) {
-		flush_wmbuf(core_id, port);
+        flush_wmbuf(core_id, port);
     }
 
     /* sanity check */
-	if (unlikely(dpc->wmbufs[port].len == MAX_PKT_BURST)) {
-		/* debug */
-		ERROR_PRINT("insert_wm_tso buffer become full!\n");
-		exit(EXIT_FAILURE);
+    if (unlikely(dpc->wmbufs[port].len == MAX_PKT_BURST)) {
+        /* debug */
+        ERROR_PRINT("insert_wm_tso buffer become full!\n");
+        exit(EXIT_FAILURE);
 
-		return -1;
-	}
+        return -1;
+    }
 
-	DPDK_PRINT("[insert wm tso] m->buf_addr: %lx, m->data_off: %x\n",
+    DPDK_PRINT("[insert wm tso] m->buf_addr: %lx, m->data_off: %x\n",
             (uint64_t)m->buf_addr, m->data_off);
 
     m->pkt_len = m->data_len = pktsize;
     m->nb_segs = 1;
     m->next = NULL;
 
-	/* /\* enable TSO *\/ */
-	m->l2_len = ETHERNET_HEADER_LEN;
-	m->l3_len = IP_HEADER_LEN;
-	m->l4_len = l4_len;
-	m->tso_segsz = MTU_SIZE - (m->l3_len + m->l4_len);
+    /* /\* enable TSO *\/ */
+    m->l2_len = ETHERNET_HEADER_LEN;
+    m->l3_len = IP_HEADER_LEN;
+    m->l4_len = l4_len;
+    m->tso_segsz = MTU_SIZE - (m->l3_len + m->l4_len);
 
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
-	m->ol_flags = RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM;
-	if(pktsize > MTU_SIZE + ETHERNET_HEADER_LEN) {
-		m->ol_flags |= RTE_MBUF_F_TX_TCP_SEG;
-	} else {
-		m->ol_flags |= RTE_MBUF_F_TX_TCP_CKSUM;
-	}
-#else	
-	m->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM;
-	if(pktsize > MTU_SIZE + ETHERNET_HEADER_LEN) {
-		m->ol_flags |= PKT_TX_TCP_SEG;
-	} else {
-		m->ol_flags |= PKT_TX_TCP_CKSUM;
-	}
+    m->ol_flags = RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM;
+    if(pktsize > MTU_SIZE + ETHERNET_HEADER_LEN) {
+        m->ol_flags |= RTE_MBUF_F_TX_TCP_SEG;
+    } else {
+        m->ol_flags |= RTE_MBUF_F_TX_TCP_CKSUM;
+    }
+#else
+    m->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM;
+    if(pktsize > MTU_SIZE + ETHERNET_HEADER_LEN) {
+        m->ol_flags |= PKT_TX_TCP_SEG;
+    } else {
+        m->ol_flags |= PKT_TX_TCP_CKSUM;
+    }
 #endif
 
     len_mbuf = dpc->wmbufs[port].len;

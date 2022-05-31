@@ -285,10 +285,6 @@ main(int argc, char *argv[])
     unsigned i;
     int ret;
 
-#if INGRESS_LOSSY || EGRESS_LOSSY
-	srand(time(NULL));
-#endif
-
 	/* Initialize the Environment Abstraction Layer (EAL). */
 	ret = rte_eal_init(argc, argv);
 	if(ret < 0)

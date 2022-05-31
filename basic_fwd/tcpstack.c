@@ -27,28 +27,8 @@
 		 i < n;				   \
 		 i++, p=ps[i])
 
-int test_flag = 1;
-#if MEASURE_CLOCK
-uint64_t tsc_start[MAX_CPUS] = {0}, tsc_end[MAX_CPUS];
-uint64_t tsc_process[MAX_CPUS] = {0};
-#endif
-
 static int force_quit[MAX_CPUS] = {0};
 
-#if defined (LOGGER)
-/* logger related variable */
-struct log_thread_context *g_logctx[MAX_CPUS] = {0};
-static pthread_t log_thread[MAX_CPUS] = {0};
-#endif
-
-static uint8_t key[] = {
-	0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-	0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-	0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-	0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05
-};
-#define RSS_BIT_MASK 0x000001FF
-// extern uint8_t done[MAX_CPUS];
 /*---------------------------------------------------------------------------*/
 /* Function Prototype */
 
@@ -71,25 +51,6 @@ process_packet(uint16_t core_id, uint16_t port,
 static inline unsigned
 check_ready(void);
 
-/* ------------------------------------------------------------------------ */
-#if LOG_STR_MAP
-void
-dump_str_log(struct thread_context *ctx)
-{
-    struct str_log *log;
-    uint8_t *bk;
-    uint32_t i;
-
-    for (i = 0; i < ctx->str_log_cnt; i++) {
-        log = &ctx->str_log[i];
-        bk = (uint8_t *)&log->bk_ip;
-        fprintf(stderr,
-				"[core:%u] proxy_port: %u, %02u.%02u.%02u.%02u(SID:%u)\n",
-                ctx->coreid, log->proxy_port,
-                bk[0], bk[1], bk[2], bk[3], log->bk_sid);
-    }
-}
-#endif
 /* ------------------------------------------------------------------------ */
 void
 print_xstats(int port_id)
@@ -263,17 +224,6 @@ print_pkt_info(uint16_t core_id, uint16_t port,
 	}
 #endif
 
-#if VERBOSE_CHUNK
-	{
-		unsigned z;
-		fprintf(stderr, "\nReceived Packet buf (%p):\n", pktbuf);
-		for (z = 0; z < len; z++)
-			fprintf(stderr, "%02X%c", pktbuf[z],
-					((z + 1) % 16 ? ' ' : '\n'));
-		fprintf(stderr, "\n");
-		fprintf(stderr, "\n");
-	}
-#endif /* VERBOSE_CHUNK */
 }
 #endif	/* VERBOSE_TCP */
 
@@ -395,6 +345,27 @@ print_stat(uint16_t *port_list, int16_t port_num) {
 
 #endif	/* VERBOSE_STAT */
 
+/* Very simple with hard-coded MAC information */
+static inline uint8_t *
+get_dst_mac(uint8_t *src_mac, uint8_t *buf)
+{
+	if (memcmp(src_mac, CLIENT_MAC, 6)) {
+		TCP_PRINT("[%s] packet from client, fwd to server!\n",
+				  __FUNCTION__);
+		memcpy(buf, SERVER_MAC, 6);
+	} else if (memcmp(src_mac, SERVER_MAC, 6)) {
+		TCP_PRINT("[%s] packet from server, fwd to client!\n",
+				  __FUNCTION__);
+		memcpy(buf, CLIENT_MAC, 6);
+	} else {
+		ERROR_PRINT("[%s] can't find dst mac!\n", __FUNCTION__);
+		exit(EXIT_FAILURE);
+		return NULL;
+	}
+	
+	return buf;
+}
+
 static inline void
 clear_tcp_session(struct tcp_session *tcp)
 {
@@ -415,29 +386,6 @@ clear_tcp_session(struct tcp_session *tcp)
 	tcp->window = 0;
 
     tcp->total_sent = 0;
-
-	if (tcp->sess_type == SESS_CLIENT) {
-		tcp->is_nicsync = 0;
-		tcp->send_log_start = 0;
-		tcp->send_log_end = 0;
-		tcp->sent_log_cnt = 0;
-		tcp->pending_log_cnt = 0;
-		tcp->sess_be_num = 0;
-	} else if (tcp->sess_type == SESS_BACKEND) {
-		tcp->be_log_start = 0;
-		tcp->be_log_cnt = 0;
-		tcp->ff_seqs_start = 0;
-		tcp->ff_seqs_end = 0;
-	}
-
-	if (tcp->sess_type == SESS_CLIENT) {
-		struct ssl_session *ssl = &tcp->ssl_session;
-		ssl->state = SSL_SESSION_NOT_ESTABLISHED;
-		ssl->num_current_records = 0;
-		ssl->next_record_seq = 0;
-		rte_eth_tls_device_free(tcp->portid, &ssl->tls_ctx);
-		ssl->tls_ctx.next_record_num = 0;
-	}
 }
 
 void
@@ -464,24 +412,13 @@ remove_session(struct tcp_session* sess)
     ctx->free_cnt++;
 }
 /* ------------------------------------------------------------------------ */
-/* ToDo: why it is not inline, due to only one call in tcpstack.c? 
- * make it as macro for optimization */
-int
-is_tls_session(struct tcp_session *sess) {
-    return (sess->ssl_session.state == SSL_SESSION_ESTABLISHED);
-}
-/* ------------------------------------------------------------------------ */
 static void
 thread_local_init(int core_id)
 {
     struct thread_context* ctx;
 	struct tcp_session *sess;
-	struct pkt_blk *blk;
     struct dpdk_private_context* dpc;
-    int nb_ports;
     int i, j;
-
-	UNUSED(sess);
 
 	/* Set core affinity */
 	cpu_set_t cpus;
@@ -495,7 +432,8 @@ thread_local_init(int core_id)
 		exit(1);
 	}
 	
-    nb_ports = rte_eth_dev_count_avail();
+    /* int nb_ports; */
+    /* nb_ports = rte_eth_dev_count_avail(); */
 
     /* Allocate memory for thread context */
     ctx_array[core_id] = calloc(1, sizeof(struct thread_context));
@@ -581,7 +519,7 @@ thread_local_destroy(int core_id)
     struct thread_context* ctx;
     struct dpdk_private_context* dpc;
     struct tcp_session* tcp;
-    int port, i, ret;
+    int port, i;
 
     ctx = ctx_array[core_id];
     dpc = ctx->dpc;
@@ -630,37 +568,6 @@ thread_local_destroy(int core_id)
 
     /* Free thread context */
     free(ctx);
-}
-
-inline int
-send_pkt_to_host(uint16_t core_id, uint16_t port,
-				 uint8_t *pktbuf, uint32_t len)
-{
-	uint8_t *buf;
-
-	TCP_PRINT("[send pkt to host] len: %u\n", len);
-#if VERBOSE_MBUF
-	fprintf(stderr, "[%s:%d][%p]\n", __func__, __LINE__, pktbuf);
-#endif
-
-#if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
-	memcpy(((struct rte_ether_hdr*)pktbuf)->dst_addr.addr_bytes, HOST_MAC, 6);
-#else
-	memcpy(((struct rte_ether_hdr*)pktbuf)->d_addr.addr_bytes, HOST_MAC, 6);
-#endif
-
-	buf = get_wptr_tso(core_id, port, len, TCP_HEADER_LEN);
-	if (buf == NULL) {
-		ERROR_PRINT("[send pkt to host] can't get wptr!\n");
-		return -1;
-	}
-	memcpy(buf, pktbuf, len);
-
-#if VERBOSE_TCP
-	print_pkt_info(core_id, port, buf, len, TCP_SEND);
-#endif
-
-	return 0;
 }
 
 static inline struct tcp_session *
@@ -747,115 +654,6 @@ insert_tcp_session(struct thread_context *ctx, uint16_t portid,
     return target;
 }
 
-static inline int
-send_sack(struct tcp_session *sess, uint8_t *pktbuf)
-{
-	struct rte_ether_hdr *ethh;
-    struct rte_ipv4_hdr *iph;
-    struct rte_tcp_hdr *tcph;
-	uint8_t *buf;
-
-	uint8_t *tcph_sack;
-	uint32_t *sack_blk;
-	uint32_t sack_blk_num;
-	struct pkt_blk *ooo_blk;
-	uint32_t pktlen;
-	uint32_t tcph_len;
-	int i;
-
-	sack_blk_num = 0;
-	for (ooo_blk = sess->ooo_blk; ooo_blk != NULL; ooo_blk = ooo_blk->next) {
-		sack_blk_num++;
-		if (sack_blk_num > 100) {
-			fprintf(stderr, "[%s:%d][Arm:%d] sack_blk_num: %u\n",
-				__func__, __LINE__, sess->coreid, sack_blk_num);
-			fprintf(stderr, "ooo_blk - seq:%u, len:%u\n",
-				ooo_blk->seq, ooo_blk->len);
-		}
-		if (sack_blk_num > 200)
-			exit(1);
-	}
-	sack_blk_num = MIN(sack_blk_num, MAX_SACK_BLOCK_NUM);
-
-	tcph_len = sess->tcph_len + 8 * sack_blk_num + 4;
-	pktlen = ETHERNET_HEADER_LEN + IP_HEADER_LEN + tcph_len;
-
-	buf = get_wptr_tso(sess->coreid, sess->portid, pktlen,
-					   TCP_HEADER_LEN);
-	if (buf == NULL) {
-		ERROR_PRINT("[send sack] can't get wptr!\n");
-		return -1;
-	}
-	rte_memcpy(buf, pktbuf, pktlen - (8*sack_blk_num + 4));
-
-	/* modify pkt hdr */
-	uint8_t tmp_mac[6];
-	uint32_t tmp;
-	ethh = (struct rte_ether_hdr *)buf;
-    iph = (struct rte_ipv4_hdr *)(ethh + 1);
-    tcph = (struct rte_tcp_hdr *)(iph + 1);
-
-#if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
-	memcpy(tmp_mac, ethh->dst_addr.addr_bytes, 6);
-	memcpy(ethh->dst_addr.addr_bytes, ethh->src_addr.addr_bytes, 6);
-	memcpy(ethh->src_addr.addr_bytes, tmp_mac, 6);
-#else
-	memcpy(tmp_mac, ethh->d_addr.addr_bytes, 6);
-	memcpy(ethh->d_addr.addr_bytes, ethh->s_addr.addr_bytes, 6);
-	memcpy(ethh->s_addr.addr_bytes, tmp_mac, 6);
-#endif
-
-	tmp = iph->dst_addr;
-	iph->dst_addr = iph->src_addr;
-	iph->src_addr = tmp;
-	iph->total_length = htons(IP_HEADER_LEN + tcph_len);
-	iph->fragment_offset = htons(0x4000);
-	iph->hdr_checksum = 0;
-
-	tmp = (uint32_t)tcph->dst_port;
-	tcph->dst_port = tcph->src_port;
-	tcph->src_port = (uint16_t)tmp;
-
-	tcph->sent_seq = tcph->recv_ack;
-	tcph->recv_ack = htonl(sess->base_sent_seq);
-	tcph->rx_win = htons(8192);
-	tcph->data_off = (tcph_len << 2) & 0xf0;
-	tcph->cksum = 0;
-
-	/* add SACK */
-	tcph_sack = (uint8_t*)tcph + tcph_len - (8 * sack_blk_num + 4);
-	sack_blk = (uint32_t*)(tcph_sack+4);
-
-    *(tcph_sack)   = TCP_OPT_NOP;
-    *(tcph_sack+1) = TCP_OPT_NOP;
-    *(tcph_sack+2) = TCP_OPT_SACK;
-    *(tcph_sack+3) = 8*sack_blk_num + 2;
-
-	ooo_blk = sess->ooo_blk;
-	for (i = 0; i < sack_blk_num; i++) {
-		*(sack_blk++) = htonl(ooo_blk->seq);
-		*(sack_blk++) = htonl(ooo_blk->seq + ooo_blk->len);
-		ooo_blk = ooo_blk->next;
-	}
-
-#if VERBOSE_CHUNK
-    {
-        uint32_t z;
-
-        OOO_PRINT("[send ooo] "
-                    "report ooo to host (%u B)\n", pktlen);
-
-        for (z = 0; z < pktlen; z++)
-            fprintf(stderr, "%02X%c",
-                    *((uint8_t *)(buf) + z),
-                    ((z + 1) % 16) ? ' ' : '\n');
-        fprintf(stderr, "\n");
-    }
-#endif  /* VERBOSE_CHUNK */
-
-	return 0;
-}
-
 static void
 process_packet(uint16_t core_id, uint16_t port, struct rte_mbuf *m,
                 uint32_t len)
@@ -871,6 +669,9 @@ process_packet(uint16_t core_id, uint16_t port, struct rte_mbuf *m,
     uint32_t payload_len;
     struct thread_context *ctx;
     struct tcp_session *sess;
+	int ret;
+
+	UNUSED(payload_len);
 
 	pktbuf = rte_pktmbuf_mtod(m, uint8_t *);
 #if VERBOSE_MBUF
@@ -904,40 +705,43 @@ process_packet(uint16_t core_id, uint16_t port, struct rte_mbuf *m,
     option_len = payload - option;
     // ip_len = ntohs(iph->total_length);
     // payload_len = ip_len - (payload - (u_char *)iph);
-    UNUSED(option_len);
 
-	/* Forward control pkt from network: SYN, FIN, ACK, ... */
-    if (tcph->tcp_flags & TCP_FLAG_SYN ||
-		tcph->tcp_flags & TCP_FLAG_RST ||
-		payload_len == 0) {
-
-		TCP_PRINT("[process packet] port: %d, len: %d, "
-			"ctrl packet from outside!\n",
-			port, len);
-	
-		send_pkt_to_host(core_id, port, pktbuf, len);
-		free_rm(core_id, port, m);
-		return;
+	/* Basic fwd here - translate MAC */
+	ret = insert_wm_tso(core_id, port,
+			  len, TCP_HEADER_LEN + option_len, m);
+	if (ret < 0) {
+        ERROR_PRINT("failed to insert wptr!\n");
+        exit(EXIT_FAILURE);
+        return;
 	}
 
-	/* Now the packets should be application data from backend */
-	/* Client packets does not enter NIC core */
+	uint8_t dst_mac[6];
+#if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
+	if (get_dst_mac(ethh->src_addr.addr_bytes, dst_mac) == NULL) {
+		return;
+	}
+    rte_memcpy(ethh->src_addr.addr_bytes, HOST_MAC, 6);
+    rte_memcpy(ethh->dst_addr.addr_bytes, dst_mac, 6);
+#else
+	if (get_dst_mac(ethh->s_addr.addr_bytes, dst_mac) == NULL) {
+		return;
+	}
+    rte_memcpy(ethh->s_addr.addr_bytes, HOST_MAC, 6);
+    rte_memcpy(ethh->d_addr.addr_bytes, dst_mac, 6);
+#endif
+ 
+	return;
+
+
+	/* Something more */
+	/* Store session state including forwarding rule */
 	sess = search_tcp_session(ctx,
 							  ntohl(iph->src_addr), ntohs(tcph->src_port),
 							  ntohl(iph->dst_addr), ntohs(tcph->dst_port));
 
 	if (sess == NULL) {
-		TCP_PRINT("[process packet] no session, send to host!\n");
-		send_pkt_to_host(core_id, port, pktbuf, len);
-		free_rm(core_id, port, m);
-		return;
-	}
-
-	if (unlikely(sess->sess_type != SESS_BACKEND)) {
-		ERROR_PRINT("[process packet] "
-				  "session is not for backend! just drop\n");
-		/* debug */exit(EXIT_FAILURE);
-		free_rm(core_id, port, m);
+		TCP_PRINT("[process packet] no session found!\n");
+		/* sess = insert_tcp_session(ctx, port, ...) */
 		return;
 	}
 
@@ -949,11 +753,6 @@ process_packet(uint16_t core_id, uint16_t port, struct rte_mbuf *m,
 				   ETHERNET_HEADER_LEN+IP_HEADER_LEN+sess->tcph_len);
 	}
 	sess->mbuf = m;
-	
-	/* now process packet - maybe simple forward */
-	ERROR_PRINT("[%s] not implemented!\n", __FUNCTION__);
-	exit(0);
-	
 
 	return;
 }
@@ -998,10 +797,7 @@ proxyoff_main_loop(__attribute__((unused)) void *arg)
     struct thread_context *ctx;
     int recv_cnt;
     int i;
-	int num_port;
     int send_cnt;
-    int processed_cnt;
-    struct tcp_session* target;
 	
 	/* Variables for time measuring */
 	uint64_t cur_tsc, prev_tsc;
@@ -1013,13 +809,10 @@ proxyoff_main_loop(__attribute__((unused)) void *arg)
 	int p_i = 0;
 
     core_id = rte_lcore_id();
-	num_port = rte_eth_dev_count_avail();
 
     thread_local_init(core_id);
     ctx = ctx_array[core_id];
     ctx->ready = 1;
-
-	int nic_cores = rte_lcore_count();
 
     if (check_ready()) {
         fprintf(stderr, "CPU[%d] Initialization finished\n"
