@@ -64,9 +64,7 @@ static struct rte_eth_conf port_conf = {
 };
 
 int num_host_cpu;
-
 struct tcp_stat global_stat;
-
 struct rte_mempool *pktmbuf_pool[MAX_CPUS] = {NULL};
 struct thread_context* ctx_array[MAX_CPUS] = {NULL};
 uint8_t port_type[MAX_DPDK_PORT] = {0};
@@ -76,10 +74,9 @@ int local_max_conn;
 uint8_t t_major = 0;
 uint8_t t_minor = 0;
 uint8_t done[MAX_CPUS] = {0};
-
-
-static const uint16_t nb_rxd    =   RTE_TEST_RX_DESC_DEFAULT;
-static const uint16_t nb_txd    =   RTE_TEST_TX_DESC_DEFAULT;
+static const uint16_t nb_rxd = RTE_TEST_RX_DESC_DEFAULT;
+static const uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT;
+/* ---------------------------------------------------------------------- */
 
 static void
 global_init(void)
@@ -103,14 +100,14 @@ global_init(void)
 
 
     num_core = rte_lcore_count();
-    if(num_core <= 0) {
+    if (num_core <= 0) {
 		ERROR_PRINT("Zero or negative number of cores (%d) activated.\n",
 					num_core);
         exit(EXIT_FAILURE);
     }
 
     nb_ports = rte_eth_dev_count_avail();
-    if(nb_ports <= 0) {
+    if (nb_ports <= 0) {
 		ERROR_PRINT("Zero or negative number of ports (%d) activated.\n",
 					nb_ports);
         exit(EXIT_FAILURE);
@@ -131,7 +128,7 @@ global_init(void)
 	        rte_pktmbuf_pool_create(name, (NUM_MBUFS/num_core) * nb_ports,
 		    MBUF_CACHE_SIZE, 0, MBUF_SIZE, rte_socket_id());
 
-        if(pktmbuf_pool[rxlcore_id] == NULL) {
+        if (pktmbuf_pool[rxlcore_id] == NULL) {
             rte_exit(EXIT_FAILURE, "Cannot init mbuf pool, errno: %d\n",
                      rte_errno);
             fflush(stdout);
@@ -155,7 +152,7 @@ global_init(void)
         fprintf(stderr, "Initializing port %u (%s) ... for %d cores\n",
                         (unsigned) portid, if_name, num_core);
         ret = rte_eth_dev_configure(portid, num_core, num_core, &port_conf);
-        if(ret < 0)
+        if (ret < 0)
             rte_exit(EXIT_FAILURE, "Cannot configure device: "
                                    "err=%d, port=%u, cores: %d\n",
                                    ret, (unsigned) portid, num_core);
@@ -164,7 +161,7 @@ global_init(void)
             ret = rte_eth_rx_queue_setup(portid, rxlcore_id, nb_rxd,
                                          rte_eth_dev_socket_id(portid),
                                          &rx_conf, pktmbuf_pool[rxlcore_id]);
-            if(ret < 0)
+            if (ret < 0)
                 rte_exit(EXIT_FAILURE,
                          "rte_eth_rx_queue_setup: "
                          "err=%d, port=%u, queueid: %d\n",
@@ -175,7 +172,7 @@ global_init(void)
             ret = rte_eth_tx_queue_setup(portid, rxlcore_id, nb_txd,
                                          rte_eth_dev_socket_id(portid),
                                          &tx_conf);
-            if(ret < 0)
+            if (ret < 0)
                 rte_exit(EXIT_FAILURE,
                          "rte_eth_tx_queue_setup: "
                          "err=%d, port=%u, queueid: %d\n",
@@ -184,7 +181,7 @@ global_init(void)
 
         ret = rte_eth_dev_start(portid);
 
-        if(ret < 0)
+        if (ret < 0)
             rte_exit(EXIT_FAILURE,
                      "rte_eth_dev_start:err=%d, port=%u\n",
                      ret, (unsigned) portid);
@@ -193,19 +190,19 @@ global_init(void)
 
         /* Do not have to change flow control info for host side interface
          * 12 is the length of "0000:00:00.0" */
-        // if(strlen(if_name) > 12) {
+        // if (strlen(if_name) > 12) {
         //     port_type[portid] = 1;
         //     continue;
         // }
 
         memset(&fc_conf, 0, sizeof(fc_conf));
         ret = rte_eth_dev_flow_ctrl_get(portid, &fc_conf);
-        if(ret != 0)
+        if (ret != 0)
 			ERROR_PRINT("Failed to get flow control into!\n");
 
         fc_conf.mode = RTE_FC_NONE;
         ret = rte_eth_dev_flow_ctrl_set(portid, &fc_conf);
-        if(ret != 0)
+        if (ret != 0)
 			ERROR_PRINT("Failed to set flow control info!: errno: %d\n", ret);
 
     }
@@ -224,7 +221,7 @@ global_init(void)
 
     srand(time(NULL));
 }
-
+/* ---------------------------------------------------------------------- */
 void
 global_destroy(void)
 {
@@ -235,7 +232,7 @@ global_destroy(void)
         rte_eth_dev_close(portid);
     }
 }
-
+/* ---------------------------------------------------------------------- */
 static int
 parse_args(int argc, char *argv[])
 {
@@ -245,7 +242,7 @@ parse_args(int argc, char *argv[])
         switch(o) {
 		case 'm':
 			max_conn = atoi(optarg);
-			if(max_conn > MAX_TCP_PORT) {
+			if (max_conn > MAX_TCP_PORT) {
 				ERROR_PRINT(
                             "max_conn cannot exceed maximum number of ports");
 				return FALSE;
@@ -262,7 +259,6 @@ parse_args(int argc, char *argv[])
     }
     return TRUE;
 }
-
 /* ---------------------------------------------------------------------- */
 static void
 signal_handler(int signum)
@@ -287,7 +283,7 @@ main(int argc, char *argv[])
 
 	/* Initialize the Environment Abstraction Layer (EAL). */
 	ret = rte_eal_init(argc, argv);
-	if(ret < 0)
+	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
 
 #ifdef RTE_LIBRTE_PDUMP
@@ -302,10 +298,10 @@ main(int argc, char *argv[])
     fprintf(stderr, "---------------------------------------------------\n\n");
 
     ret = parse_args(argc, argv);
-    if(ret < 0)
+    if (ret < 0)
         rte_exit(EXIT_FAILURE, "Invalid Arguments\n");
 
-    if(max_conn % rte_lcore_count()) {
+    if (max_conn % rte_lcore_count()) {
         rte_exit(EXIT_FAILURE,
                  "max_conn should be a multiple of core num."
                  "max_conn: %d, num_core: %d\n",
@@ -327,7 +323,7 @@ main(int argc, char *argv[])
     fprintf(stderr, "Use Following Cores for SSL Offloaded Server\n");
     for (i = 0; i < rte_lcore_count(); i++) {
         fprintf(stderr, "%d", i);
-        if(i != rte_lcore_count() - 1 )
+        if (i != rte_lcore_count() - 1 )
             fprintf(stderr, ", ");
     }
     fprintf(stderr, "\n\n");
@@ -343,7 +339,7 @@ main(int argc, char *argv[])
     rte_eal_mp_remote_launch(proxyoff_main_loop, NULL, CALL_MASTER);
     RTE_LCORE_FOREACH_SLAVE(lcore_id) {
 #endif  /* 21.11 */
-        if(rte_eal_wait_lcore(lcore_id) < 0) {
+        if (rte_eal_wait_lcore(lcore_id) < 0) {
             ret = -1;
             break;
         }
@@ -351,7 +347,7 @@ main(int argc, char *argv[])
     /* /\* Call lcore_main on the master core only. *\/ */
     /* rte_eal_mp_remote_launch(proxyoff_main_loop, NULL, CALL_MAIN); */
     /* RTE_LCORE_FOREACH_WORKER(lcore_id) { */
-    /*     if(rte_eal_wait_lcore(lcore_id) < 0) { */
+    /*     if (rte_eal_wait_lcore(lcore_id) < 0) { */
     /*         ret = -1; */
     /*         break; */
     /*     } */

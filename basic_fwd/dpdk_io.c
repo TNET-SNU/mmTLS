@@ -1,5 +1,6 @@
 #include "tcpstack.h"
 
+/* ---------------------------------------------------------------------- */
 static inline int
 send_pkts_data(uint16_t core_id, uint16_t port) {
     struct dpdk_private_context *dpc;
@@ -26,12 +27,12 @@ send_pkts_data(uint16_t core_id, uint16_t port) {
 
     return ret;
 }
-
+/* ---------------------------------------------------------------------- */
 inline int
 send_pkts(uint16_t core_id, uint16_t port) {
 	return send_pkts_data(core_id, port);
 }
-
+/* ---------------------------------------------------------------------- */
 inline void
 free_pkts(struct rte_mbuf **mtable, unsigned len)
 {
@@ -46,7 +47,7 @@ free_pkts(struct rte_mbuf **mtable, unsigned len)
         RTE_MBUF_PREFETCH_TO_FREE(mtable[i+1]);
     }
 }
-
+/* ---------------------------------------------------------------------- */
 static inline int
 flush_wmbuf(uint16_t core_id, uint16_t port)
 {
@@ -60,7 +61,7 @@ flush_wmbuf(uint16_t core_id, uint16_t port)
 
 	return send_cnt;
 }
-
+/* ---------------------------------------------------------------------- */
 inline int
 get_wmbuf_queue_len(uint16_t core_id, uint16_t port)
 {
@@ -71,7 +72,7 @@ get_wmbuf_queue_len(uint16_t core_id, uint16_t port)
     return dpc->wmbufs[port].len;
 
 }
-
+/* ---------------------------------------------------------------------- */
 inline int32_t
 recv_pkts(uint16_t core_id, uint16_t port) {
     struct dpdk_private_context* dpc;
@@ -94,7 +95,7 @@ recv_pkts(uint16_t core_id, uint16_t port) {
 
     return ret;
 }
-
+/* ---------------------------------------------------------------------- */
 inline uint8_t *
 get_rptr(uint16_t core_id, uint16_t port, int index, uint32_t *len) {
     struct dpdk_private_context* dpc;
@@ -108,7 +109,7 @@ get_rptr(uint16_t core_id, uint16_t port, int index, uint32_t *len) {
 
     *len = m->pkt_len;
 
-	if(!(m->buf_addr)) {
+	if (!(m->buf_addr)) {
 		fprintf(stderr, "[get rptr] invalid mbuf!\n");
 		return NULL;
 	}
@@ -132,7 +133,7 @@ get_rptr(uint16_t core_id, uint16_t port, int index, uint32_t *len) {
 
     return pktbuf;
 }
-
+/* ---------------------------------------------------------------------- */
 inline struct rte_mbuf *
 get_rm(uint16_t core_id, uint16_t port, int index, uint32_t *len) {
     struct dpdk_private_context* dpc;
@@ -145,7 +146,7 @@ get_rm(uint16_t core_id, uint16_t port, int index, uint32_t *len) {
 
     *len = m->pkt_len;
 
-	if(!(m->buf_addr)) {
+	if (!(m->buf_addr)) {
 		fprintf(stderr, "[get rptr] invalid mbuf!\n");
 		return NULL;
 	}
@@ -179,7 +180,7 @@ free_rm(uint16_t core_id, uint16_t port, struct rte_mbuf *m)
 
 	return 0;
 }
-
+/* ---------------------------------------------------------------------- */
 inline uint8_t *
 get_wptr_tso(uint16_t core_id, uint16_t port, 
 				   uint32_t pktsize, uint16_t l4_len) {
@@ -228,14 +229,14 @@ get_wptr_tso(uint16_t core_id, uint16_t port,
 
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
 	m->ol_flags = RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM;
-	if(pktsize > MTU_SIZE + ETHERNET_HEADER_LEN) {
+	if (pktsize > MTU_SIZE + ETHERNET_HEADER_LEN) {
 		m->ol_flags |= RTE_MBUF_F_TX_TCP_SEG;
 	} else {
 		m->ol_flags |= RTE_MBUF_F_TX_TCP_CKSUM;
 	}
 #else	
 	m->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM;
-	if(pktsize > MTU_SIZE + ETHERNET_HEADER_LEN) {
+	if (pktsize > MTU_SIZE + ETHERNET_HEADER_LEN) {
 		m->ol_flags |= PKT_TX_TCP_SEG;
 	} else {
 		m->ol_flags |= PKT_TX_TCP_CKSUM;
@@ -250,7 +251,7 @@ get_wptr_tso(uint16_t core_id, uint16_t port,
 
     return (uint8_t *)ptr;
 }
-
+/* ---------------------------------------------------------------------- */
 inline int
 insert_wm_tso(uint16_t core_id, uint16_t port,
               uint32_t pktsize, uint16_t l4_len, struct rte_mbuf *m) {
@@ -289,14 +290,14 @@ insert_wm_tso(uint16_t core_id, uint16_t port,
 
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
     m->ol_flags = RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM;
-    if(pktsize > MTU_SIZE + ETHERNET_HEADER_LEN) {
+    if (pktsize > MTU_SIZE + ETHERNET_HEADER_LEN) {
         m->ol_flags |= RTE_MBUF_F_TX_TCP_SEG;
     } else {
         m->ol_flags |= RTE_MBUF_F_TX_TCP_CKSUM;
     }
 #else
     m->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM;
-    if(pktsize > MTU_SIZE + ETHERNET_HEADER_LEN) {
+    if (pktsize > MTU_SIZE + ETHERNET_HEADER_LEN) {
         m->ol_flags |= PKT_TX_TCP_SEG;
     } else {
         m->ol_flags |= PKT_TX_TCP_CKSUM;

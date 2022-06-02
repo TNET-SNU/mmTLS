@@ -10,9 +10,9 @@ calculate_hash(struct tcp_session *sess)
     char *key = (char *)&sess->src_ip;
 
     for (hash = 0, i = 0; i < 12; i++) {
-	hash += key[i];
-	hash += (hash << 10);
-	hash ^= (hash >> 6);
+	    hash += key[i];
+	    hash += (hash << 10);
+	    hash ^= (hash >> 6);
     }
     hash += (hash << 3);
     hash ^= (hash >> 11);

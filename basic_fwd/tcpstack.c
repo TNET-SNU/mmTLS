@@ -365,7 +365,7 @@ get_dst_mac(uint8_t *src_mac, uint8_t *buf)
 	
 	return buf;
 }
-
+/*---------------------------------------------------------------------------*/
 static inline void
 clear_tcp_session(struct tcp_session *tcp)
 {
@@ -387,7 +387,7 @@ clear_tcp_session(struct tcp_session *tcp)
 
     tcp->total_sent = 0;
 }
-
+/*---------------------------------------------------------------------------*/
 void
 remove_session(struct tcp_session* sess)
 {
@@ -512,7 +512,7 @@ thread_local_init(int core_id)
         ctx->stat.rtx_pkts[i] = 0;
     }
 }
-
+/*---------------------------------------------------------------------------*/
 static void
 thread_local_destroy(int core_id)
 {
@@ -569,7 +569,7 @@ thread_local_destroy(int core_id)
     /* Free thread context */
     free(ctx);
 }
-
+/*---------------------------------------------------------------------------*/
 static inline struct tcp_session *
 pop_free_session(struct thread_context *ctx)
 {
@@ -585,7 +585,7 @@ pop_free_session(struct thread_context *ctx)
     ctx->free_cnt--;
     return target;
 }
-
+/*---------------------------------------------------------------------------*/
 struct tcp_session *
 search_tcp_session(struct thread_context *ctx,
                    uint32_t src_ip, uint16_t src_port,
@@ -612,7 +612,7 @@ search_tcp_session(struct thread_context *ctx,
 
     return ret;
 }
-
+/*---------------------------------------------------------------------------*/
 struct tcp_session *
 insert_tcp_session(struct thread_context *ctx, uint16_t portid,
                    const unsigned char* src_mac, 
@@ -653,7 +653,7 @@ insert_tcp_session(struct thread_context *ctx, uint16_t portid,
 
     return target;
 }
-
+/*---------------------------------------------------------------------------*/
 static void
 process_packet(uint16_t core_id, uint16_t port, struct rte_mbuf *m,
                 uint32_t len)
@@ -757,7 +757,6 @@ process_packet(uint16_t core_id, uint16_t port, struct rte_mbuf *m,
 	return;
 }
 /*---------------------------------------------------------------------------*/
-/* ------------------------------------------------------------------------ */
 static inline unsigned
 check_ready(void)
 {
