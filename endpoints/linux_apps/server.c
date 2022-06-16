@@ -154,7 +154,7 @@ InitServerCTX(void)
 
 	OpenSSL_add_all_algorithms();
 	SSL_load_error_strings();
-	method = TLSv1_2_server_method();
+	method = TLS_server_method();
 	ctx = SSL_CTX_new(method);
 	if (ctx == NULL) {
 		printf("initserverCTX: error\n");
