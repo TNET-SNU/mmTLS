@@ -1,0 +1,21 @@
+SERVER_HANDSHAKE_TRAFFIC_SECRET 2be1a26c8a0aefc0f57eaca61661064480e802962df861c4ea0e5b28ee815a64 f9d976c4156bbd348d24d42d253031b74c4d0d284bf63404959ec7731b94e699f4cf50f3c38bf3cbf92ddc0aa8821bdd
+SERVER_TRAFFIC_SECRET_0 2be1a26c8a0aefc0f57eaca61661064480e802962df861c4ea0e5b28ee815a64 f9c870a561737d3cd416519c6cb06a6d44a014eab8ba3008247c113cf89d93c2336c1fca447c5750e692538707c1ced2
+CLIENT_HANDSHAKE_TRAFFIC_SECRET 2be1a26c8a0aefc0f57eaca61661064480e802962df861c4ea0e5b28ee815a64 bb28e3867e4b4c7a2cc61d3220a9ffb057a414fe9dd99f578fedb173425863a6eb94a5ba9a6b4a0149ff614af5452707
+CLIENT_TRAFFIC_SECRET_0 2be1a26c8a0aefc0f57eaca61661064480e802962df861c4ea0e5b28ee815a64 de6aa1716503c5bca780f7cdf9338b8acd86fdb61b71e1681a8412925955562e0d5edc994a426ba47022396a34aff320
+EXPORTER_SECRET 2be1a26c8a0aefc0f57eaca61661064480e802962df861c4ea0e5b28ee815a64 3a0114b49c42ee62210fdff35c03eb44b6be7db70e5b203bb33eb87c5a5b66d66ae1709b04fac746cef17a3cf2f42431
+
+
+# This is used for TLS decrypt with wireshark
+
+# TLSv1.2: use following format:
+# CLIENT_RANDOM <CRAND> <MS>
+# CRAND: client random from CLIENT_HELLO
+# MS: master key for the session
+
+# TLSv1.3: need ALL following variables:
+# First two are used for decryption of server->client ciphertext, and later two for vise versa.
+# SERVER_HANDSHAKE_TRAFFIC_SECRET .. ..
+# SERVER_TRAFFIC_SECRET_0 .. ..
+# CLIENT_HANDSHAKE_TRAFFIC_SECRET .. ..
+# CLIENT_TRAFFIC_SECRET_0 .. ..
+# Please refer NSS key log format (https://firefox-source-docs.mozilla.org/security/nss/legacy/key_log_format/index.html) to generate them in right format.

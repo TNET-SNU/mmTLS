@@ -1,0 +1,4 @@
+This application is built with openssl 1.1.1.
+If you have problem to install, please check if the library is set well in Makefile.
+You may want to use following command:
+$ pkg-config openssl --libs 

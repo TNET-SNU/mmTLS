@@ -161,6 +161,7 @@ InitServerCTX(void)
 		ERR_print_errors_fp(stderr);
 		abort();
 	}
+	SSL_CTX_set_options(ctx, SSL_OP_NO_TICKET);
 
 	return ctx;
 }
