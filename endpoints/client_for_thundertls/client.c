@@ -11,6 +11,9 @@
 #include <resolv.h>
 #include <netdb.h>
 #include <openssl/ssl.h>
+#include <openssl/hmac.h>
+#include <openssl/evp.h>
+#include <openssl/kdf.h>
 #include <openssl/err.h>
 #include "include/client.h"
 
@@ -24,6 +27,23 @@ char addr[MAX_ADDR_LEN + 1];
 int port;
 int thread_num;
 int test_cnt;
+
+#if !USE_TLS_1_2
+#define AES256_KEY_LEN     32
+#define TLS_1_3_IV_LEN     12
+#define TRAFFIC_SECRET_LEN 48
+
+uint8_t client_write_key[AES256_KEY_LEN];	/* application key, not handshake key */
+uint8_t server_write_key[AES256_KEY_LEN];
+uint8_t client_write_iv[TLS_1_3_IV_LEN];
+uint8_t server_write_iv[TLS_1_3_IV_LEN];
+uint8_t done_flag = 0;
+
+typedef struct __attribute__((__packed__)) {
+	uint16_t length;
+	uint8_t label_ctx[512];
+} HkdfLabel;
+#endif
 /*-----------------------------------------------------------------------------*/
 void
 Usage()
@@ -33,11 +53,189 @@ Usage()
 }
 /*-----------------------------------------------------------------------------*/
 #if !USE_TLS_1_2
+static void read_hex(const char *hex, uint8_t *out, size_t outmax, size_t *outlen)
+{
+    size_t i;
+	
+    *outlen = 0;
+    if (strlen(hex) > 2*outmax) {
+		fprintf(stderr, "{%s} error, hex length exceeds outmax (%lu > %lu*2)\n",
+				__FUNCTION__, strlen(hex), outmax*2);
+		exit(1);
+	}
+	
+    for (i = 0; hex[i] && hex[i+1]; i += 2) {
+        unsigned int value = 0;
+        if (!sscanf(hex + i, "%02x", &value)) {
+			fprintf(stderr, "[%s] sscanf fail\n", __FUNCTION__);
+			exit(1);
+		}
+        out[(*outlen)++] = value;
+    }
+}
+/*-----------------------------------------------------------------------------*/
+static unsigned char *HKDF_Expand(const EVP_MD *evp_md,
+                                  const unsigned char *prk, size_t prk_len,
+                                  const unsigned char *info, size_t info_len,
+                                  unsigned char *okm, size_t okm_len)
+{
+    HMAC_CTX *hmac;
+    unsigned char *ret = NULL;
+
+    unsigned int i;
+
+    unsigned char prev[EVP_MAX_MD_SIZE];
+
+    size_t done_len = 0, dig_len = EVP_MD_size(evp_md);
+
+    size_t n = okm_len / dig_len;
+    if (okm_len % dig_len)
+        n++;
+
+    if (n > 255 || okm == NULL)
+        return NULL;
+
+    if ((hmac = HMAC_CTX_new()) == NULL)
+        return NULL;
+
+    if (!HMAC_Init_ex(hmac, prk, prk_len, evp_md, NULL))
+        goto err;
+
+    for (i = 1; i <= n; i++) {
+        size_t copy_len;
+        const unsigned char ctr = i;
+
+        if (i > 1) {
+            if (!HMAC_Init_ex(hmac, NULL, 0, NULL, NULL))
+                goto err;
+
+            if (!HMAC_Update(hmac, prev, dig_len))
+                goto err;
+        }
+
+        if (!HMAC_Update(hmac, info, info_len))
+            goto err;
+
+        if (!HMAC_Update(hmac, &ctr, 1))
+            goto err;
+
+        if (!HMAC_Final(hmac, prev, NULL))
+            goto err;
+
+        copy_len = (done_len + dig_len > okm_len) ?
+                       okm_len - done_len :
+                       dig_len;
+
+        memcpy(okm + done_len, prev, copy_len);
+
+        done_len += copy_len;
+    }
+    ret = okm;
+
+ err:
+    OPENSSL_cleanse(prev, sizeof(prev));
+    HMAC_CTX_free(hmac);
+    return ret;
+
+}
+/*-----------------------------------------------------------------------------*/
+void
+get_write_key_1_3 (uint8_t *secret, uint8_t *key_out)
+{
+	HkdfLabel hkdf_label;
+	const EVP_MD *evp_md;
+
+	evp_md = EVP_get_digestbyname("SHA384");
+ 
+	hkdf_label.length = AES256_KEY_LEN;
+	memcpy(hkdf_label.label_ctx, "tls13 key", strlen("tls13 key"));
+	
+	HKDF_Expand(evp_md, (const uint8_t*)secret, TRAFFIC_SECRET_LEN,
+			    (const uint8_t*)&hkdf_label, sizeof(uint16_t)+strlen("tls13 key"),
+				key_out, AES256_KEY_LEN);
+	return;
+}
+/*-----------------------------------------------------------------------------*/
+void
+get_write_iv_1_3 (uint8_t *secret, uint8_t *iv_out)
+{
+	HkdfLabel hkdf_label;
+	const EVP_MD *evp_md;
+
+	evp_md = EVP_get_digestbyname("SHA384");
+
+	hkdf_label.length = TLS_1_3_IV_LEN;
+	memcpy(hkdf_label.label_ctx, "tls13 iv", strlen("tls13 iv"));
+
+	HKDF_Expand(evp_md, (const uint8_t*)secret, TRAFFIC_SECRET_LEN,
+			    (const uint8_t*)&hkdf_label, sizeof(uint16_t)+strlen("tls13 iv"),
+				iv_out, TLS_1_3_IV_LEN);
+	return;
+}
+/*-----------------------------------------------------------------------------*/
 void
 ssl_ctx_new_keylog (const SSL *ssl, const char *line)
 {
+	char *tok;
+	uint8_t secret[1024];
+	char line_cpy[1024];
+	size_t len;
+	
 	fprintf(stderr, "[%s] Get keylog of SSL %p!\n%s\n",
 			__FUNCTION__, ssl, line);
+
+	memcpy(line_cpy, line, strlen(line)+1);
+	
+	tok = strtok(line_cpy, " ");
+	if (strcmp(tok, "SERVER_TRAFFIC_SECRET_0") == 0) {
+		tok = strtok(NULL, " ");
+		tok = strtok(NULL, " ");
+
+		memcpy(secret, tok, 48);
+		read_hex((const char *)tok, secret, 1024, &len);
+
+		get_write_key_1_3(secret, server_write_key);
+		get_write_iv_1_3(secret, server_write_iv);
+
+		done_flag |= 0x3;
+	}
+	if (strcmp(tok, "CLIENT_TRAFFIC_SECRET_0") == 0) {
+		tok = strtok(NULL, " ");
+		tok = strtok(NULL, " ");
+
+		memcpy(secret, tok, 48);
+		read_hex((const char *)tok, secret, 1024, &len);
+
+		get_write_key_1_3(secret, client_write_key);
+		get_write_iv_1_3(secret, client_write_iv);
+
+		done_flag |= 0xc;
+	}
+
+	if (done_flag == 0xf) {
+		int i;
+		
+		fprintf(stderr, "client write key:\n");
+		for (i = 0; i < 32; i++) {
+			fprintf(stderr, "%02X", client_write_key[i]);
+		}
+		fprintf(stderr, "\n");
+		fprintf(stderr, "client write iv:\n");
+		for (i = 0; i < 12; i++) {
+			fprintf(stderr, "%02X", client_write_iv[i]);
+		}
+		fprintf(stderr, "\n");
+		fprintf(stderr, "server write key:\n");
+		for (i = 0; i < 32; i++) {
+			fprintf(stderr, "%02X", server_write_key[i]);
+		}
+		fprintf(stderr, "\n");
+		fprintf(stderr, "server write iv:\n");
+		for (i = 0; i < 12; i++) {
+			fprintf(stderr, "%02X", server_write_iv[i]);
+		}
+		fprintf(stderr, "\n");
+	}
 	
 }
 /*-----------------------------------------------------------------------------*/
