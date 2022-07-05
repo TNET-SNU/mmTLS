@@ -349,11 +349,11 @@ print_stat(uint16_t *port_list, int16_t port_num) {
 static inline uint8_t *
 get_dst_mac(uint8_t *src_mac, uint8_t *buf)
 {
-	if (memcmp(src_mac, CLIENT_MAC, 6)) {
+	if (memcmp(src_mac, CLIENT_MAC, 6) == 0) {
 		TCP_PRINT("[%s] packet from client, fwd to server!\n",
 				  __FUNCTION__);
 		memcpy(buf, SERVER_MAC, 6);
-	} else if (memcmp(src_mac, SERVER_MAC, 6)) {
+	} else if (memcmp(src_mac, SERVER_MAC, 6) == 0) {
 		TCP_PRINT("[%s] packet from server, fwd to client!\n",
 				  __FUNCTION__);
 		memcpy(buf, CLIENT_MAC, 6);

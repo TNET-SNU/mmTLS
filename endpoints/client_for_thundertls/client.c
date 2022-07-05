@@ -22,6 +22,7 @@
 
 #define FAIL -1
 #define MAX_ADDR_LEN 20
+#define MAX_INFO_LEN 1024
 
 char addr[MAX_ADDR_LEN + 1];
 int port;
@@ -39,9 +40,12 @@ uint8_t client_write_iv[TLS_1_3_IV_LEN];
 uint8_t server_write_iv[TLS_1_3_IV_LEN];
 uint8_t done_flag = 0;
 
+#define KEY_INFO ((uint8_t[]){0x00, 0x20, 0x09, 0x74, 0x6c, 0x73, 0x31, 0x33, 0x20, 0x6b, 0x65, 0x79, 0x00, 0x01})
+#define IV_INFO ((uint8_t[]){0x00, 0x0c, 0x08, 0x74, 0x6c, 0x73, 0x31, 0x33, 0x20, 0x69, 0x76, 0x00, 0x01})
+
 typedef struct __attribute__((__packed__)) {
 	uint16_t length;
-	uint8_t label_ctx[512];
+	uint8_t label_ctx[256];
 } HkdfLabel;
 #endif
 /*-----------------------------------------------------------------------------*/
@@ -73,10 +77,11 @@ static void read_hex(const char *hex, uint8_t *out, size_t outmax, size_t *outle
         out[(*outlen)++] = value;
     }
 }
+
 /*-----------------------------------------------------------------------------*/
 static unsigned char *HKDF_Expand(const EVP_MD *evp_md,
                                   const unsigned char *prk, size_t prk_len,
-                                  const unsigned char *info, size_t info_len,
+                                  const unsigned char *label, size_t label_len,
                                   unsigned char *okm, size_t okm_len)
 {
     HMAC_CTX *hmac;
@@ -100,12 +105,29 @@ static unsigned char *HKDF_Expand(const EVP_MD *evp_md,
 
     if (!HMAC_Init_ex(hmac, prk, prk_len, evp_md, NULL))
         goto err;
+	
+	unsigned char info[MAX_INFO_LEN];
+	size_t info_len = label_len + 5;
 
-    for (i = 1; i <= n; i++) {
+	/* ToDo: remove hard-coded KEY_INFO */
+	if (!strncmp((const char*)label, "tls13 key", 9)) {
+		memcpy((char*)info, KEY_INFO, info_len);
+	}
+	else if (!strncmp((const char*)label, "tls13 iv", 8)) {
+		memcpy((char*)info, IV_INFO, info_len);
+	}
+	else {
+		fprintf(stderr, "[%s] Invalid label\n", __FUNCTION__);
+		goto err;
+	}
+
+    for (i = 1; i <= n; i++) {	// only handles single loop
         size_t copy_len;
-        const unsigned char ctr = i;
 
         if (i > 1) {
+			fprintf(stderr, "[%s] Not implemented now\n", __FUNCTION__);
+			goto err;
+			
             if (!HMAC_Init_ex(hmac, NULL, 0, NULL, NULL))
                 goto err;
 
@@ -113,15 +135,15 @@ static unsigned char *HKDF_Expand(const EVP_MD *evp_md,
                 goto err;
         }
 
-        if (!HMAC_Update(hmac, info, info_len))
+        if (!HMAC_Update(hmac, (const unsigned char*)info, info_len))
             goto err;
-
-        if (!HMAC_Update(hmac, &ctr, 1))
-            goto err;
-
+		
+        // if (!HMAC_Update(hmac, &ctr, 1))
+            // goto err;
+		
         if (!HMAC_Final(hmac, prev, NULL))
             goto err;
-
+		
         copy_len = (done_len + dig_len > okm_len) ?
                        okm_len - done_len :
                        dig_len;
@@ -138,6 +160,7 @@ static unsigned char *HKDF_Expand(const EVP_MD *evp_md,
     return ret;
 
 }
+
 /*-----------------------------------------------------------------------------*/
 void
 get_write_key_1_3 (uint8_t *secret, uint8_t *key_out)
@@ -145,13 +168,15 @@ get_write_key_1_3 (uint8_t *secret, uint8_t *key_out)
 	HkdfLabel hkdf_label;
 	const EVP_MD *evp_md;
 
+	/* Assume hash: SHA384 */
 	evp_md = EVP_get_digestbyname("SHA384");
- 
+
 	hkdf_label.length = AES256_KEY_LEN;
+	memset(hkdf_label.label_ctx, 0, 256);
 	memcpy(hkdf_label.label_ctx, "tls13 key", strlen("tls13 key"));
-	
+
 	HKDF_Expand(evp_md, (const uint8_t*)secret, TRAFFIC_SECRET_LEN,
-			    (const uint8_t*)&hkdf_label, sizeof(uint16_t)+strlen("tls13 key"),
+			     (const uint8_t*)hkdf_label.label_ctx, strlen("tls13 key"),
 				key_out, AES256_KEY_LEN);
 	return;
 }
@@ -161,17 +186,20 @@ get_write_iv_1_3 (uint8_t *secret, uint8_t *iv_out)
 {
 	HkdfLabel hkdf_label;
 	const EVP_MD *evp_md;
-
+	
+	/* Assume hash: SHA384 */
 	evp_md = EVP_get_digestbyname("SHA384");
 
 	hkdf_label.length = TLS_1_3_IV_LEN;
+	memset(hkdf_label.label_ctx, 0, 256);
 	memcpy(hkdf_label.label_ctx, "tls13 iv", strlen("tls13 iv"));
 
 	HKDF_Expand(evp_md, (const uint8_t*)secret, TRAFFIC_SECRET_LEN,
-			    (const uint8_t*)&hkdf_label, sizeof(uint16_t)+strlen("tls13 iv"),
+			    (const uint8_t*)hkdf_label.label_ctx, strlen("tls13 iv"),
 				iv_out, TLS_1_3_IV_LEN);
 	return;
 }
+
 /*-----------------------------------------------------------------------------*/
 void
 ssl_ctx_new_keylog (const SSL *ssl, const char *line)
@@ -193,7 +221,7 @@ ssl_ctx_new_keylog (const SSL *ssl, const char *line)
 
 		memcpy(secret, tok, 48);
 		read_hex((const char *)tok, secret, 1024, &len);
-
+		
 		get_write_key_1_3(secret, server_write_key);
 		get_write_iv_1_3(secret, server_write_iv);
 
