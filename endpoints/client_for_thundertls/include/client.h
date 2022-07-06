@@ -1,8 +1,7 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
-#define UNUSED(x) (void)(x)
-
+#define MAX_DATA_LEN 512
 #define MAX_ADDR_LEN 20
 #define MAX_THREAD_NUM 16
 
