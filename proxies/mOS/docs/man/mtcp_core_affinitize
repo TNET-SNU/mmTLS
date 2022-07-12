@@ -1,0 +1,55 @@
+.TH mtcp_core_affinitize 3 2017-08-28 "Linux" "mOS Library Functions Manual"
+.SH NAME
+mtcp_core_affinitize \- bind a calling thread to a specific CPU core
+.SH SYNOPSIS
+.B #include <mtcp_api.h>
+.sp
+.BI "int mtcp_core_affinitize(int " cpu );
+
+.SH DESCRIPTION
+.BR mtcp_core_affinitize () 
+binds a calling thread to a specifc CPU core.
+This function is a utility function which internally performs
+.BR sched_setaffinity ()
+for dedicating one CPU to a particular thread, and
+.BR numa_set_membind ()
+for restricting any future memory allocation to happen within the NUMA node.
+
+This function is used by end TCP applications to pin their application
+threads to a specific core in order to gain performance benefits.
+For example, restricting an application thread to run on a single CPU
+core avoids any cache invalidation that can be caused when the thread
+is moved from one CPU core to another CPU core.
+
+The function requires a sole
+.I "cpu"
+integer argument that passes the CPU core-id of the
+system on which the stack is instantiated.
+.\""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+.SH RETURN VALUE
+Returns 0 on success; -1 on failure.
+
+.\"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+.\""""".SH CONFORMING TO
+.\"""""POSIX.1-2001.
+.\"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+.SH NOTES
+
+Passing an invalid CPU core-id (value < 0 or value > max_cpus)
+will prevent the creation of the mTCP stack.
+
+.\"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+.SH AUTHORS
+mOS development team <mtcp-user@list.ndsl.kaist.edu>
+.\"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+.SH SEE ALSO
+.BR mtcp_create_context ()
+
+.\""""""""""""""""""""""""""""""""""""""""""""""""""""""
+.SH COLOPHON
+This page is part of mOS release 0.3
+.I "docs"
+section. A description of the project, and information
+about reporting bugs, can be found at
+\%http://mos.kaist.edu/.
+.\""""""""""""""""""""""""""""""""""""""""""""""""""""""

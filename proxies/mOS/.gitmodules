@@ -1,0 +1,6 @@
+[submodule "drivers/dpdk"]
+	path = drivers/dpdk
+	url = https://dpdk.org/git/dpdk
+	branch = master
+	commit = 0da7f445df445630c794897347ee360d6fe6348b
+	
