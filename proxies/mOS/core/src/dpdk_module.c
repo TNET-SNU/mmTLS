@@ -27,6 +27,7 @@
 #endif /* !ENABLE_STATS_IOCTL */
 /* for retrieving rte version(s) */
 #include <rte_version.h>
+
 /*----------------------------------------------------------------------------*/
 /* Essential macros */
 #define MAX_RX_QUEUE_PER_LCORE		MAX_CPUS
@@ -76,7 +77,11 @@ static uint8_t cpu_qid_map[RTE_MAX_ETHPORTS][MAX_CPUS] = {{0}};
 //#define DEBUG				1
 #ifdef DEBUG
 /* ethernet addresses of ports */
+#if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
+static struct rte_ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
+#else
 static struct ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
+#endif
 #endif
 
 static struct rte_eth_dev_info dev_info[RTE_MAX_ETHPORTS];
@@ -84,7 +89,11 @@ static struct rte_eth_dev_info dev_info[RTE_MAX_ETHPORTS];
 static struct rte_eth_conf port_conf = {
 	.rxmode = {
 		.mq_mode	= 	ETH_MQ_RX_RSS,
+#if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
+		.max_rx_pkt_len = 	RTE_ETHER_MAX_LEN,
+#else
 		.max_rx_pkt_len = 	ETHER_MAX_LEN,
+#endif
 		.split_hdr_size = 	0,
 #if RTE_VERSION < RTE_VERSION_NUM(18, 5, 0, 0)
 		.header_split   = 	0, /**< Header Split disabled */
@@ -303,7 +312,11 @@ dpdk_get_wptr(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize)
 	m = dpc->wmbufs[nif].m_table[len_of_mbuf];
 	
 	/* retrieve the right write offset */
+#if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
+	ptr = (void *)rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
+#else
 	ptr = (void *)rte_pktmbuf_mtod(m, struct ether_hdr *);
+#endif
 	m->pkt_len = m->data_len = pktsize;
 	m->nb_segs = 1;
 	m->next = NULL;
@@ -420,7 +433,12 @@ dpdk_get_nif(struct ifreq *ifr)
 {
 	int i;
 	static int num_dev = -1;
+#if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
+	static struct rte_ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
+#else
 	static struct ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
+#endif
+
 	/* get mac addr entries of 'detected' dpdk ports */
 	if (num_dev < 0) {
 #if RTE_VERSION < RTE_VERSION_NUM(18, 5, 0, 0)
@@ -432,9 +450,11 @@ dpdk_get_nif(struct ifreq *ifr)
 			rte_eth_macaddr_get(i, &ports_eth_addr[i]);
 	}
 
-	for (i = 0; i < num_dev; i++)
+	for (i = 0; i < num_dev; i++) {
 		if (!memcmp(&ifr->ifr_addr.sa_data[0], &ports_eth_addr[i], ETH_ALEN))
 			return i;
+		
+	}
 
 	return -1;
 }
@@ -556,14 +576,22 @@ dpdk_dev_ioctl(struct mtcp_thread_context *ctx, int nif, int cmd, void *argp)
 	case PKT_TX_IP_CSUM:
 		m = dpc->wmbufs[nif].m_table[len_of_mbuf - 1];
 		m->ol_flags = PKT_TX_IP_CKSUM | PKT_TX_IPV4;
+#if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
+		m->l2_len = sizeof(struct rte_ether_hdr);
+#else
 		m->l2_len = sizeof(struct ether_hdr);
+#endif
 		m->l3_len = (iph->ihl<<2);
 		break;
 	case PKT_TX_TCP_CSUM:
 		m = dpc->wmbufs[nif].m_table[len_of_mbuf - 1];
 		tcph = (struct tcphdr *)((unsigned char *)iph + (iph->ihl<<2));
 		m->ol_flags |= PKT_TX_TCP_CKSUM;
+#if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
+		tcph->check = rte_ipv4_phdr_cksum((struct rte_ipv4_hdr *)iph, m->ol_flags);
+#else
 		tcph->check = rte_ipv4_phdr_cksum((struct ipv4_hdr *)iph, m->ol_flags);
+#endif
 		break;
 	case PKT_RX_RSS:
 		rss_i = (RssInfo *)argp;
@@ -616,14 +644,15 @@ dpdk_load_module_upper_half(void)
 
 	/* initialize the rte env first, what a waste of implementation effort!  */
 	char *argv[] = {"", 
+					"--iova-mode=va",
 			"-c", 
 			cpumaskbuf, 
 			"-n", 
 			mem_channels,
-			"--proc-type=auto",
-			""
+			"--proc-type=auto"
 	};
-	const int argc = 6;
+	const int argc = 7;
+	/* const int argc = 6; */
 
 	/* 
 	 * re-set getopt extern variable optind.
@@ -638,9 +667,12 @@ dpdk_load_module_upper_half(void)
 
 	/* initialize the dpdk eal env */
 	ret = rte_eal_init(argc, argv);
+	
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Invalid EAL args!\n");
 
+
+	fprintf(stderr, "dev_cnt: %u\n", rte_eth_dev_count_avail());
 }
 /*----------------------------------------------------------------------------*/
 void
@@ -649,6 +681,15 @@ dpdk_load_module_lower_half(void)
 	int portid, rxlcore_id, ret;
 	struct rte_eth_fc_conf fc_conf;	/* for Ethernet flow control settings */
 	/* setting the rss key */
+#if RTE_VERSION >= RTE_VERSION_NUM(20, 0, 0, 0)
+    static const uint8_t key[] = {
+         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
+         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
+         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
+         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
+         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05
+    };
+#else
 	static const uint8_t key[] = {
 		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
 		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
@@ -657,6 +698,7 @@ dpdk_load_module_lower_half(void)
 		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
 		0x05, 0x05
 	};
+#endif
 
 	port_conf.rx_adv_conf.rss_conf.rss_key = (uint8_t *)key;
 	port_conf.rx_adv_conf.rss_conf.rss_key_len = sizeof(key);

@@ -14,6 +14,7 @@
 
 #include "mtcp.h"
 #include "config.h"
+#include "cpu.h"
 #include "tcp_in.h"
 #include "arp.h"
 #include "debug.h"
@@ -243,6 +244,7 @@ FeedNetdevConfLine(struct conf_block *blk, char *line, int len)
 	}
 
 	strncpy(ent->dev_name, word, wlen);
+
 	ent->cpu_mask = cpu_mask;
 	g_config.mos->cpu_mask |= cpu_mask;
 
@@ -1127,8 +1129,11 @@ PatchCONFIG(struct config *config)
 	int wlen;	
 	uint64_t value;
 
+	num_cpus = GetNumCPUs();
 	value = g_config.mos->cpu_mask;
 	for (count = 0; value != 0; count++, value &= value-1);
+		TRACE_ERROR("CPU mask (%016lX) \n",
+					g_config.mos->cpu_mask);
 	if (count > num_cpus) {
 		TRACE_ERROR("CPU mask (%016lX) exceeds the number of CPU cores (%d)\n",
 					g_config.mos->cpu_mask, num_cpus);

@@ -1429,8 +1429,8 @@ mtcp_create_context(int cpu)
 		int master;
 		master = rte_get_master_lcore();
 		if (master == cpu) {
-			lcore_config[master].ret = 0;
-			lcore_config[master].state = FINISHED;
+			/* lcore_config[master].ret = 0; */
+			/* lcore_config[master].state = FINISHED; */
 			if (pthread_create(&g_thread[cpu], 
 					   NULL, MTCPRunThread, (void *)mctx) != 0) {
 				TRACE_ERROR("pthread_create of mtcp thread failed!\n");

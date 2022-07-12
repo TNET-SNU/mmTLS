@@ -50,7 +50,7 @@ static const char __attribute__ ((unused)) rcsid[] =
 #include <memory.h>
 #include <string.h>
 
-#include <errno.h>
+/* #include <errno.h> */
 
 #include "sfbpf-int.h"
 
@@ -160,9 +160,9 @@ static void opt_dump(struct block *);
 #endif
 
 static __thread int n_blocks;
-__thread struct block **blocks;
+__thread struct block **_blocks;
 static __thread int n_edges;
-__thread struct edge **edges;
+__thread struct edge **_edges;
 
 /*
  * A bit vector set representation of the dominators.
@@ -170,8 +170,8 @@ __thread struct edge **edges;
  */
 static __thread int nodewords;
 static __thread int edgewords;
-__thread struct block **levels;
-__thread bpf_u_int32 *space;
+__thread struct block **_levels;
+__thread bpf_u_int32 *_space;
 #define BITS_PER_WORD (8*sizeof(bpf_u_int32))
 /*
  * True if a is in uset {p}
@@ -249,8 +249,8 @@ static void find_levels_r(b)
     else
         level = 0;
     b->level = level;
-    b->link = levels[level];
-    levels[level] = b;
+    b->link = _levels[level];
+    _levels[level] = b;
 }
 
 /*
@@ -262,7 +262,7 @@ static void find_levels_r(b)
 static void find_levels(root)
      struct block *root;
 {
-    memset((char *) levels, 0, n_blocks * sizeof(*levels));
+    memset((char *) _levels, 0, n_blocks * sizeof(*_levels));
     unMarkAll();
     find_levels_r(root);
 }
@@ -292,7 +292,7 @@ static void find_dom(root)
     /* root->level is the highest level no found. */
     for (i = root->level; i >= 0; --i)
     {
-        for (b = levels[i]; b; b = b->link)
+        for (b = _levels[i]; b; b = b->link)
         {
             SET_INSERT(b->dom, b->id);
             if (JT(b) == 0)
@@ -334,7 +334,7 @@ static void find_edom(root)
     memset(root->ef.edom, 0, edgewords * sizeof(*(uset) 0));
     for (i = root->level; i >= 0; --i)
     {
-        for (b = levels[i]; b != 0; b = b->link)
+        for (b = _levels[i]; b != 0; b = b->link)
         {
             propedom(&b->et);
             propedom(&b->ef);
@@ -363,7 +363,7 @@ static void find_closure(root)
     /* root->level is the highest level no found. */
     for (i = root->level; i >= 0; --i)
     {
-        for (b = levels[i]; b; b = b->link)
+        for (b = _levels[i]; b; b = b->link)
         {
             SET_INSERT(b->closure, b->id);
             if (JT(b) == 0)
@@ -543,7 +543,7 @@ static void find_ud(root)
      */
     maxlevel = root->level;
     for (i = maxlevel; i >= 0; --i)
-        for (p = levels[i]; p; p = p->link)
+        for (p = _levels[i]; p; p = p->link)
         {
             compute_local_ud(p);
             p->out_use = 0;
@@ -551,7 +551,7 @@ static void find_ud(root)
 
     for (i = 1; i <= maxlevel; ++i)
     {
-        for (p = levels[i]; p; p = p->link)
+        for (p = _levels[i]; p; p = p->link)
         {
             p->out_use |= JT(p)->in_use | JF(p)->in_use;
             p->in_use |= p->out_use & ~p->kill;
@@ -587,15 +587,15 @@ struct vmapinfo
     bpf_int32 const_val;
 };
 
-__thread struct vmapinfo *vmap;
-__thread struct valnode *vnode_base;
-__thread struct valnode *next_vnode;
+__thread struct vmapinfo *_vmap;
+__thread struct valnode *_vnode_base;
+__thread struct valnode *_next_vnode;
 
 static void init_val()
 {
     curval = 0;
-    next_vnode = vnode_base;
-    memset((char *) vmap, 0, maxval * sizeof(*vmap));
+    _next_vnode = _vnode_base;
+    memset((char *) _vmap, 0, maxval * sizeof(*_vmap));
     memset((char *) hashtbl, 0, sizeof hashtbl);
 }
 
@@ -618,10 +618,10 @@ static int F(code, v0, v1)
     val = ++curval;
     if (BPF_MODE(code) == BPF_IMM && (BPF_CLASS(code) == BPF_LD || BPF_CLASS(code) == BPF_LDX))
     {
-        vmap[val].const_val = v0;
-        vmap[val].is_const = 1;
+        _vmap[val].const_val = v0;
+        _vmap[val].is_const = 1;
     }
-    p = next_vnode++;
+    p = _next_vnode++;
     p->val = val;
     p->code = code;
     p->v0 = v0;
@@ -650,8 +650,8 @@ static void fold_op(s, v0, v1)
 {
     bpf_u_int32 a, b;
 
-    a = vmap[v0].const_val;
-    b = vmap[v1].const_val;
+    a = _vmap[v0].const_val;
+    b = _vmap[v1].const_val;
 
     switch (BPF_OP(s->code))
     {
@@ -863,7 +863,7 @@ static void opt_peep(b)
         if (last->s.code == (BPF_ALU | BPF_SUB | BPF_X))
         {
             val = b->val[X_ATOM];
-            if (vmap[val].is_const)
+            if (_vmap[val].is_const)
             {
                 /*
                  * If we have a subtract to do a comparison,
@@ -874,7 +874,7 @@ static void opt_peep(b)
                  * sub x  ->    nop
                  * jeq #y   jeq #(x+y)
                  */
-                b->s.k += vmap[val].const_val;
+                b->s.k += _vmap[val].const_val;
                 last->s.code = NOP;
                 done = 0;
             }
@@ -939,9 +939,9 @@ static void opt_peep(b)
      * constant.
      */
     val = b->val[X_ATOM];
-    if (vmap[val].is_const && BPF_SRC(b->s.code) == BPF_X)
+    if (_vmap[val].is_const && BPF_SRC(b->s.code) == BPF_X)
     {
-        bpf_int32 v = vmap[val].const_val;
+        bpf_int32 v = _vmap[val].const_val;
         b->s.code &= ~BPF_X;
         b->s.k = v;
     }
@@ -950,9 +950,9 @@ static void opt_peep(b)
      * comparison result.
      */
     val = b->val[A_ATOM];
-    if (vmap[val].is_const && BPF_SRC(b->s.code) == BPF_K)
+    if (_vmap[val].is_const && BPF_SRC(b->s.code) == BPF_K)
     {
-        bpf_int32 v = vmap[val].const_val;
+        bpf_int32 v = _vmap[val].const_val;
         switch (BPF_OP(b->s.code))
         {
 
@@ -1012,10 +1012,10 @@ static void opt_stmt(s, val, alter)
         case BPF_LD | BPF_IND | BPF_H:
         case BPF_LD | BPF_IND | BPF_B:
             v = val[X_ATOM];
-            if (alter && vmap[v].is_const)
+            if (alter && _vmap[v].is_const)
             {
                 s->code = BPF_LD | BPF_ABS | BPF_SIZE(s->code);
-                s->k += vmap[v].const_val;
+                s->k += _vmap[v].const_val;
                 v = F(s->code, s->k, 0L);
                 done = 0;
             }
@@ -1045,10 +1045,10 @@ static void opt_stmt(s, val, alter)
             break;
 
         case BPF_ALU | BPF_NEG:
-            if (alter && vmap[val[A_ATOM]].is_const)
+            if (alter && _vmap[val[A_ATOM]].is_const)
             {
                 s->code = BPF_LD | BPF_IMM;
-                s->k = -vmap[val[A_ATOM]].const_val;
+                s->k = -_vmap[val[A_ATOM]].const_val;
                 val[A_ATOM] = K(s->k);
             }
             else
@@ -1083,7 +1083,7 @@ static void opt_stmt(s, val, alter)
                         break;
                     }
                 }
-                if (vmap[val[A_ATOM]].is_const)
+                if (_vmap[val[A_ATOM]].is_const)
                 {
                     fold_op(s, val[A_ATOM], K(s->k));
                     val[A_ATOM] = K(s->k);
@@ -1102,9 +1102,9 @@ static void opt_stmt(s, val, alter)
         case BPF_ALU | BPF_LSH | BPF_X:
         case BPF_ALU | BPF_RSH | BPF_X:
             op = BPF_OP(s->code);
-            if (alter && vmap[val[X_ATOM]].is_const)
+            if (alter && _vmap[val[X_ATOM]].is_const)
             {
-                if (vmap[val[A_ATOM]].is_const)
+                if (_vmap[val[A_ATOM]].is_const)
                 {
                     fold_op(s, val[A_ATOM], val[X_ATOM]);
                     val[A_ATOM] = K(s->k);
@@ -1112,7 +1112,7 @@ static void opt_stmt(s, val, alter)
                 else
                 {
                     s->code = BPF_ALU | BPF_K | op;
-                    s->k = vmap[val[X_ATOM]].const_val;
+                    s->k = _vmap[val[X_ATOM]].const_val;
                     done = 0;
                     val[A_ATOM] = F(s->code, val[A_ATOM], K(s->k));
                 }
@@ -1125,7 +1125,7 @@ static void opt_stmt(s, val, alter)
              * optimizations.
              * XXX We could also check for mul by 1, etc.
              */
-            if (alter && vmap[val[A_ATOM]].is_const && vmap[val[A_ATOM]].const_val == 0)
+            if (alter && _vmap[val[A_ATOM]].is_const && _vmap[val[A_ATOM]].const_val == 0)
             {
                 if (op == BPF_ADD || op == BPF_OR)
                 {
@@ -1155,10 +1155,10 @@ static void opt_stmt(s, val, alter)
 
         case BPF_LD | BPF_MEM:
             v = val[s->k];
-            if (alter && vmap[v].is_const)
+            if (alter && _vmap[v].is_const)
             {
                 s->code = BPF_LD | BPF_IMM;
-                s->k = vmap[v].const_val;
+                s->k = _vmap[v].const_val;
                 done = 0;
             }
             vstore(s, &val[A_ATOM], v, alter);
@@ -1170,10 +1170,10 @@ static void opt_stmt(s, val, alter)
 
         case BPF_LDX | BPF_MEM:
             v = val[s->k];
-            if (alter && vmap[v].is_const)
+            if (alter && _vmap[v].is_const)
             {
                 s->code = BPF_LDX | BPF_IMM;
-                s->k = vmap[v].const_val;
+                s->k = _vmap[v].const_val;
                 done = 0;
             }
             vstore(s, &val[X_ATOM], v, alter);
@@ -1462,7 +1462,7 @@ static void opt_j(ep)
             x &= ~(1 << k);
             k += i * BITS_PER_WORD;
 
-            target = fold_edge(ep->succ, edges[k]);
+            target = fold_edge(ep->succ, _edges[k]);
             /*
              * Check that there is no data dependency between
              * nodes that will be violated if we move the edge.
@@ -1686,7 +1686,7 @@ static void opt_blks(root, do_stmts)
 
     find_inedges(root);
     for (i = maxlevel; i >= 0; --i)
-        for (p = levels[i]; p; p = p->link)
+        for (p = _levels[i]; p; p = p->link)
             opt_blk(p, do_stmts);
 
     if (do_stmts)
@@ -1698,7 +1698,7 @@ static void opt_blks(root, do_stmts)
 
     for (i = 1; i <= maxlevel; ++i)
     {
-        for (p = levels[i]; p; p = p->link)
+        for (p = _levels[i]; p; p = p->link)
         {
             opt_j(&p->et);
             opt_j(&p->ef);
@@ -1708,7 +1708,7 @@ static void opt_blks(root, do_stmts)
     find_inedges(root);
     for (i = 1; i <= maxlevel; ++i)
     {
-        for (p = levels[i]; p; p = p->link)
+        for (p = _levels[i]; p; p = p->link)
         {
             or_pullup(p);
             and_pullup(p);
@@ -1731,7 +1731,7 @@ static void find_inedges(root)
     struct block *b;
 
     for (i = 0; i < n_blocks; ++i)
-        blocks[i]->in_edges = 0;
+        _blocks[i]->in_edges = 0;
 
     /*
      * Traverse the graph, adding each edge to the predecessor
@@ -1739,7 +1739,7 @@ static void find_inedges(root)
      */
     for (i = root->level; i > 0; --i)
     {
-        for (b = levels[i]; b != 0; b = b->link)
+        for (b = _levels[i]; b != 0; b = b->link)
         {
             link_inedge(&b->et, JT(b));
             link_inedge(&b->ef, JF(b));
@@ -1901,28 +1901,28 @@ static void intern_blocks(root)
   top:
     done1 = 1;
     for (i = 0; i < n_blocks; ++i)
-        blocks[i]->link = 0;
+        _blocks[i]->link = 0;
 
     mark_code(root);
 
     for (i = n_blocks - 1; --i >= 0;)
     {
-        if (!isMarked(blocks[i]))
+        if (!isMarked(_blocks[i]))
             continue;
         for (j = i + 1; j < n_blocks; ++j)
         {
-            if (!isMarked(blocks[j]))
+            if (!isMarked(_blocks[j]))
                 continue;
-            if (eq_blk(blocks[i], blocks[j]))
+            if (eq_blk(_blocks[i], _blocks[j]))
             {
-                blocks[i]->link = blocks[j]->link ? blocks[j]->link : blocks[j];
+                _blocks[i]->link = _blocks[j]->link ? _blocks[j]->link : _blocks[j];
                 break;
             }
         }
     }
     for (i = 0; i < n_blocks; ++i)
     {
-        p = blocks[i];
+        p = _blocks[i];
         if (JT(p) == 0)
             continue;
         if (JT(p)->link)
@@ -1942,12 +1942,12 @@ static void intern_blocks(root)
 
 static void opt_cleanup()
 {
-    free((void *) vnode_base);
-    free((void *) vmap);
-    free((void *) edges);
-    free((void *) space);
-    free((void *) levels);
-    free((void *) blocks);
+    free((void *) _vnode_base);
+    free((void *) _vmap);
+    free((void *) _edges);
+    free((void *) _space);
+    free((void *) _levels);
+    free((void *) _blocks);
 }
 
 /*
@@ -1992,7 +1992,7 @@ static void number_blks_r(p)
     Mark(p);
     n = n_blocks++;
     p->id = n;
-    blocks[n] = p;
+    _blocks[n] = p;
 
     number_blks_r(JT(p));
     number_blks_r(JF(p));
@@ -2045,74 +2045,74 @@ static void opt_init(root)
      */
     unMarkAll();
     n = count_blocks(root);
-    blocks = (struct block **) calloc(n, sizeof(*blocks));
-    if (blocks == NULL)
+    _blocks = (struct block **) calloc(n, sizeof(*_blocks));
+    if (_blocks == NULL)
         bpf_error("malloc");
     unMarkAll();
     n_blocks = 0;
     number_blks_r(root);
 
     n_edges = 2 * n_blocks;
-    edges = (struct edge **) calloc(n_edges, sizeof(*edges));
-    if (edges == NULL)
+    _edges = (struct edge **) calloc(n_edges, sizeof(*_edges));
+    if (_edges == NULL)
         bpf_error("malloc");
 
     /*
      * The number of levels is bounded by the number of nodes.
      */
-    levels = (struct block **) calloc(n_blocks, sizeof(*levels));
-    if (levels == NULL)
+    _levels = (struct block **) calloc(n_blocks, sizeof(*_levels));
+    if (_levels == NULL)
         bpf_error("malloc");
 
     edgewords = n_edges / (8 * sizeof(bpf_u_int32)) + 1;
     nodewords = n_blocks / (8 * sizeof(bpf_u_int32)) + 1;
 
     /* XXX */
-    space = (bpf_u_int32 *) malloc(2 * n_blocks * nodewords * sizeof(*space)
-                                   + n_edges * edgewords * sizeof(*space));
-    if (space == NULL)
+    _space = (bpf_u_int32 *) malloc(2 * n_blocks * nodewords * sizeof(*_space)
+                                   + n_edges * edgewords * sizeof(*_space));
+    if (_space == NULL)
         bpf_error("malloc");
-    p = space;
+    p = _space;
     all_dom_sets = p;
     for (i = 0; i < n; ++i)
     {
-        blocks[i]->dom = p;
+        _blocks[i]->dom = p;
         p += nodewords;
     }
     all_closure_sets = p;
     for (i = 0; i < n; ++i)
     {
-        blocks[i]->closure = p;
+        _blocks[i]->closure = p;
         p += nodewords;
     }
     all_edge_sets = p;
     for (i = 0; i < n; ++i)
     {
-        register struct block *b = blocks[i];
+        register struct block *b = _blocks[i];
 
         b->et.edom = p;
         p += edgewords;
         b->ef.edom = p;
         p += edgewords;
         b->et.id = i;
-        edges[i] = &b->et;
+        _edges[i] = &b->et;
         b->ef.id = n_blocks + i;
-        edges[n_blocks + i] = &b->ef;
+        _edges[n_blocks + i] = &b->ef;
         b->et.pred = b;
         b->ef.pred = b;
     }
     max_stmts = 0;
     for (i = 0; i < n; ++i)
-        max_stmts += slength(blocks[i]->stmts) + 1;
+        max_stmts += slength(_blocks[i]->stmts) + 1;
     /*
      * We allocate at most 3 value numbers per statement,
      * so this is an upper bound on the number of valnodes
      * we'll need.
      */
     maxval = 3 * max_stmts;
-    vmap = (struct vmapinfo *) calloc(maxval, sizeof(*vmap));
-    vnode_base = (struct valnode *) calloc(maxval, sizeof(*vnode_base));
-    if (vmap == NULL || vnode_base == NULL)
+    _vmap = (struct vmapinfo *) calloc(maxval, sizeof(*_vmap));
+    _vnode_base = (struct valnode *) calloc(maxval, sizeof(*_vnode_base));
+    if (_vmap == NULL || _vnode_base == NULL)
         bpf_error("malloc");
 }
 
