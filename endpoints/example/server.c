@@ -491,7 +491,6 @@ main(int argc, char *argv[])
 			fprintf(stderr, "Error: thread create failed\n");
 			exit(0);
 		}
-		printf("test4\n");
 	}
 
 	/* turn on the alarm for monitoring */
