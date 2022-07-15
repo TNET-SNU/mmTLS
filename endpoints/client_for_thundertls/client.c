@@ -11,6 +11,8 @@
 #include <resolv.h>
 #include <netdb.h>
 #include <endian.h>
+#include <fcntl.h>
+#include <time.h>
 #include <openssl/ssl.h>
 #include <openssl/hmac.h>
 #include <openssl/evp.h>
@@ -24,23 +26,16 @@
 
 #define FAIL -1
 
+FILE *fp;
 
 char addr[MAX_ADDR_LEN + 1];
 int port;
 int thread_num;
 int test_cnt;
 
+struct timespec t1, t2, t3;
+
 #if !USE_TLS_1_2
-#define AES256_KEY_LEN     32
-#define TLS_1_3_IV_LEN     12
-#define TRAFFIC_SECRET_LEN 48
-
-uint8_t client_write_key[AES256_KEY_LEN];	/* application key, not handshake key */
-uint8_t server_write_key[AES256_KEY_LEN];
-uint8_t client_write_iv[TLS_1_3_IV_LEN];
-uint8_t server_write_iv[TLS_1_3_IV_LEN];
-uint8_t done_flag = 0;
-
 typedef struct __attribute__((__packed__)) {
 	uint16_t length;
 	uint8_t label_ctx[256];
@@ -54,215 +49,25 @@ Usage()
 	exit(0);
 }
 /*-----------------------------------------------------------------------------*/
-#if !USE_TLS_1_2
-static void read_hex(const char *hex, uint8_t *out, size_t outmax, size_t *outlen)
-{
-    size_t i;
-	
-    *outlen = 0;
-    if (strlen(hex) > 2*outmax) {
-		ERROR_PRINT("{%s} error, hex length exceeds outmax (%lu > %lu*2)\n",
-				__FUNCTION__, strlen(hex), outmax*2);
-		exit(1);
-	}
-	
-    for (i = 0; hex[i] && hex[i+1]; i += 2) {
-        unsigned int value = 0;
-        if (!sscanf(hex + i, "%02x", &value)) {
-			ERROR_PRINT("[%s] sscanf fail\n", __FUNCTION__);
-			exit(1);
-		}
-        out[(*outlen)++] = value;
-    }
-}
-/*-----------------------------------------------------------------------------*/
-static unsigned char *HKDF_Expand(const EVP_MD *evp_md,
-                                  const unsigned char *prk, size_t prk_len,
-                                  HkdfLabel *label, size_t label_len,
-                                  unsigned char *okm, size_t okm_len)
-{
-    HMAC_CTX *hmac;
-    unsigned char *ret = NULL;
-
-    unsigned int i;
-
-    unsigned char prev[EVP_MAX_MD_SIZE];
-	memset(prev, 0, EVP_MAX_MD_SIZE);
-
-    size_t done_len = 0, dig_len = EVP_MD_size(evp_md);
-
-    size_t n = okm_len / dig_len;
-    if (okm_len % dig_len)
-        n++;
-
-    if (n > 255 || okm == NULL)
-        return NULL;
-
-    if ((hmac = HMAC_CTX_new()) == NULL)
-        return NULL;
-
-    if (!HMAC_Init_ex(hmac, prk, prk_len, evp_md, NULL))
-        goto err;
-	
-	unsigned char data[MAX_DATA_LEN];
-	size_t len = 0;
-
-	*(uint16_t*)(data+len) = htobe16(label->length);
-	len += 2;
-	*(data+len) = label_len;
-	len += 1;
-	memcpy(data + len, (const char*)(label->label_ctx), label_len);
-	len += label_len;
-	*(data+len) = '\0';
-	len += 1;
-	
-	/* ToDo: handle multiple iterations */
-
-    for (i = 1; i <= n; i++) {
-        size_t copy_len;
-		const unsigned char ctr = i;
-
-        if (i > 1) {	
-			ERROR_PRINT("[%s] Not implemented now\n", __FUNCTION__);
-			goto err;
-			
-            if (!HMAC_Init_ex(hmac, NULL, 0, NULL, NULL))
-                goto err;
-
-			if (!HMAC_Update(hmac, prev, dig_len))
-				goto err;
-			
-			data[len-1] = ctr;
-        }
-		else {
-			data[len++] = ctr;
-		}
-		
-        if (!HMAC_Update(hmac, (const unsigned char*)data, len))
-            goto err;
-		
-        if (!HMAC_Final(hmac, prev, NULL))
-            goto err;
-		
-        copy_len = (done_len + dig_len > okm_len) ?
-                       okm_len - done_len :
-                       dig_len;
-
-        memcpy(okm + done_len, prev, copy_len);
-
-        done_len += copy_len;
-    }
-    ret = okm;
-
- err:
-    OPENSSL_cleanse(prev, sizeof(prev));
-    HMAC_CTX_free(hmac);
-    return ret;
-
-}
-/*-----------------------------------------------------------------------------*/
-void
-get_write_key_1_3 (uint8_t *secret, uint8_t *key_out)
-{
-	HkdfLabel hkdf_label;
-	const EVP_MD *evp_md;
-
-	/* assume hash: SHA384 */
-	evp_md = EVP_get_digestbyname("SHA384");
-
-	hkdf_label.length = AES256_KEY_LEN;
-	memcpy(hkdf_label.label_ctx, "tls13 key", strlen("tls13 key"));
-
-	HKDF_Expand(evp_md, (const uint8_t*)secret, TRAFFIC_SECRET_LEN,
-			     &hkdf_label, strlen("tls13 key"),
-				key_out, AES256_KEY_LEN);
-	return;
-}
-/*-----------------------------------------------------------------------------*/
-void
-get_write_iv_1_3 (uint8_t *secret, uint8_t *iv_out)
-{
-	HkdfLabel hkdf_label;
-	const EVP_MD *evp_md;
-	
-	/* assume hash: SHA384 */
-	evp_md = EVP_get_digestbyname("SHA384");
-
-	hkdf_label.length = TLS_1_3_IV_LEN;
-	memcpy(hkdf_label.label_ctx, "tls13 iv", strlen("tls13 iv"));
-
-	HKDF_Expand(evp_md, (const uint8_t*)secret, TRAFFIC_SECRET_LEN,
-			    &hkdf_label, strlen("tls13 iv"),
-				iv_out, TLS_1_3_IV_LEN);
-	return;
-}
-/*-----------------------------------------------------------------------------*/
 void
 ssl_ctx_new_keylog (const SSL *ssl, const char *line)
 {
-	char *tok;
-	uint8_t secret[1024];
-	char line_cpy[1024];
-	size_t len;
-	
+	const char new_line = '\n';
+
 	KEY_M_PRINT("[%s] Get keylog of SSL %p!\n%s\n",
 			__FUNCTION__, ssl, line);
 
-	memcpy(line_cpy, line, strlen(line)+1);
-	
-	tok = strtok(line_cpy, " ");
-	if (strcmp(tok, "SERVER_TRAFFIC_SECRET_0") == 0) {
-		tok = strtok(NULL, " ");
-		tok = strtok(NULL, " ");
-
-		memcpy(secret, tok, 48);
-		read_hex((const char *)tok, secret, 1024, &len);
-		
-		get_write_key_1_3(secret, server_write_key);
-		get_write_iv_1_3(secret, server_write_iv);
-
-		done_flag |= 0x3;
-	}
-	if (strcmp(tok, "CLIENT_TRAFFIC_SECRET_0") == 0) {
-		tok = strtok(NULL, " ");
-		tok = strtok(NULL, " ");
-
-		memcpy(secret, tok, 48);
-		read_hex((const char *)tok, secret, 1024, &len);
-
-		get_write_key_1_3(secret, client_write_key);
-		get_write_iv_1_3(secret, client_write_iv);
-
-		done_flag |= 0xc;
+	if (fwrite(line, sizeof(char), strlen(line), fp) == -1) {
+		ERROR_PRINT("Error: write()\n");
+		exit(0);
 	}
 
-	if (done_flag == 0xf) {
-		int i;
-		
-		KEY_M_PRINT("client write key:\n");
-		for (i = 0; i < 32; i++) {
-			KEY_M_PRINT("%02X", client_write_key[i]);
-		}
-		KEY_M_PRINT("\n");
-		KEY_M_PRINT("client write iv:\n");
-		for (i = 0; i < 12; i++) {
-			KEY_M_PRINT("%02X", client_write_iv[i]);
-		}
-		KEY_M_PRINT("\n");
-		KEY_M_PRINT("server write key:\n");
-		for (i = 0; i < 32; i++) {
-			KEY_M_PRINT("%02X", server_write_key[i]);
-		}
-		KEY_M_PRINT("\n");
-		KEY_M_PRINT("server write iv:\n");
-		for (i = 0; i < 12; i++) {
-			KEY_M_PRINT("%02X", server_write_iv[i]);
-		}
-		KEY_M_PRINT("\n");
+	if (fwrite(&new_line, sizeof(char), 1, fp) == -1) {
+		ERROR_PRINT("Error: write()\n");
+		exit(0);
 	}
 	
 }
-#endif		/* !USE_TLS_1_2 */
 /*-----------------------------------------------------------------------------*/
 int
 OpenConnection(const char *hostname, int port)
@@ -382,7 +187,7 @@ worker(void *arg)
 			ERR_print_errors_fp(stderr);
 		else {
 			ShowCerts(ssl);        /* get any certs */
-
+		CLOCK_EVAL(&t1);
 #if USE_TLS_1_2
 			/* extract master secret, and calculate session key block */
 			uint8_t client_random[128], server_random[128];
@@ -424,6 +229,7 @@ worker(void *arg)
 #endif	/* USE_TLS_1_2 */
 			
 			SSL_write(ssl, msg, strlen(msg));   /* encrypt & send message */
+			CLOCK_EVAL(&t3);
 			bytes = SSL_read(ssl, buf, sizeof(buf)); /* get reply & decrypt */
 			buf[bytes] = 0;
 
@@ -441,56 +247,104 @@ worker(void *arg)
 int
 main(int argc, char *argv[])
 {
-  pthread_t p_thread[MAX_THREAD_NUM];
+	pthread_t p_thread[MAX_THREAD_NUM];
 
-  int i;
-  char c;
-  thread_num = 1;
-  test_cnt = 1;
-  port = 4888;
+	int i;
+	char c;
+	thread_num = 1;
+	test_cnt = 1;
+	port = 4888;
 
-  /* parse arguments */
-  while ((c = getopt(argc, argv, "a:p:t:n:")) != -1) {
-	  if (c == 'a') { 
-		  if (strlen(optarg) > MAX_ADDR_LEN) {
-			  ERROR_PRINT("error: invalid ip address\n");
-			  exit(0);
-		  }
-		  memcpy(addr, optarg, strlen(optarg)); 
-		  addr[strlen(optarg)] = '\0';
-	  } else if (c == 'p') { 
-		  port = atoi(optarg); 
-	  } else if (c == 't') { 
-		  thread_num = atoi(optarg);
-		  if(thread_num < 1) {
-			  ERROR_PRINT("Error: thread_num should be more than 0\n");
-			  exit(0);
-		  }
-	  } else if (c == 'n') { 
-		  test_cnt = atoi(optarg); 
-	  } else {   
-		  Usage();
-	  }
-  }
-  
-  /* extend limit of available file descriptor number */
-  const struct rlimit rlp = {100000, 100000};
-  struct rlimit rlp_copy;
-  setrlimit(RLIMIT_NOFILE, &rlp);
-  getrlimit(RLIMIT_NOFILE, &rlp_copy);
+	/* parse arguments */
+	while ((c = getopt(argc, argv, "a:p:t:n:")) != -1) {
+		if (c == 'a') { 
+			if (strlen(optarg) > MAX_ADDR_LEN) {
+				ERROR_PRINT("error: invalid ip address\n");
+				exit(0);
+			}
+			memcpy(addr, optarg, strlen(optarg)); 
+			addr[strlen(optarg)] = '\0';
+		} else if (c == 'p') { 
+			port = atoi(optarg); 
+		} else if (c == 't') { 
+			thread_num = atoi(optarg);
+			if(thread_num < 1) {
+				ERROR_PRINT("Error: thread_num should be more than 0\n");
+				exit(0);
+			}
+		} else if (c == 'n') { 
+			test_cnt = atoi(optarg); 
+		} else {   
+			Usage();
+		}
+	}
+	
+	/* extend limit of available file descriptor number */
+	const struct rlimit rlp = {100000, 100000};
+	struct rlimit rlp_copy;
+	setrlimit(RLIMIT_NOFILE, &rlp);
+	getrlimit(RLIMIT_NOFILE, &rlp_copy);
 
-  SSL_library_init();
+	SSL_library_init();
 
-  for(i = 0; i < thread_num; i++) {
-	  if(pthread_create(&p_thread[i], NULL, worker, NULL) < 0) {
-		  ERROR_PRINT("Error: thread create failed\n");
-		  exit(0);
-	  }
-  }
+	if (0 > (fp = fopen("keylog/key_log.txt", "a+w"))) {
+		ERROR_PRINT("Error: open() failed");
+		exit(0);
+	}
 
-  for(i = 0; i < thread_num; i++) {
-	  pthread_join(p_thread[i], NULL);
-  }
+	for(i = 0; i < thread_num; i++) {
+		if(pthread_create(&p_thread[i], NULL, worker, NULL) < 0) {
+			ERROR_PRINT("Error: thread create failed\n");
+			exit(0);
+		}
+	}
 
-  return 0;
+	for(i = 0; i < thread_num; i++) {
+		pthread_join(p_thread[i], NULL);
+	}
+
+	fclose(fp);
+	CLOCK_EVAL(&t2);
+	
+#if VERBOSE_EVAL
+		sleep(0.1);
+		const char new_line = '\n';
+		FILE *fp1 = fopen("client.txt", "a+w");
+		char line1[128];
+		sprintf(line1, "%lf", (double)t2.tv_nsec/1000 );
+		if (fwrite(line1, sizeof(char), strlen(line1), fp1) == -1) {
+			ERROR_PRINT("Error: write()\n");
+			exit(0);
+		}
+		if (fwrite(&new_line, sizeof(char), 1, fp1) == -1) {
+			ERROR_PRINT("Error: write()\n");
+			exit(0);
+		}
+
+		FILE *fp2 = fopen("connect-send.txt", "a+w");
+		char line2[128];
+		sprintf(line2, "%lf", (double)t3.tv_nsec/1000-(double)t1.tv_nsec/1000);
+		if (fwrite(line2, sizeof(char), strlen(line2), fp2) == -1) {
+			ERROR_PRINT("Error: write()\n");
+			exit(0);
+		}
+		if (fwrite(&new_line, sizeof(char), 1, fp2) == -1) {
+			ERROR_PRINT("Error: write()\n");
+			exit(0);
+		}
+
+		FILE *fp3 = fopen("send-close.txt", "a+w");
+		char line3[128];
+		sprintf(line3, "%lf", (double)t2.tv_nsec/1000-(double)t3.tv_nsec/1000);
+		if (fwrite(line3, sizeof(char), strlen(line3), fp3) == -1) {
+			ERROR_PRINT("Error: write()\n");
+			exit(0);
+		}
+		if (fwrite(&new_line, sizeof(char), 1, fp3) == -1) {
+			ERROR_PRINT("Error: write()\n");
+			exit(0);
+		}
+#endif
+
+	return 0;
 }
