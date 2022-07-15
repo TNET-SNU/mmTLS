@@ -1,0 +1,130 @@
+<!-- Creator     : groff version 1.22.3 -->
+<!-- CreationDate: Mon Aug 28 02:48:47 2017 -->
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+"http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<meta name="generator" content="groff -Thtml, see www.gnu.org">
+<meta http-equiv="Content-Type" content="text/html; charset=US-ASCII">
+<meta name="Content-Style" content="text/css">
+<style type="text/css">
+       p       { margin-top: 0; margin-bottom: 0; vertical-align: top }
+       pre     { margin-top: 0; margin-bottom: 0; vertical-align: top }
+       table   { margin-top: 0; margin-bottom: 0; vertical-align: top }
+       h1      { text-align: center }
+</style>
+<title>mtcp_core_affinitize</title>
+<link rel="stylesheet" href="./common.css">
+</head>
+<body>
+<div class="main">
+<h1 align="center">mtcp_core_affinitize</h1>
+<!--
+<a href="#NAME">NAME</a><br>
+<a href="#SYNOPSIS">SYNOPSIS</a><br>
+<a href="#DESCRIPTION">DESCRIPTION</a><br>
+<a href="#RETURN VALUE">RETURN VALUE</a><br>
+<a href="#NOTES">NOTES</a><br>
+<a href="#AUTHORS">AUTHORS</a><br>
+<a href="#SEE ALSO">SEE ALSO</a><br>
+<a href="#COLOPHON">COLOPHON</a><br>
+
+<hr>
+-->
+
+<h2>NAME
+<a name="NAME"></a>
+</h2>
+
+
+
+<p style="margin-left:11%; margin-top: 1em">mtcp_core_affinitize
+&minus; bind a calling thread to a specific CPU core</p>
+
+<h2>SYNOPSIS
+<a name="SYNOPSIS"></a>
+</h2>
+
+
+<p style="margin-left:11%; margin-top: 1em"><b>#include
+&lt;mtcp_api.h&gt;</b></p>
+
+<p style="margin-left:11%; margin-top: 1em"><b>int
+mtcp_core_affinitize(int</b> <i>cpu</i><b>);</b></p>
+
+<h2>DESCRIPTION
+<a name="DESCRIPTION"></a>
+</h2>
+
+
+
+<p style="margin-left:11%; margin-top: 1em"><b>mtcp_core_affinitize</b>()
+binds a calling thread to a specifc CPU core. This function
+is a utility function which internally performs
+<b>sched_setaffinity</b>() for dedicating one CPU to a
+particular thread, and <b>numa_set_membind</b>() for
+restricting any future memory allocation to happen within
+the NUMA node.</p>
+
+<p style="margin-left:11%; margin-top: 1em">This function
+is used by end TCP applications to pin their application
+threads to a specific core in order to gain performance
+benefits. For example, restricting an application thread to
+run on a single CPU core avoids any cache invalidation that
+can be caused when the thread is moved from one CPU core to
+another CPU core.</p>
+
+<p style="margin-left:11%; margin-top: 1em">The function
+requires a sole <i>cpu</i> integer argument that passes the
+CPU core-id of the system on which the stack is
+instantiated.</p>
+
+<h2>RETURN VALUE
+<a name="RETURN VALUE"></a>
+</h2>
+
+
+<p style="margin-left:11%; margin-top: 1em">Returns 0 on
+success; -1 on failure.</p>
+
+<h2>NOTES
+<a name="NOTES"></a>
+</h2>
+
+
+<p style="margin-left:11%; margin-top: 1em">Passing an
+invalid CPU core-id (value &lt; 0 or value &gt; max_cpus)
+will prevent the creation of the mTCP stack.</p>
+
+<h2>AUTHORS
+<a name="AUTHORS"></a>
+</h2>
+
+
+<p style="margin-left:11%; margin-top: 1em">mOS development
+team &lt;mtcp-user@list.ndsl.kaist.edu&gt;</p>
+
+<h2>SEE ALSO
+<a name="SEE ALSO"></a>
+</h2>
+
+
+
+<p style="margin-left:11%; margin-top: 1em"><b>mtcp_create_context</b>()</p>
+
+<h2>COLOPHON
+<a name="COLOPHON"></a>
+</h2>
+
+
+<p style="margin-left:11%; margin-top: 1em">This page is
+part of mOS release 0.3 <i>docs</i> section. A description
+of the project, and information about reporting bugs, can be
+found at http://mos.kaist.edu/.</p>
+<hr>
+<div class="footer">
+  <img src="back-arrow.jpg" width="2%" height="2%"><a href="http://mos.kaist.edu/index_man.html">Back to Index</a>
+</div>
+</div>
+</body>
+</html>

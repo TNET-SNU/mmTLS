@@ -68,15 +68,12 @@ InitCTX(void)
   SSL_CTX *ctx;
   static int flag = 0;
 
-  printf("test0.2\n");
-
   if(flag == 0) {
   	  flag = 1;
   	  OpenSSL_add_all_algorithms();  /* Load cryptos, et.al. */
   	  SSL_load_error_strings();   /* Bring in and register error messages */
   }
 
-  /* printf("test0.4\n"); */
   /* OpenSSL_add_all_algorithms();  /\* Load cryptos, et.al. *\/ */
   /* SSL_load_error_strings();   /\* Bring in and register error messages *\/ */
   method = TLS_client_method();  /* Create new client-method instance */
@@ -86,7 +83,6 @@ InitCTX(void)
       ERR_print_errors_fp(stderr);
       abort();
     }
-  printf("test0.5\n");
   return ctx;
 }
 /*-----------------------------------------------------------------------------*/
@@ -131,8 +127,6 @@ worker(void *arg)
 	int cnt;
 	char *msg = "Hello???";
 
-	printf("test1\n");			/* debug by duckwoo */
-
 	for(cnt = 0; cnt < test_cnt; cnt++) {
 		server = OpenConnection(addr, port);
 
@@ -155,7 +149,6 @@ worker(void *arg)
 		close(server);         /* close socket */
 	}
 	
-	printf("test2\n");			/* debug by duckwoo */
 	SSL_CTX_free(ctx);        /* release context */
 	return NULL;
 }
@@ -217,7 +210,6 @@ main(int argc, char *argv[])
   /* ctx = InitCTX(); */
 
   for(i = 0; i < thread_num; i++) {
-	  printf("test0\n");			/* debug by duckwoo */
 	  if(pthread_create(&p_thread[i], NULL, worker, NULL) < 0) {
 		  fprintf(stderr, "Error: thread create failed\n");
 		  exit(0);
@@ -249,7 +241,6 @@ main(int argc, char *argv[])
 
   for(i = 0; i < thread_num; i++) {
 	  pthread_join(p_thread[i], NULL);
-	  printf("test3\n");			/* debug by duckwoo */
   }
 
   return 0;
