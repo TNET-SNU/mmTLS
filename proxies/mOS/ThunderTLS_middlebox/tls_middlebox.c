@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netinet/udp.h>
 #include <fcntl.h>
 #include <string.h>
 #include <time.h>
@@ -20,6 +21,7 @@
 
 #include <mos_api.h>
 #include "cpu.h"
+#include "tls.h"
 
 /* Maximum CPU cores */
 #define MAX_CORES       16
@@ -28,50 +30,25 @@
 /* Default path to mOS configuration file */
 #define MOS_CONFIG_FILE     "config/mos.conf"
 
-#define MAX_BUF_LEN      1048576    /* 1M */
-#define MAX_RECORD_LEN   16384		/* 16K */
+#define IP_HEADER_LEN    20
+#define UDP_HEADER_LEN   8
 #define TLS_HEADER_LEN   5
+
+#define MAX_BUF_LEN      1048576    /* 1M */
+#define MAX_LINE_LEN     1280
+
+#define UDP_PORT      6666		/* only for debug */
 
 #define VERBOSE_TCP   0
 #define VERBOSE_TLS   0
+#define VERBOSE_KEY   0
+#define VERBOSE_DEBUG   0
 
 #define UINT32_LT(a,b)         ((int32_t)((a)-(b)) < 0)
 #define UINT32_LEQ(a,b)        ((int32_t)((a)-(b)) <= 0)
 #define UINT32_GT(a,b)         ((int32_t)((a)-(b)) > 0)
 #define UINT32_GEQ(a,b)        ((int32_t)((a)-(b)) >= 0)
 /*----------------------------------------------------------------------------*/
-/* Global variables */
-enum {
-    CHANGE_CIPHER_SPEC  = 0x14,
-    ALERT               = 0x15,
-    HANDSHAKE           = 0x16,
-    APPLICATION_DATA    = 0x17,
-} tls_record_type;
-
-typedef struct tls_record {
-	uint8_t type;
-	uint32_t tcp_seq;
-	uint64_t rec_seq;
-
-	uint8_t plaintext[MAX_RECORD_LEN];
-	uint8_t ciphertext[MAX_RECORD_LEN];
-	uint16_t plain_len;
-	uint16_t cipher_len;
-} tls_record;
-
-typedef struct tls_context {
-	uint16_t version;
-	uint16_t cipher_suite;
-
-	uint64_t last_rec_seq[2];
-	uint32_t rec_cnt[2];
-	
-	uint32_t unparse_tcp_seq[2];
-	/**< starting point to parse a new record */
-
-	tls_record last_rec[2];
-} tls_context;
-
 struct connection {
     int sock;                      /* socket ID */
     struct sockaddr_in addrs[2];   /* Address of a client and a serer */
@@ -119,7 +96,7 @@ find_connection(int cpu, int sock)
 }
 /*----------------------------------------------------------------------------*/
 /* Dump bytestream in hexademical form */
-#if VERBOSE_TCP | VERBOSE_TLS
+#if VERBOSE_TCP | VERBOSE_TLS | VERBOSE_KEY | VERBOSE_DEBUG
 static void
 hexdump(char *title, uint8_t *buf, size_t len)
 {
@@ -133,11 +110,146 @@ hexdump(char *title, uint8_t *buf, size_t len)
 				((i + 1) % 16 ? ' ' : '\n'));
 	fprintf(stderr, "\n");
 }
+#else
+static void
+hexdump(char *title, uint8_t *buf, size_t len)
+{
+}
+#endif	/* !VERBOSEs */
+/*----------------------------------------------------------------------------*/
+#if VERBOSE_KEY
+/* Parse session address */
+/* Return length of parsed data, -1 of error */
+static void
+DumpTLSKey(struct tls_crypto_info *key_info, session_address_t sess_addr)
+{
+	uint16_t cipher_suite = key_info->cipher_type;
+	uint16_t mask = key_info->key_mask;
+	uint16_t key_len;
+	uint16_t iv_len;
+
+	UNUSED(cipher_suite);
+	key_len = TLS_CIPHER_AES_GCM_256_KEY_SIZE;
+	iv_len = TLS_CIPHER_AES_GCM_256_IV_SIZE;
+
+	fprintf(stderr, "------------------------------\n[%s] %x:%u -> %x:%u\n",
+			__FUNCTION__, sess_addr->client_ip, sess_addr->client_port,
+			sess_addr->server_ip, sess_addr->server_port);
+	
+	if (mask & CLI_KEY_MASK) {
+		hexdump("client_write_key:", key_info->client_key, key_len);
+	}
+	if (mask & SRV_KEY_MASK) {
+		hexdump("server_write_key:", key_info->server_key, key_len);
+	}
+	if (mask & CLI_IV_MASK) {
+		hexdump("client_write_iv:", key_info->client_iv, iv_len);
+	}
+	if (mask & SRV_IV_MASK) {
+		hexdump("server_write_iv:", key_info->server_iv, iv_len);
+	}
+}
+#endif	/* VERBOSE_KEY */
+/*----------------------------------------------------------------------------*/
+/* Parse session address */
+/* Return length of parsed data, -1 of error */
+static int
+ParseSessionAddr(uint8_t *data, uint16_t datalen,
+				 session_address_t sess_addr)
+{
+	char *tok = NULL;
+	uint32_t ip_addr;
+	uint16_t port;
+
+#if VERBOSE_DEBUG
+	fprintf(stderr, "[%s]\n", __FUNCTION__);
+	hexdump("", data, datalen);
 #endif
+	
+	/* Parse src/dst IP address */
+	if ((tok = strtok((char *)data, " ")) == NULL) {
+		return -1;
+	}
+	ip_addr = strtol(tok, NULL, 16);
+	sess_addr->client_ip = ip_addr;
+	
+	if ((tok = strtok(NULL, " ")) == NULL) {
+		return -1;
+	}
+	ip_addr = strtol(tok, NULL, 16);
+	sess_addr->server_ip = ip_addr;
+
+	/* Parse src/dst port */
+	if ((tok = strtok(NULL, " ")) == NULL) {
+		return -1;
+	}
+	port = strtol(tok, NULL, 10);
+	sess_addr->client_port = port;
+	
+	if ((tok = strtok(NULL, " ")) == NULL) {
+		return -1;
+	}
+	port = strtol(tok, NULL, 10);
+	sess_addr->server_port = port;
+
+	if (tok == NULL) {
+		return 0;
+	}
+	return (tok + strlen(tok) + 1) - (char *)data;
+}
+/*----------------------------------------------------------------------------*/
+/* Parse payload to get TLS session key data into key_info */
+/* Return length of parsed data, -1 of error */
+static int
+ParseTLSKey(uint8_t *data, uint16_t datalen,
+		    struct tls_crypto_info *key_info)
+{
+	uint16_t cipher_suite, key_mask;
+	char *ptr = NULL;
+	int key_len, iv_len;
+
+	assert(key_info);
+
+	ptr = (char*)data;
+	
+	cipher_suite = ntohs(*(uint16_t*)ptr);
+	key_info->cipher_type = cipher_suite;
+	key_len = TLS_CIPHER_AES_GCM_256_KEY_SIZE;
+	iv_len = TLS_CIPHER_AES_GCM_256_IV_SIZE;
+	ptr += sizeof(cipher_suite);
+
+	key_mask = ntohs(*((uint16_t*)ptr));
+	key_info->key_mask |= key_mask;
+	ptr += sizeof(key_mask);
+
+	hexdump("chunk:", (uint8_t*)ptr, datalen - 4);
+	
+	if (key_mask & CLI_KEY_MASK) {
+		hexdump("cli key", (uint8_t*)ptr, key_len);
+			
+		memcpy(key_info->client_key, ptr, key_len);
+		ptr += key_len;
+	}
+	if (key_mask & SRV_KEY_MASK) {
+		hexdump("srv key", (uint8_t*)ptr, key_len);
+		
+		memcpy(key_info->server_key, ptr, key_len);
+		ptr += key_len;
+	}
+	if (key_mask & CLI_IV_MASK) {
+		memcpy(key_info->client_iv, ptr, iv_len);
+		ptr += iv_len;
+	}
+	if (key_mask & SRV_IV_MASK) {
+		memcpy(key_info->client_iv, ptr, iv_len);
+		ptr += iv_len;
+	}
+
+	return ptr - (char*)data;
+}
 /*----------------------------------------------------------------------------*/
 /* Parse TCP payload to assemble single TLS record */
 /* Return byte of parsed record, 0 if no complete record */
-/* ToDo: This should be moved to separate source file */
 static uint32_t
 ParseTLSRecord(struct connection *c, int side)
 {
@@ -260,7 +372,8 @@ static void
 cb_new_data(mctx_t mctx, int sock, int side,
 			uint64_t events, filter_arg_t *arg)
 {
-	uint16_t len, record_len;
+	uint16_t record_len;
+	int len;
 	uint32_t buf_off;
 
     struct connection *c;
@@ -282,7 +395,7 @@ cb_new_data(mctx_t mctx, int sock, int side,
 
 	if (len > 0) {
 #if VERBOSE_TCP
-		fprintf(stderr, "[%s] %s received %u B (seq %u ~ %u) TCP data!\n",
+		fprintf(stderr, "[%s] from %s, received %u B (seq %u ~ %u) TCP data!\n",
 				__FUNCTION__, (side == MOS_SIDE_CLI) ? "client":"server",
 				len, c->seq_tail[side], c->seq_tail[side] + len);
 
@@ -298,11 +411,121 @@ cb_new_data(mctx_t mctx, int sock, int side,
 	}
 }
 /*----------------------------------------------------------------------------*/
-/* Register required callbacks */
+/* Update connection's TCP state of each side */
 static void
-RegisterCallbacks(mctx_t mctx, int sock, event_t ev_new_syn)
+cb_new_key(mctx_t mctx, int sock, int side,
+		   uint64_t events, filter_arg_t *arg)
 {
-    /* Register callbacks */
+	struct pkt_info p;
+	uint8_t *payload, *ptr;
+	uint16_t payloadlen;
+	struct udphdr *udph;
+	struct tls_crypto_info key_info;
+	struct session_address sess_addr = {0};
+	int sock_mon = 0;
+	int offset;
+	uint16_t left_len;
+
+	if (mtcp_getlastpkt(mctx, sock, side, &p) < 0) {
+        fprintf(stderr, "Failed to get packet context!!!\n");
+		exit(EXIT_FAILURE);
+	}
+
+	udph = (struct udphdr*)(p.iph+1);
+	payload = (uint8_t*)(p.iph) + IP_HEADER_LEN + UDP_HEADER_LEN;
+	payloadlen = htons(udph->len) - UDP_HEADER_LEN;
+	
+#if VERBOSE_KEY
+	fprintf(stderr, "\n--------------------------------------------------\n");
+	fprintf(stderr, "[%s] sock: %d, side: %u\n",
+			__FUNCTION__, sock, side);
+	if (p.ip_len > IP_HEADER_LEN) {
+		fprintf(stderr, "[%s] p.iph: %p, p.ip_len: %u, ip payload: %p\n",
+				__FUNCTION__, p.iph, p.ip_len, payload);
+		fprintf(stderr, "[%s] src/dst port: %u -> %u, len: %u\n",
+				__FUNCTION__, ntohs(udph->source), ntohs(udph->dest), htons(udph->len));
+
+		fprintf(stderr, "[%s] from %s, received %u B KEY!\n", __FUNCTION__,
+				(side == MOS_SIDE_CLI) ? "client":"server", payloadlen);
+
+		hexdump(NULL, payload, payloadlen);
+	}
+#endif
+
+	left_len = payloadlen;
+	ptr = payload;
+	
+	offset = ParseTLSKey(ptr, left_len, &key_info);
+	ptr += offset;
+	left_len -= offset;
+
+	offset = ParseSessionAddr(ptr, left_len, &sess_addr);
+	sock_mon = mtcp_addrtosock(mctx, &sess_addr);
+	fprintf(stderr, "sock: %d\n", sock_mon);
+
+#if VERBOSE_KEY
+	DumpTLSKey(&key_info, &sess_addr);
+#endif
+
+	if (sock_mon < 0) {
+		return;
+	}
+
+	mtcp_setsockopt(mctx, sock_mon, SOL_MONSOCKET,
+					MOS_TLS_SP, &key_info, sizeof(key_info));
+
+	struct tls_crypto_info key_info_tmp;
+	socklen_t key_info_len = sizeof(key_info_tmp);
+	mtcp_getsockopt(mctx, sock_mon, SOL_MONSOCKET,
+					MOS_TLS_SP, &key_info_tmp, &key_info_len);
+	hexdump("Get tls_crypto_info:", (uint8_t*)&key_info_tmp, key_info_len);
+
+	return;
+}
+/*----------------------------------------------------------------------------*/
+static bool
+CheckIsKey(mctx_t mctx, int sock,
+		   int side, uint64_t events, filter_arg_t *arg)
+{
+	struct pkt_info p;
+	struct udphdr *udph;
+
+	if (mtcp_getlastpkt(mctx, sock, side, &p) < 0) {
+        fprintf(stderr, "Failed to get packet context!!!\n");
+		exit(EXIT_FAILURE);
+	}
+
+	udph = (struct udphdr*)(p.iph+1);
+
+	if (p.iph->protocol == IPPROTO_UDP &&
+		ntohs(udph->dest) == UDP_PORT &&
+		p.ip_len > IP_HEADER_LEN)
+		return 1;
+	else
+		return 0;
+}
+/*----------------------------------------------------------------------------*/
+static void
+RegisterSessionKeyCallback(mctx_t mctx, int sock)
+{
+	event_t ude_from_ctrl;
+
+	ude_from_ctrl = mtcp_define_event(MOS_ON_PKT_IN, CheckIsKey, NULL);
+	if (ude_from_ctrl == MOS_NULL_EVENT) {
+        fprintf(stderr, "mtcp_define_event() failed!");
+		exit(EXIT_FAILURE);
+	}
+	
+    if (mtcp_register_callback(mctx, sock, ude_from_ctrl,
+                   MOS_NULL, cb_new_key)) {
+        fprintf(stderr, "Failed to register cb_new_key()\n");
+        exit(EXIT_FAILURE);
+    }
+}
+/*----------------------------------------------------------------------------*/
+static void
+RegisterDataCallback(mctx_t mctx, int sock)
+{
     if (mtcp_register_callback(mctx, sock, MOS_ON_CONN_START,
                    MOS_HK_SND, cb_creation)) {
         fprintf(stderr, "Failed to register cb_creation()\n");
@@ -314,6 +537,7 @@ RegisterCallbacks(mctx_t mctx, int sock, event_t ev_new_syn)
         exit(-1); /* no point in proceeding if callback registration fails */
     }
 
+	
     if (mtcp_register_callback(mctx, sock, MOS_ON_CONN_NEW_DATA,
                    MOS_NULL, cb_new_data)) {
         fprintf(stderr, "Failed to register cb_new_data()\n");
@@ -321,30 +545,50 @@ RegisterCallbacks(mctx_t mctx, int sock, event_t ev_new_syn)
     }
 }
 /*----------------------------------------------------------------------------*/
-/* Open monitoring socket and ready it for monitoring */
+/* Register required callbacks */
 static void
-InitMonitor(mctx_t mctx, event_t ev_new_syn)
+RegisterCallbacks(mctx_t mctx)
 {
-    int sock;
+    int sock_key, sock_stream;
 
-    /* Initialize internal memory structures */
-    TAILQ_INIT(&g_sockq[mctx->cpu]);
+	/* Register UDE for session key from client */
+    if ((sock_key = mtcp_socket(mctx, AF_INET,
+                         MOS_SOCK_MONITOR_RAW, 0)) < 0) {
+        fprintf(stderr, "Failed to create monitor listening socket!\n");
+        exit(-1); /* no point in proceeding if we don't have a listening socket */
+    }
+	union monitor_filter ft = {0};
+	ft.raw_pkt_filter = "ip proto 17";
+	if (mtcp_bind_monitor_filter(mctx, sock_key, &ft) < 0) {
+		fprintf(stderr, "Failed to bind ft to the listening socket!\n");
+		exit(-1);
+	}
+	RegisterSessionKeyCallback(mctx, sock_key);
 
-    /* create socket and set it as nonblocking */
-    if ((sock = mtcp_socket(mctx, AF_INET,
+	
+	/* Register UDE for TCP connetions */
+    if ((sock_stream = mtcp_socket(mctx, AF_INET,
                          MOS_SOCK_MONITOR_STREAM, 0)) < 0) {
         fprintf(stderr, "Failed to create monitor listening socket!\n");
         exit(-1); /* no point in proceeding if we don't have a listening socket */
     }
+	RegisterDataCallback(mctx, sock_stream);
+}
+/*----------------------------------------------------------------------------*/
+/* Open monitoring socket and ready it for monitoring */
+static void
+InitMonitor(mctx_t mctx)
+{
+    /* Initialize internal memory structures */
+    TAILQ_INIT(&g_sockq[mctx->cpu]);
 
-    RegisterCallbacks(mctx, sock, ev_new_syn);
+    RegisterCallbacks(mctx);
 }
 /*----------------------------------------------------------------------------*/
 int
 main(int argc, char **argv)
 {
 	int ret, i;
-	event_t ev_new_syn;
 	char *fname = MOS_CONFIG_FILE; /* path to the default mos config file */
 	struct mtcp_conf mcfg;
 	/* char tls_middlebox_file[1024] = "config/tls_middlebox.conf"; */
@@ -400,7 +644,7 @@ main(int argc, char **argv)
         }
 
         /* init monitor */
-        InitMonitor(g_mctx[i], ev_new_syn);
+        InitMonitor(g_mctx[i]);
 	}
 
 	/* wait until all threads finish */	
@@ -414,3 +658,4 @@ main(int argc, char **argv)
 	return EXIT_SUCCESS;
 }
 /*----------------------------------------------------------------------------*/
+

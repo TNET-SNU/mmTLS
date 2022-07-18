@@ -1287,3 +1287,9 @@ mtcp_get_debug_string(mctx_t mctx, char *buf, int len)
 #endif /* ENABLE_DEBUG_EVENT */
 }
 /*----------------------------------------------------------------------------*/
+int
+mtcp_addrtosock(mctx_t mctx, session_address_t sess_addr)
+{
+	return mtcp_search_sockid(mctx, sess_addr);
+}
+/*----------------------------------------------------------------------------*/
