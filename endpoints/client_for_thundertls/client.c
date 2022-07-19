@@ -8,6 +8,8 @@
 #include <pthread.h>
 #include <sys/socket.h>
 #include <sys/resource.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <resolv.h>
 #include <netdb.h>
 #include <endian.h>
@@ -32,6 +34,8 @@ char addr[MAX_ADDR_LEN + 1];
 int port;
 int thread_num;
 int test_cnt;
+char src_ip[MAX_ADDR_LEN + 1];
+int s_port;
 
 struct timespec t1, t2, t3;
 
@@ -49,15 +53,98 @@ Usage()
 	exit(0);
 }
 /*-----------------------------------------------------------------------------*/
+void 
+reverse(char s[])
+{
+	int i, j;
+	char c;
+
+	for (i = 0, j = strlen(s)-1; i<j; i++, j--) {
+		c = s[i];
+		s[i] = s[j];
+		s[j] = c;
+	}
+}
+/*-----------------------------------------------------------------------------*/
+void 
+itoa(int n, char s[])
+	{
+	int i = 0, sign;
+
+	if ((sign = n) < 0)
+		n = -n; 
+
+	do {
+		s[i++] = n % 10 + '0';
+	} while ((n /= 10) > 0);
+
+	if (sign < 0)
+		s[i++] = '-';
+	s[i] = '\0';
+
+	reverse(s);
+}
+/*-----------------------------------------------------------------------------*/
 void
 ssl_ctx_new_keylog (const SSL *ssl, const char *line)
 {
+	const char space = ' ';
 	const char new_line = '\n';
 
 	KEY_M_PRINT("[%s] Get keylog of SSL %p!\n%s\n",
 			__FUNCTION__, ssl, line);
 
 	if (fwrite(line, sizeof(char), strlen(line), fp) == -1) {
+		ERROR_PRINT("Error: write()\n");
+		exit(0);
+	}
+	if (fwrite(&space, sizeof(char), 1, fp) == -1) {
+		ERROR_PRINT("Error: write()\n");
+		exit(0);
+	}
+	
+	/* src ip */
+	if (fwrite((const char*)src_ip, sizeof(char), strlen(src_ip), fp) == -1) {
+		ERROR_PRINT("Error: write()\n");
+		exit(0);
+	}
+	if (fwrite(&space, sizeof(char), 1, fp) == -1) {
+		ERROR_PRINT("Error: write()\n");
+		exit(0);
+	}
+
+	/* dst ip */
+	if (fwrite((const char*)addr, sizeof(char), strlen(addr), fp) == -1) {
+		ERROR_PRINT("Error: write()\n");
+		exit(0);
+	}
+	if (fwrite(&space, sizeof(char), 1, fp) == -1) {
+		ERROR_PRINT("Error: write()\n");
+		exit(0);
+	}
+
+	/* src port */
+	char src_port[MAX_PORT_LEN+1];
+
+	itoa(s_port, src_port);
+	if (fwrite((const char*)src_port, sizeof(char), strlen(src_port), fp) == -1) {
+		ERROR_PRINT("Error: write()\n");
+		exit(0);
+	}
+	if (fwrite(&space, sizeof(char), 1, fp) == -1) {
+		ERROR_PRINT("Error: write()\n");
+		exit(0);
+	}
+
+	/* dst port */
+	char dst_port[MAX_PORT_LEN+1];
+
+	itoa(port, dst_port);
+	if (fwrite((const char*)dst_port, sizeof(char), strlen(dst_port), fp) == -1) {
+		ERROR_PRINT("Error: write()\n");
+		exit(0);
+	}
+	if (fwrite(&space, sizeof(char), 1, fp) == -1) {
 		ERROR_PRINT("Error: write()\n");
 		exit(0);
 	}
@@ -72,33 +159,42 @@ ssl_ctx_new_keylog (const SSL *ssl, const char *line)
 int
 OpenConnection(const char *hostname, int port)
 {
-  int sd;
-  static struct hostent *host;
-  static struct sockaddr_in addr;
-  int optval = 1;
-  static int flag = 0;
+	int sd;
+	static struct hostent *host;
+	static struct sockaddr_in addr;
+	int optval = 1;
+	static int flag = 0;
 
-  if(flag == 0) {
-	  flag = 1;
-	  if ( (host = gethostbyname(hostname)) == NULL ) {
-		  perror(hostname);
-		  abort();
-	  }
-	  bzero(&addr, sizeof(addr));
-	  addr.sin_family = AF_INET;
-	  addr.sin_port = htons(port /* + rand() % thread_num */);
-	  addr.sin_addr.s_addr = *(long*)(host->h_addr);
-  }
+	if (flag == 0) {
+		flag = 1;
+		if ( (host = gethostbyname(hostname)) == NULL ) {
+			perror(hostname);
+			abort();
+		}
+		bzero(&addr, sizeof(addr));
+		addr.sin_family = AF_INET;
+		addr.sin_port = htons(port /* + rand() % thread_num */);
+		addr.sin_addr.s_addr = *(long*)(host->h_addr);
+	}
 
-  sd = socket(PF_INET, SOCK_STREAM, 0);
-  setsockopt(sd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
+	sd = socket(PF_INET, SOCK_STREAM, 0);
+	setsockopt(sd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
 
-  if (connect(sd, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
-      close(sd);
-      perror(hostname);
-      abort();
-  }
-  return sd;
+	if (connect(sd, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+		close(sd);
+		perror(hostname);
+		abort();
+	}
+
+	struct sockaddr_in client;
+	socklen_t clientsz = sizeof(client);
+
+	getsockname(sd, (struct sockaddr*)&client, &clientsz);
+	memcpy(src_ip, (const char*)inet_ntoa(client.sin_addr), MAX_ADDR_LEN);
+	src_ip[MAX_ADDR_LEN] = '\0';
+	s_port = (int)ntohs(client.sin_port);
+
+	return sd;
 }
 /*-----------------------------------------------------------------------------*/
 SSL_CTX*
@@ -182,9 +278,9 @@ worker(void *arg)
 
 		ssl = SSL_new(ctx);      /* create new SSL connection state */
 		SSL_set_fd(ssl, server);    /* attach the socket descriptor */
-
-		if ( SSL_connect(ssl) == FAIL )   /* perform the connection */
+		if ( SSL_connect(ssl) == FAIL ) {   /* perform the connection */
 			ERR_print_errors_fp(stderr);
+		}
 		else {
 			ShowCerts(ssl);        /* get any certs */
 		CLOCK_EVAL(&t1);
@@ -227,7 +323,6 @@ worker(void *arg)
 			}
 			KEY_M_PRINT("\n");
 #endif	/* USE_TLS_1_2 */
-			
 			SSL_write(ssl, msg, strlen(msg));   /* encrypt & send message */
 			CLOCK_EVAL(&t3);
 			bytes = SSL_read(ssl, buf, sizeof(buf)); /* get reply & decrypt */

@@ -3,6 +3,7 @@
 
 #define MAX_DATA_LEN 512
 #define MAX_ADDR_LEN 20
+#define MAX_PORT_LEN 6
 #define MAX_THREAD_NUM 16
 
 int OpenConnection(const char *hostname, int port);
