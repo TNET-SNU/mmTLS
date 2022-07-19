@@ -214,6 +214,7 @@ enum mos_socket_opts {
 	MOS_FRAG_CLIBUF   	= 0x0d, /* supressed (not used) */
 	MOS_FRAG_SVRBUF   	= 0x0e, /* supressed (not used) */
 
+	MOS_TLS_SP          = 0xf1,	/* Store/get TLS key */
 };
 
 /**
@@ -294,6 +295,8 @@ typedef void (*callback_t)(mctx_t mctx, int sock, int side,
 typedef bool (*filter_t)(mctx_t mctx, int sock, int side,
 		       event_t event, filter_arg_t *arg);
 
+/** 4-tuple information */
+typedef struct session_address *session_address_t;
 /*----------------------------------------------------------------------------*/
 /* Definition of monitor_filter type */
 union monitor_filter {
@@ -537,5 +540,16 @@ mtcp_setlastpkt(mctx_t mctx, int sock, int side, off_t offset,
  */ 
 int
 mtcp_sendpkt(mctx_t mctx, int sock, const struct pkt_info *pkt);
+
+/*----------------------------------------------------------------------------*/
+typedef struct session_address *session_address_t;
+
+/** Find socket fd based on given 4-tuple
+ * @param [in] mctx: mTCP/mOS context
+ * @param [in] sess_addr: 4-tuple information
+ * @return found socket id on success, -1 on failure
+ */
+int
+mtcp_addrtosock(mctx_t mctx, session_address_t sess_addr);
 
 #endif /* __MOS_API_H_ */

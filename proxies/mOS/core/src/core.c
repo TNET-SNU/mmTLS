@@ -1798,3 +1798,30 @@ mtcp_destroy()
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
+int
+mtcp_search_sockid(mctx_t mctx, session_address_t sess_addr)
+{
+    struct mtcp_thread_context *ctx = g_pctx[mctx->cpu];
+    struct mtcp_manager *mtcp = ctx->mtcp_manager;
+    struct tcp_stream item, *stream;
+	socket_map_t walk;
+    uint32_t hash;
+
+    item.saddr = htonl(sess_addr->client_ip);
+    item.sport = htons(sess_addr->client_port);
+    item.daddr = htonl(sess_addr->server_ip);
+    item.dport = htons(sess_addr->server_port);
+	
+    stream = HTSearch(mtcp->tcp_flow_table, &item, &hash);
+    if (stream == NULL) {
+        return -1;
+    }
+
+	/* Note: there might be multiple sockets, but return first one's */
+	SOCKQ_FOREACH_REVERSE(walk, &stream->msocks) {
+		return walk->id;
+	} SOCKQ_FOREACH_END;
+	
+    return -1;
+}
+/*----------------------------------------------------------------------------*/

@@ -60,8 +60,9 @@ ProcessInIPv4Packet(mtcp_manager_t mtcp, struct pkt_ctx *pctx)
 							   pctx->p.eth_len))
 				HandleCallback(mtcp, MOS_NULL, walk->socket, MOS_SIDE_BOTH,
 							   pctx, MOS_ON_PKT_IN);
+			
 		}
-
+	
 	/* if there is no MOS_SOCK_STREAM or MOS_SOCK_MONITOR_STREAM socket,
 	   forward IP packet before reaching upper (transport) layer */
 	if (mtcp->num_msp == 0 && mtcp->num_esp == 0) {

@@ -121,6 +121,14 @@ struct app_ops
 	int enable;
 };
 
+/** 4-tuple information */
+struct session_address {
+    uint32_t client_ip;
+    uint32_t server_ip;
+    uint16_t client_port;
+    uint16_t server_port;
+};
+typedef struct session_address *session_address_t;
 
 /** Initialize mOS context with parameters mentioned in the config file
  * @param [in] config_file: location of config file
@@ -414,6 +422,14 @@ mtcp_writev(mctx_t mctx, int sock, const struct iovec *iov, int numIOV);
 uint32_t
 mtcp_get_connection_cnt(mctx_t mctx);
 
+/** Search socket based on given 4-tuple
+ * @param [in] mctx: mTCP context
+ * @param [in] sess_addr: 4-tuple information
+ * @return found socket id on success, -1 on failure
+ */
+int
+mtcp_search_sockid(mctx_t mctx, session_address_t sess_addr);
+	
 #ifdef __cplusplus
 };
 #endif

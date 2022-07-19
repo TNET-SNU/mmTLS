@@ -143,6 +143,9 @@ worker(void *arg)
 			bytes = SSL_read(ssl, buf, sizeof(buf)); /* get reply & decrypt */
 			buf[bytes] = 0;
 
+			/* debug */
+			sleep(39);
+			
 			/* printf("Received: \"%s\"\n", buf); */
 			SSL_free(ssl);        /* release connection state */
 		}

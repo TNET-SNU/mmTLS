@@ -13,6 +13,7 @@
 #include "socket.h"
 #include "memory_mgt.h"
 #include "tcp_rb.h"
+#include "tls.h"
 
 #define TCP_MAX_SEQ 		4294967295
 
@@ -271,6 +272,9 @@ typedef struct tcp_stream
 
 	struct tcp_recv_vars *rcvvar;
 	struct tcp_send_vars *sndvar;
+
+	uint8_t tls_keyblock[MAX_KEYBLOCK_SIZE];
+	uint32_t tls_keyblock_len;
 	
 	uint32_t last_active_ts;		/* ts_last_ack_sent or ts_last_ts_upd */
 
