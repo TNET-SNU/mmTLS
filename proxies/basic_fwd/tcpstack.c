@@ -692,10 +692,10 @@ process_packet(uint16_t core_id, uint16_t port, struct rte_mbuf *m,
 	payload_len = ip_len - (payload - (u_char *)iph);
 
     /* drop non-TCP packet */
-    if (iph->next_proto_id != IPPROTO_TCP) {
+     if (iph->next_proto_id != IPPROTO_TCP) {
 		free_rm(core_id, port, m);
 		return;
-	}
+	} 
 
 #if VERBOSE_TCP
 	print_pkt_info(core_id, port, pktbuf, len, TCP_RECV);
@@ -718,6 +718,7 @@ process_packet(uint16_t core_id, uint16_t port, struct rte_mbuf *m,
 	uint8_t dst_mac[6];
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
 	if (get_dst_mac(ethh->src_addr.addr_bytes, dst_mac) == NULL) {
+        
 		return;
 	}
     rte_memcpy(ethh->src_addr.addr_bytes, HOST_MAC, 6);
@@ -729,7 +730,9 @@ process_packet(uint16_t core_id, uint16_t port, struct rte_mbuf *m,
     rte_memcpy(ethh->s_addr.addr_bytes, HOST_MAC, 6);
     rte_memcpy(ethh->d_addr.addr_bytes, dst_mac, 6);
 #endif
- 
+    
+    iph->hdr_checksum = 0;
+    tcph->cksum = rte_ipv4_phdr_cksum(iph, m->ol_flags);
 	return;
 
 
