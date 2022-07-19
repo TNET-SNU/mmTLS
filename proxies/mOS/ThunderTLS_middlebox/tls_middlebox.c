@@ -157,45 +157,26 @@ static int
 ParseSessionAddr(uint8_t *data, uint16_t datalen,
 				 session_address_t sess_addr)
 {
-	char *tok = NULL;
-	uint32_t ip_addr;
-	uint16_t port;
+	/* char *tok = NULL; */
+	/* uint32_t ip_addr; */
+	/* uint16_t port; */
+	char *ptr = (char*)data;
 
-#if VERBOSE_DEBUG
-	fprintf(stderr, "[%s]\n", __FUNCTION__);
+#if VERBOSE_KEY
+	fprintf(stderr, "[%s] datalen: %u\n", __FUNCTION__, datalen);
 	hexdump("", data, datalen);
 #endif
-	
-	/* Parse src/dst IP address */
-	if ((tok = strtok((char *)data, " ")) == NULL) {
-		return -1;
-	}
-	ip_addr = strtol(tok, NULL, 16);
-	sess_addr->client_ip = ip_addr;
-	
-	if ((tok = strtok(NULL, " ")) == NULL) {
-		return -1;
-	}
-	ip_addr = strtol(tok, NULL, 16);
-	sess_addr->server_ip = ip_addr;
 
-	/* Parse src/dst port */
-	if ((tok = strtok(NULL, " ")) == NULL) {
-		return -1;
-	}
-	port = strtol(tok, NULL, 10);
-	sess_addr->client_port = port;
-	
-	if ((tok = strtok(NULL, " ")) == NULL) {
-		return -1;
-	}
-	port = strtol(tok, NULL, 10);
-	sess_addr->server_port = port;
+	sess_addr->client_ip = htonl(*(uint32_t*)ptr);
+	ptr += 4;
+	sess_addr->server_ip = htonl(*(uint32_t*)ptr);
+	ptr += 4;
+	sess_addr->client_port = htons(*(uint16_t*)ptr);
+	ptr += 2;
+	sess_addr->server_port = htons(*(uint16_t*)ptr);
+	ptr += 2;
 
-	if (tok == NULL) {
-		return 0;
-	}
-	return (tok + strlen(tok) + 1) - (char *)data;
+	return ptr - (char*)data;
 }
 /*----------------------------------------------------------------------------*/
 /* Parse payload to get TLS session key data into key_info */
@@ -237,11 +218,15 @@ ParseTLSKey(uint8_t *data, uint16_t datalen,
 		ptr += key_len;
 	}
 	if (key_mask & CLI_IV_MASK) {
+		hexdump("cli iv", (uint8_t*)ptr, iv_len);
+		
 		memcpy(key_info->client_iv, ptr, iv_len);
 		ptr += iv_len;
 	}
 	if (key_mask & SRV_IV_MASK) {
-		memcpy(key_info->client_iv, ptr, iv_len);
+		hexdump("srv iv", (uint8_t*)ptr, iv_len);
+
+		memcpy(key_info->server_iv, ptr, iv_len);
 		ptr += iv_len;
 	}
 
