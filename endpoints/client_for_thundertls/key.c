@@ -27,7 +27,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define PROXY_IP "143.248.129.126"
+#define PROXY_IP "10.0.40.6"		// wine6
 #define KEY_PORT 6666
 /*----------------------------*/
 
@@ -47,10 +47,10 @@ typedef struct {
 } HkdfLabel;
 
 typedef struct {
-	char src_ip[MAX_ADDR_LEN];
-	int src_port;
-	char dst_ip[MAX_ADDR_LEN];
-	int dst_port;
+	uint32_t src_ip;
+	uint32_t dst_ip;
+	uint16_t src_port;
+	uint16_t dst_port;
 	uint8_t client_write_key[AES256_KEY_LEN];
 	uint8_t client_write_iv[TLS_1_3_IV_LEN];
 	uint8_t server_write_key[AES256_KEY_LEN];
@@ -98,9 +98,9 @@ sig_handler(int sig)
 }
 /*-----------------------------------------------------------------------------*/
 static session_info*
-create_session(const char *src_ip, int src_port, 
-			   const char *dst_ip, int dst_port,
-			   const uint8_t *random)
+create_session(uint32_t src_ip, uint16_t src_port, 
+			   uint32_t dst_ip, uint16_t dst_port,
+			   uint8_t *random)
 {
 	if (g_session_num == g_max_session_num) {
 		ERROR_PRINT("Error: session number exceeds max session number\n");
@@ -109,10 +109,12 @@ create_session(const char *src_ip, int src_port,
 
 	session_info *s_info = g_session[g_session_num];
 
-	memcpy(s_info->src_ip, src_ip, MAX_ADDR_LEN);
+	s_info->src_ip = src_ip;
+	s_info->dst_ip = dst_ip;
+
 	s_info->src_port = src_port;
-	memcpy(s_info->dst_ip, dst_ip, MAX_ADDR_LEN);
 	s_info->dst_port = dst_port;
+	
 	s_info->flag = 0;
 	memcpy(s_info->client_random, random, CLIENT_RANDOM_LEN);
 	g_session_num++;
@@ -284,6 +286,7 @@ UDP_send(session_info *s_info, int sd, struct sockaddr_in servaddr, int addrlen)
 {
 	u_int8_t payload[BUF_SIZE];
 	u_int8_t *ptr;
+	const int KEYBLOCK_SIZE = 104;
 
 	/* cipher suite */
     ptr = payload;
@@ -305,18 +308,18 @@ UDP_send(session_info *s_info, int sd, struct sockaddr_in servaddr, int addrlen)
 	ptr += TLS_1_3_IV_LEN;
 
 	/* src, dst ip */
-	*(uint32_t*)ptr = htonl(inet_addr(s_info->src_ip));
+	*(uint32_t*)ptr = htonl(s_info->src_ip);
 	ptr += 4;
-	*(uint32_t*)ptr = htonl(inet_addr(s_info->dst_ip));
+	*(uint32_t*)ptr = htonl(s_info->dst_ip);
 	ptr += 4;
 
 	/* src, dst port*/
 	*(uint16_t*)ptr = htons((uint16_t)s_info->src_port);
 	ptr += 2;
-	*(uint16_t*)ptr = htons((uint16_t)s_info->src_port);
+	*(uint16_t*)ptr = htons((uint16_t)s_info->dst_port);
 	ptr += 2;
 
-	if ((sendto(sd, (const uint8_t*)payload, BUF_SIZE, 0, (struct sockaddr *)&servaddr, addrlen)) < 0) {
+	if ((sendto(sd, (const uint8_t*)payload, KEYBLOCK_SIZE, 0, (struct sockaddr *)&servaddr, addrlen)) < 0) {
       	ERROR_PRINT("Error: sendto() failed\n");
         exit(0);
     }
@@ -324,21 +327,34 @@ UDP_send(session_info *s_info, int sd, struct sockaddr_in servaddr, int addrlen)
     return;
 }
 /*-----------------------------------------------------------------------------*/
+static void
+send_session_key(int sd, struct sockaddr_in servaddr, int addrlen) 
+{
+	int i;
+
+	/* send session keys via UDP */
+	for (i = 0; i < g_session_send.send_cnt; i++) {
+		UDP_send(g_session_send.session_to_send[i], sd, servaddr, addrlen);
+	}
+	g_session_send.send_cnt = 0;
+}
+/*-----------------------------------------------------------------------------*/
 static void 
-ssl_keylog(const char *line) {
+parse_keylog(const char *line) 
+{
 	uint8_t random[CLIENT_RANDOM_LEN];
 	char traffic_secret[1024];
 	uint8_t secret[1024];
 	char src_ip[MAX_ADDR_LEN], dst_ip[MAX_ADDR_LEN];
-	int src_port, dst_port;
+	uint16_t src_port, dst_port;
 	size_t len;
 	int i, res, client_key = TRUE;
 	session_info* s_info;
 
-	if ((res = sscanf(line, "CLIENT_TRAFFIC_SECRET_0 %s %s %s %s %d %d", random, 
+	if ((res = sscanf(line, "CLIENT_TRAFFIC_SECRET_0 %s %s %s %s %hd %hd", random, 
 					traffic_secret, src_ip, dst_ip, &src_port, &dst_port)) > 0 )  {
 	} 
-	else if ((res = sscanf(line, "SERVER_TRAFFIC_SECRET_0 %s %s %s %s %d %d", random, 
+	else if ((res = sscanf(line, "SERVER_TRAFFIC_SECRET_0 %s %s %s %s %hd %hd", random, 
 							traffic_secret, src_ip, dst_ip, &src_port, &dst_port)) > 0) {
 		client_key = FALSE;
 	} 
@@ -356,7 +372,7 @@ ssl_keylog(const char *line) {
 
 	/* get the session info */
 	if ((s_info = find_session((const char*)random)) == NULL) {
-		s_info = create_session(src_ip, src_port, dst_ip, dst_port, random);
+		s_info = create_session(ntohl(inet_addr(src_ip)), src_port, ntohl(inet_addr(dst_ip)), dst_port, random);
 	}
 
 	read_hex((const char*)traffic_secret, secret, 1024, &len);
@@ -383,17 +399,17 @@ ssl_keylog(const char *line) {
 }
 /*-----------------------------------------------------------------------------*/
 static void
-read_log(FILE *fp)
+read_and_process_log(FILE *fp)
 {
 	char buf[MAX_DATA_LEN];
 
 	/* read each line */
 	while (fgets(buf, MAX_DATA_LEN, fp) != NULL) {
-		ssl_keylog((const char*)buf);
-	}
-	if (strlen(buf) == MAX_DATA_LEN-1) {
-		ERROR_PRINT("Error: file crashed\n");
-		exit(0);
+		if (strlen(buf) == MAX_DATA_LEN-1) {
+			ERROR_PRINT("Error: file crashed\n");
+			exit(0);
+		}
+		parse_keylog((const char*)buf);
 	}
 }
 /*-----------------------------------------------------------------------------*/
@@ -404,9 +420,12 @@ open_log()
 
 	if (fp == NULL) {
 		fprintf(stderr, "\"key_log.txt\" file isn't created...continue...\n");
+
 		return NULL;
 	}
 	else {
+		setvbuf(fp, NULL, _IONBF, 0);
+
 		return fp;
 	}
 }
@@ -452,7 +471,6 @@ main(int argc, char *argv[])
 {
 	char c;
 	int sd;						 // UDP socket descripter
-	int i;
 	struct sockaddr_in servaddr;
 	int addrlen = sizeof(servaddr);
 	
@@ -505,14 +523,9 @@ main(int argc, char *argv[])
 
 	FILE *fp = open_log();
 	if (fp != NULL) {
-		read_log(fp);
+		read_and_process_log(fp);
 	}
-	
-	/* send session keys via UDP */
-	for (i = 0; i < g_session_send.send_cnt; i++) {
-		UDP_send(g_session_send.session_to_send[i], sd, servaddr, addrlen);
-	}
-	g_session_send.send_cnt = 0;
+	send_session_key(sd, servaddr, addrlen);
 
 	while (1) {
 		int len;
@@ -538,23 +551,13 @@ main(int argc, char *argv[])
 						ERROR_PRINT("Error: fopen()\n");
 						exit(0);
 					}
-					read_log(fp);
-
-					/* send session keys via UDP */
-					for (i = 0; i < g_session_send.send_cnt; i++) {
-						UDP_send(g_session_send.session_to_send[i], sd, servaddr, addrlen);
-					}
-					g_session_send.send_cnt = 0;
+					read_and_process_log(fp);
+					send_session_key(sd, servaddr, addrlen);
 				}
 				else if (event->mask & IN_MODIFY) {
 					/* file modified */
-					read_log(fp);
-
-					/* send session keys via UDP */
-					for (i = 0; i < g_session_send.send_cnt; i++) {
-						UDP_send(g_session_send.session_to_send[i], sd, servaddr, addrlen);
-					}
-					g_session_send.send_cnt = 0;
+					read_and_process_log(fp);
+					send_session_key(sd, servaddr, addrlen);
 				}
 				else {
 					/* irrelevant event */
