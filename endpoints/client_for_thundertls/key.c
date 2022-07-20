@@ -376,6 +376,69 @@ UDP_send(session_info *s_info)
 
     return;
 }
+
+#ifndef TRUE
+#define TRUE 1
+#endif
+#ifndef FALSE
+#define FALSE 0
+#endif
+/*-----------------------------------------------------------------------------*/
+void 
+ssl_keylog_ex(const char *line) {
+	uint8_t random[CLIENT_RANDOM_LEN];
+	char traffic_secret[1024];
+	uint8_t secret[1024];
+	char src_ip[MAX_ADDR_LEN], dst_ip[MAX_ADDR_LEN];
+	int src_port, dst_port;
+	size_t len;
+	int i, num, res, client_key = TRUE;
+	session_info* s_info;
+
+	if ((res = sscanf(line, "CLIENT_TRAFFIC_SECRET_0 %s %s %s %s %d %d", random, 
+					traffic_secret, src_ip, dst_ip, &src_port, &dst_port)) > 0 )  {
+	} else if ((res = sscanf(line, "SERVER_TRAFFIC_SECRET_0 %s %s %s %s %d %d", random, 
+							traffic_secret, src_ip, dst_ip, &src_port, &dst_port)) > 0) {
+		client_key = FALSE;
+	} else {
+		/* irrelevant lines */
+		return;
+	}
+	
+	/* check the line format is correct */
+	if (res != 6) {
+		fprintf(stderr, "%s wrong line format, line = %s", 
+				client_key ? "CLIENT_TRAFFIC_SECRET_0" : "SERVER_TRAFFIC_SECRET_0", line);
+		exit(-1);
+	}
+
+	/* get the session info */
+	if ((num = find_session((const char*)random)) < 0) {
+		session_info_new(src_ip, src_port, dst_ip, dst_port, random);
+		num = g_session_num-1;
+	}
+	s_info = g_session[num];
+
+	memcpy(secret, traffic_secret, TRAFFIC_SECRET_LEN);
+	read_hex((const char*)traffic_secret, secret, 1024, &len);
+	
+	get_write_key_1_3(secret, client_key ? s_info->client_write_key: s_info->server_write_key);
+	get_write_iv_1_3(secret, client_key ? s_info->client_write_iv: s_info->server_write_iv);
+	s_info->flag = s_info->flag | (client_key ? 0x3: 0xc);
+	if (s_info->flag == 0xf) 
+		UDP_send(s_info);
+
+	KEY_M_PRINT("%s write key[%d]:\n", client_key ? "client" : "server", num);
+	for (i = 0; i < 32; i++) {
+		KEY_M_PRINT("%02X", client_key ? s_info->client_write_key[i] : s_info->server_write_key[i]);
+	}
+	KEY_M_PRINT("\n");
+	KEY_M_PRINT("%s write iv[%d]:\n", client_key ? "client" : "server", num);
+	for (i = 0; i < 12; i++) {
+		KEY_M_PRINT("%02X", client_key ? s_info->client_write_iv[i] : s_info->server_write_key[i]);
+	}
+	KEY_M_PRINT("\n");
+}
 /*-----------------------------------------------------------------------------*/
 void 
 ssl_keylog(const char *line)
