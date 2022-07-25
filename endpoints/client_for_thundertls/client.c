@@ -53,38 +53,6 @@ Usage()
 	exit(0);
 }
 /*-----------------------------------------------------------------------------*/
-void 
-reverse(char s[])
-{
-	int i, j;
-	char c;
-
-	for (i = 0, j = strlen(s)-1; i<j; i++, j--) {
-		c = s[i];
-		s[i] = s[j];
-		s[j] = c;
-	}
-}
-/*-----------------------------------------------------------------------------*/
-void 
-itoa(int n, char s[])
-	{
-	int i = 0, sign;
-
-	if ((sign = n) < 0)
-		n = -n; 
-
-	do {
-		s[i++] = n % 10 + '0';
-	} while ((n /= 10) > 0);
-
-	if (sign < 0)
-		s[i++] = '-';
-	s[i] = '\0';
-
-	reverse(s);
-}
-/*-----------------------------------------------------------------------------*/
 void
 ssl_ctx_new_keylog (const SSL *ssl, const char *line)
 {
@@ -126,7 +94,7 @@ ssl_ctx_new_keylog (const SSL *ssl, const char *line)
 	/* src port */
 	char src_port[MAX_PORT_LEN+1];
 
-	itoa(s_port, src_port);
+	sprintf(src_port, "%d", s_port);
 	if (fwrite((const char*)src_port, sizeof(char), strlen(src_port), fp) == -1) {
 		ERROR_PRINT("Error: write()\n");
 		exit(0);
@@ -139,7 +107,7 @@ ssl_ctx_new_keylog (const SSL *ssl, const char *line)
 	/* dst port */
 	char dst_port[MAX_PORT_LEN+1];
 
-	itoa(port, dst_port);
+	sprintf(dst_port, "%d", port);
 	if (fwrite((const char*)dst_port, sizeof(char), strlen(dst_port), fp) == -1) {
 		ERROR_PRINT("Error: write()\n");
 		exit(0);
