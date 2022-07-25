@@ -78,8 +78,9 @@ sigint_handler(int signum)
     int i;
 
     /* Terminate the program if any interrupt happens */
-    for (i = 0; i < g_max_cores; i++)
+    for (i = 0; i < g_max_cores; i++) {
         mtcp_destroy_context(g_mctx[i]);
+	}
 
 	exit(0);
 }
@@ -451,7 +452,6 @@ cb_creation(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 {
     socklen_t addrslen = sizeof(struct sockaddr) * 2;
     struct connection *c;
-
     c = calloc(sizeof(struct connection), 1);
     if (!c)
         return;
@@ -783,4 +783,3 @@ main(int argc, char **argv)
 	return EXIT_SUCCESS;
 }
 /*----------------------------------------------------------------------------*/
-

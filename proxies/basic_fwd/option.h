@@ -59,7 +59,7 @@
 #undef dmb
 #endif /* dmb */
 
-#define USE_LRO                          TRUE
+#define USE_LRO                          FALSE
 #define USE_HASHTABLE_FOR_ACTIVE_SESSION TRUE
 
 /** Options for debug */

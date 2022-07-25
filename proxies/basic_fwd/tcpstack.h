@@ -43,7 +43,6 @@
 #define NUM_MBUFS           80000
 /* #define MBUF_DATA_SIZE      20000 */
 #define MBUF_DATA_SIZE      10000
-#define MBUF_PAYLOAD_SIZE   MBUF_DATA_SIZE - 100
 #define MBUF_SIZE           (MBUF_DATA_SIZE + sizeof(struct rte_mbuf) \
 				  			 + RTE_PKTMBUF_HEADROOM)
 #define MBUF_CACHE_SIZE     250
@@ -127,9 +126,17 @@
 #define MAX_METADATA_SIZE   1400
 
 /* ToDo: remove this */
+#define USE_WINE 1
+#if !USE_WINE
 #define HOST_MAC ((uint8_t[]){0x0c, 0x42, 0xa1, 0xe7, 0x1e, 0x16})
 #define CLIENT_MAC ((uint8_t[]){0x98, 0x03, 0x9b, 0x7f, 0xc4, 0x90})
 #define SERVER_MAC ((uint8_t[]){0x98, 0x03, 0x9b, 0x1e, 0xde, 0x3c}) /* Tree3 */
+#else
+#define HOST_MAC ((uint8_t[]){0x90, 0xe2, 0xba, 0x7c, 0x1f, 0xb0})
+#define CLIENT_MAC ((uint8_t[]){0x90, 0xe2, 0xba, 0x7c, 0x23, 0x60}) /* Wine7 */
+#define SERVER_MAC ((uint8_t[]){0x90, 0xe2, 0xba, 0x7a, 0xb0, 0x01}) /* Wine5 */
+#endif
+
 
 enum {TCP_RECV, TCP_SEND};
 enum {SESS_CLIENT, SESS_BACKEND};
