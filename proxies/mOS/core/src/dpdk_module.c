@@ -236,9 +236,8 @@ dpdk_send_pkts(struct mtcp_thread_context *ctxt, int nif)
 	mtcp = ctxt->mtcp_manager;
 	ret = 0;
 	qid = cpu_qid_map[nif][ctxt->cpu];
-	
 	/* if queue is unassigned, skip it.. */
-	if (unlikely(qid == 0xFF))
+	if (unlikely(qid == 0xFF)) 
 		return 0;
 	
 	/* if there are packets in the queue... flush them out to the wire */
@@ -249,20 +248,24 @@ dpdk_send_pkts(struct mtcp_thread_context *ctxt, int nif)
 #endif /* !ENABLE_STATS_IOCTL */
 		int cnt = dpc->wmbufs[nif].len;
 		pkts = dpc->wmbufs[nif].m_table;
-#ifdef NETSTAT
-		mtcp->nstat.tx_packets[nif] += cnt;
-#ifdef ENABLE_STATS_IOCTL
-		if (likely(dpc->fd) >= 0) {
-			ss.tx_pkts = mtcp->nstat.tx_packets[nif];
-			ss.tx_bytes = mtcp->nstat.tx_bytes[nif];
-			ss.rx_pkts = mtcp->nstat.rx_packets[nif];
-			ss.rx_bytes = mtcp->nstat.rx_bytes[nif];
-			ss.qid = ctxt->cpu;
-			ss.dev = nif;
-			ioctl(dpc->fd, 0, &ss);
-		}
-#endif /* !ENABLE_STATS_IOCTL */
-#endif
+
+		/* in order to operate tls_middlebox */
+//#ifdef NETSTAT
+//		mtcp->nstat.tx_packets[nif] += cnt;
+//#ifdef ENABLE_STATS_IOCTL
+//		if (likely(dpc->fd) >= 0) {
+//			ss.tx_pkts = mtcp->nstat.tx_packets[nif];
+//			ss.tx_bytes = mtcp->nstat.tx_bytes[nif];
+//			ss.rx_pkts = mtcp->nstat.rx_packets[nif];
+//			ss.rx_bytes = mtcp->nstat.rx_bytes[nif];
+//			ss.qid = ctxt->cpu;
+//			ss.dev = nif;
+//			ioctl(dpc->fd, 0, &ss);
+//		}
+//#endif /* !ENABLE_STATS_IOCTL */
+//#endif
+		UNUSED(ss); 
+		UNUSED(mtcp);
 		do {
 			/* tx cnt # of packets */
 			ret = rte_eth_tx_burst(nif, qid, 
@@ -271,7 +274,6 @@ dpdk_send_pkts(struct mtcp_thread_context *ctxt, int nif)
 			cnt -= ret;
 			/* if not all pkts were sent... then repeat the cycle */
 		} while (cnt > 0);
-
 #ifndef SHARE_IO_BUFFER
 		int i;
 		/* time to allocate fresh mbufs for the queue */
@@ -288,7 +290,6 @@ dpdk_send_pkts(struct mtcp_thread_context *ctxt, int nif)
 		/* reset the len of mbufs var after flushing of packets */
 		dpc->wmbufs[nif].len = 0;
 	}
-	
 	return ret;
 }
 /*----------------------------------------------------------------------------*/
@@ -644,15 +645,15 @@ dpdk_load_module_upper_half(void)
 
 	/* initialize the rte env first, what a waste of implementation effort!  */
 	char *argv[] = {"", 
-					"--iova-mode=va",
+	               /* "--iova-mode=va", */
 			"-c", 
 			cpumaskbuf, 
 			"-n", 
 			mem_channels,
-			"--proc-type=auto"
+			"--proc-type=primary"
 	};
-	const int argc = 7;
-	/* const int argc = 6; */
+	/* const int argc = 7; */
+	const int argc = 6;
 
 	/* 
 	 * re-set getopt extern variable optind.

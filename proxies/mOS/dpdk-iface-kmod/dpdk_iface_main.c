@@ -22,7 +22,7 @@
 typedef struct {
 	PciDevice pd;
 	struct rte_eth_dev_info dev_details;
-	struct ether_addr ports_eth_addr;
+	struct rte_ether_addr ports_eth_addr;
 } DevInfo;
 
 static DevInfo di[RTE_MAX_ETHPORTS];	
@@ -260,7 +260,7 @@ main(int argc, char **argv)
 	ret = rte_eal_init(rte_argc, rte_argv);
 
 	/* get total count of detected ethernet ports */
-	num_devices = rte_eth_dev_count();
+	num_devices = rte_eth_dev_count_avail();
 	if (num_devices == 0) {
 		fprintf(stderr, "No Ethernet port detected!\n");
 		exit(EXIT_FAILURE);
