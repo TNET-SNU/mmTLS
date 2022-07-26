@@ -7,10 +7,33 @@
 #define MAX_IV_SIZE      16
 	
 #define TLS_CIPHER_AES_GCM_256_KEY_SIZE 32
+#define TLS_CIPHER_AES_GCM_256_TAG_SIZE 16
 #define TLS_CIPHER_AES_GCM_256_IV_SIZE 12
-#define TLS_CIPHER_AES_GCM_256_TAG_SIZE 12
+#define TLS_CIPHER_AES_GCM_256_AAD_SIZE 5
 /* #define AES_256_KEY_LEN  32 */
 /* #define AES_GCM_IV_LEN   12 */
+
+#define PRINT (stderr)  
+
+#define VERBOSE_DEBUG   0
+#define VERBOSE_ERROR   1
+
+#if VERBOSE_ERROR
+#define ERROR_PRINT(fmt, args...) fprintf(PRINT, ANSI_COLOR_GREEN \
+                                    ""fmt""ANSI_COLOR_RESET, ##args)
+#else
+#define ERROR_PRINT(fmt, args...) (void)0
+#endif
+
+#if VERBOSE_DEBUG
+#define DECRYPT_PRINT(fmt, args...) fprintf(PRINT, ""fmt"", ##args)
+#else
+#define DECRYPT_PRINT(fmt, args...) (void)0
+#endif
+
+/* Print message coloring */
+#define ANSI_COLOR_GREEN   "\x1b[32m"
+#define ANSI_COLOR_RESET   "\x1b[0m"
 
 enum {
     CHANGE_CIPHER_SPEC  = 0x14,
