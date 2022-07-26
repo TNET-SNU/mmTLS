@@ -251,6 +251,7 @@ worker(void *arg)
 		}
 		else {
 			ShowCerts(ssl);        /* get any certs */
+			fclose(fp);
 		CLOCK_EVAL(&t1);
 #if USE_TLS_1_2
 			/* extract master secret, and calculate session key block */
@@ -295,7 +296,7 @@ worker(void *arg)
 			CLOCK_EVAL(&t3);
 			bytes = SSL_read(ssl, buf, sizeof(buf)); /* get reply & decrypt */
 			buf[bytes] = 0;
-
+			sleep(5);
 			/* release connection state */
 			SSL_free(ssl);
 		}
@@ -366,7 +367,7 @@ main(int argc, char *argv[])
 		pthread_join(p_thread[i], NULL);
 	}
 
-	fclose(fp);
+	
 	CLOCK_EVAL(&t2);
 	
 #if VERBOSE_EVAL

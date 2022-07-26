@@ -131,8 +131,7 @@ find_session(const char *random)
 	for (i = 0; i < g_session_num; i++) {
 		if (strncmp((char*)g_session[i]->client_random, random, CLIENT_RANDOM_LEN) == 0) {
 			if (g_session[i]->flag == 0xf) {
-				ERROR_PRINT("Error: session find error\n");
-				exit(0);
+				ERROR_PRINT("Warning: Session key log duplicated...continue...\n");
 			}
 			return g_session[i];
 		}
@@ -176,18 +175,22 @@ static unsigned char
     size_t done_len = 0, dig_len = EVP_MD_size(evp_md);
     size_t n = okm_len / dig_len;
 
-    if (okm_len % dig_len)
+    if (okm_len % dig_len) {
         n++;
+	}
 
-    if (n > 255 || okm == NULL)
+    if (n > 255 || okm == NULL) {
         return NULL;
+	}
 
-    if ((hmac = HMAC_CTX_new()) == NULL)
+    if ((hmac = HMAC_CTX_new()) == NULL) {
         return NULL;
+	}
 
-    if (!HMAC_Init_ex(hmac, prk, prk_len, evp_md, NULL))
+    if (!HMAC_Init_ex(hmac, prk, prk_len, evp_md, NULL)) {
         goto err;
-	
+	}
+
 	unsigned char data[MAX_DATA_LEN];
 	size_t len = 0;
 
@@ -208,11 +211,13 @@ static unsigned char
 			ERROR_PRINT("[%s] Not implemented now\n", __FUNCTION__);
 			goto err;
 			
-            if (!HMAC_Init_ex(hmac, NULL, 0, NULL, NULL))
+            if (!HMAC_Init_ex(hmac, NULL, 0, NULL, NULL)) {
                 goto err;
+			}
 
-			if (!HMAC_Update(hmac, prev, dig_len))
+			if (!HMAC_Update(hmac, prev, dig_len)) {
 				goto err;
+			}
 			
 			data[len-1] = ctr;
         }
@@ -220,11 +225,13 @@ static unsigned char
 			data[len++] = ctr;
 		}
 		
-        if (!HMAC_Update(hmac, (const unsigned char*)data, len))
+        if (!HMAC_Update(hmac, (const unsigned char*)data, len)) {
             goto err;
+		}
 		
-        if (!HMAC_Final(hmac, prev, NULL))
+        if (!HMAC_Final(hmac, prev, NULL)) {
             goto err;
+		}
 		
         copy_len = (done_len + dig_len > okm_len) ?
                        okm_len - done_len :
@@ -319,7 +326,7 @@ UDP_send(session_info *s_info, int sd, struct sockaddr_in servaddr, int addrlen)
 	*(uint16_t*)ptr = htons((uint16_t)s_info->dst_port);
 	ptr += 2;
 
-	if ((sendto(sd, (const uint8_t*)payload, KEYBLOCK_SIZE, 0, (struct sockaddr *)&servaddr, addrlen)) < 0) {
+	if ((sendto(sd, (const uint8_t*)payload, KEYBLOCK_SIZE, 0, (struct sockaddr *)&servaddr, addrlen)) !=  KEYBLOCK_SIZE) {
       	ERROR_PRINT("Error: sendto() failed\n");
         exit(0);
     }
@@ -393,7 +400,7 @@ parse_keylog(const char *line)
 	KEY_M_PRINT("\n");
 	KEY_M_PRINT("%s write iv: ", client_key ? "client" : "server");
 	for (i = 0; i < 12; i++) {
-		KEY_M_PRINT("%02X", client_key ? s_info->client_write_iv[i] : s_info->server_write_key[i]);
+		KEY_M_PRINT("%02X", client_key ? s_info->client_write_iv[i] : s_info->server_write_iv[i]);
 	}
 	KEY_M_PRINT("\n");
 }

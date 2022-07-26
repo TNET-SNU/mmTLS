@@ -55,7 +55,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "%02X%c", aad[z],
                 ((z + 1) % 16)? ' ' : '\n');
     fprintf(stderr, "\n");
-	fprintf(stderr, "plaintext (%u B):\n", bufin_len);
+	fprintf(stderr, "plaintext (%lu B):\n", bufin_len);
     for (z = 0; z < bufin_len; z++)
         fprintf(stderr, "%02X%c", bufin[z],
                 ((z + 1) % 16)? ' ' : '\n');

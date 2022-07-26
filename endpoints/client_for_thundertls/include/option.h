@@ -37,7 +37,7 @@
 #define UNUSED(x) (void)(x)
 
 
-/* Print messge coloring */
+/* Print message coloring */
 #define ANSI_COLOR_GREEN   "\x1b[32m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
 
