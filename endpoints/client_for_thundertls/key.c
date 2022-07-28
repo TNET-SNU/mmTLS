@@ -33,7 +33,7 @@
 
 #define MAX_DATA_LEN 	   512
 #define AES256_KEY_LEN     32
-#define CLIENT_RANDOM_LEN  64
+#define CLIENT_RANDOM_LEN  32
 #define TLS_1_3_IV_LEN     12
 #define TRAFFIC_SECRET_LEN 48
 #define EVENT_SIZE		   sizeof(struct inotify_event)
@@ -47,14 +47,11 @@ typedef struct {
 } HkdfLabel;
 
 typedef struct {
-	uint32_t src_ip;
-	uint32_t dst_ip;
-	uint16_t src_port;
-	uint16_t dst_port;
 	uint8_t client_write_key[AES256_KEY_LEN];
 	uint8_t client_write_iv[TLS_1_3_IV_LEN];
 	uint8_t server_write_key[AES256_KEY_LEN];
 	uint8_t server_write_iv[TLS_1_3_IV_LEN];
+
 	uint8_t client_random[CLIENT_RANDOM_LEN];
 	uint8_t flag;
 } session_info;
@@ -98,9 +95,7 @@ sig_handler(int sig)
 }
 /*-----------------------------------------------------------------------------*/
 static session_info*
-create_session(uint32_t src_ip, uint16_t src_port, 
-			   uint32_t dst_ip, uint16_t dst_port,
-			   uint8_t *random)
+create_session(uint8_t *random)
 {
 	if (g_session_num == g_max_session_num) {
 		ERROR_PRINT("Error: session number exceeds max session number\n");
@@ -108,12 +103,6 @@ create_session(uint32_t src_ip, uint16_t src_port,
 	}
 
 	session_info *s_info = g_session[g_session_num];
-
-	s_info->src_ip = src_ip;
-	s_info->dst_ip = dst_ip;
-
-	s_info->src_port = src_port;
-	s_info->dst_port = dst_port;
 	
 	s_info->flag = 0;
 	memcpy(s_info->client_random, random, CLIENT_RANDOM_LEN);
@@ -123,13 +112,13 @@ create_session(uint32_t src_ip, uint16_t src_port,
 }
 /*-----------------------------------------------------------------------------*/
 static session_info*
-find_session(const char *random)
+find_session(const uint8_t *random)
 {
 	int i;
 	
 	/* check if session is already created */
 	for (i = 0; i < g_session_num; i++) {
-		if (strncmp((char*)g_session[i]->client_random, random, CLIENT_RANDOM_LEN) == 0) {
+		if (memcmp((char*)g_session[i]->client_random, random, CLIENT_RANDOM_LEN) == 0) {
 			if (g_session[i]->flag == 0xf) {
 				ERROR_PRINT("Warning: Session key log duplicated...continue...\n");
 			}
@@ -293,7 +282,7 @@ UDP_send(session_info *s_info, int sd, struct sockaddr_in servaddr, int addrlen)
 {
 	u_int8_t payload[BUF_SIZE];
 	u_int8_t *ptr;
-	const int KEYBLOCK_SIZE = 104;
+	const int KEYBLOCK_SIZE = 124;
 
 	/* cipher suite */
     ptr = payload;
@@ -314,17 +303,8 @@ UDP_send(session_info *s_info, int sd, struct sockaddr_in servaddr, int addrlen)
 	memcpy(ptr, s_info->server_write_iv, TLS_1_3_IV_LEN);
 	ptr += TLS_1_3_IV_LEN;
 
-	/* src, dst ip */
-	*(uint32_t*)ptr = htonl(s_info->src_ip);
-	ptr += 4;
-	*(uint32_t*)ptr = htonl(s_info->dst_ip);
-	ptr += 4;
-
-	/* src, dst port*/
-	*(uint16_t*)ptr = htons((uint16_t)s_info->src_port);
-	ptr += 2;
-	*(uint16_t*)ptr = htons((uint16_t)s_info->dst_port);
-	ptr += 2;
+	/* client random */
+	memcpy(ptr, s_info->client_random, CLIENT_RANDOM_LEN);
 
 	if ((sendto(sd, (const uint8_t*)payload, KEYBLOCK_SIZE, 0, (struct sockaddr *)&servaddr, addrlen)) !=  KEYBLOCK_SIZE) {
       	ERROR_PRINT("Error: sendto() failed\n");
@@ -338,7 +318,7 @@ static void
 send_session_key(int sd, struct sockaddr_in servaddr, int addrlen) 
 {
 	int i;
-
+	
 	/* send session keys via UDP */
 	for (i = 0; i < g_session_send.send_cnt; i++) {
 		UDP_send(g_session_send.session_to_send[i], sd, servaddr, addrlen);
@@ -349,12 +329,11 @@ send_session_key(int sd, struct sockaddr_in servaddr, int addrlen)
 static void 
 parse_keylog(const char *line) 
 {
-	uint8_t random[CLIENT_RANDOM_LEN];
-	char traffic_secret[1024];
-	uint8_t secret[1024];
+	char traffic_secret[BUF_SIZE], random[BUF_SIZE];
+	uint8_t secret[BUF_SIZE], client_random[BUF_SIZE];
 	char src_ip[MAX_ADDR_LEN], dst_ip[MAX_ADDR_LEN];
 	uint16_t src_port, dst_port;
-	size_t len;
+	size_t len, random_len;
 	int i, res, client_key = TRUE;
 	session_info* s_info;
 
@@ -377,12 +356,15 @@ parse_keylog(const char *line)
 		exit(-1);
 	}
 
+	read_hex((const char*)random, client_random, BUF_SIZE, &random_len);
+	
 	/* get the session info */
-	if ((s_info = find_session((const char*)random)) == NULL) {
-		s_info = create_session(ntohl(inet_addr(src_ip)), src_port, ntohl(inet_addr(dst_ip)), dst_port, random);
+	s_info = find_session(client_random);
+	if (!s_info) {
+		s_info = create_session(client_random);
 	}
 
-	read_hex((const char*)traffic_secret, secret, 1024, &len);
+	read_hex((const char*)traffic_secret, secret, BUF_SIZE, &len);
 
 	get_write_key_1_3(secret, client_key ? s_info->client_write_key: s_info->server_write_key);
 	get_write_iv_1_3(secret, client_key ? s_info->client_write_iv: s_info->server_write_iv);

@@ -11,7 +11,7 @@
 
 #define PRINT (stderr)    
 
-#define VERBOSE_KEY_M    TRUE
+#define VERBOSE_KEY_M    FALSE
 #define VERBOSE_ERROR    TRUE
 #define VERBOSE_EVAL     FALSE
 
