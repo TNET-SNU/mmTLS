@@ -24,7 +24,8 @@
 
 #include <mos_api.h>
 #include "cpu.h"
-#include "tls.h"
+#include "include/tls.h"
+#include "include/thash.h"
 
 /* Maximum CPU cores */
 #define MAX_CORES       16
@@ -33,11 +34,11 @@
 /* Default path to mOS configuration file */
 #define MOS_CONFIG_FILE     "config/mos.conf"
 
-#define IP_HEADER_LEN    20
-#define UDP_HEADER_LEN   8
-#define TLS_HEADER_LEN   5
+#define IP_HEADER_LEN    		  20
+#define UDP_HEADER_LEN   		  8
+#define TLS_HEADER_LEN   		  5
+#define TLS_HANDSHAKE_HEADER_LEN  4
 
-#define MAX_BUF_LEN      1048576    /* 1M */
 #define MAX_LINE_LEN     1280
 
 #define UDP_PORT      6666		/* only for debug */
@@ -51,24 +52,10 @@
 #define UINT32_GT(a,b)         ((int32_t)((a)-(b)) > 0)
 #define UINT32_GEQ(a,b)        ((int32_t)((a)-(b)) >= 0)
 /*----------------------------------------------------------------------------*/
-struct connection {
-    int sock;                      /* socket ID */
-    struct sockaddr_in addrs[2];   /* Address of a client and a serer */
-    int cli_state;                 /* TCP state of the client */
-    int svr_state;                 /* TCP state of the server */
-
-	uint8_t buf[2][MAX_BUF_LEN];
-	uint32_t seq_head[2];
-	uint32_t seq_tail[2];
-
-	tls_context tls_ctx;
-	
-    TAILQ_ENTRY(connection) link;  /* link to next context in this core */
-};
-
 int g_max_cores;                              /* Number of CPU cores to be used */
 mctx_t g_mctx[MAX_CORES];                     /* mOS context */
 TAILQ_HEAD(, connection) g_sockq[MAX_CORES];  /* connection queue */
+struct hashtable *g_ht;						  /* hash table of connections */
 /**< ToDo: We should not use linked list for scalability */
 /*----------------------------------------------------------------------------*/
 /* Signal handler */
@@ -86,10 +73,10 @@ sigint_handler(int signum)
 }
 /*----------------------------------------------------------------------------*/
 /* Find connection structure by socket ID */
-static inline struct connection *
+static inline connection*
 find_connection(int cpu, int sock)
 {
-    struct connection *c;
+    connection *c;
 
     TAILQ_FOREACH(c, &g_sockq[cpu], link)
         if (c->sock == sock)
@@ -99,7 +86,7 @@ find_connection(int cpu, int sock)
 }
 /*----------------------------------------------------------------------------*/
 /* Dump bytestream in hexademical form */
-#if VERBOSE_TCP | VERBOSE_TLS | VERBOSE_KEY | VERBOSE_DEBUG
+#if VERBOSE_TCP | VERBOSE_TLS | VERBOSE_KEY
 static void
 hexdump(char *title, uint8_t *buf, size_t len)
 {
@@ -168,9 +155,9 @@ DecryptCiphertext(tls_record *rec, uint8_t *key, uint8_t *iv)
 	size_t aad_len = 0;
 	
 	/* aad generate */
-	*(aad+aad_len) = 0x17;		// 0x17: application data
+	*(aad+aad_len) = APPLICATION_DATA;
 	aad_len += 1;
-	*(aad+aad_len) = 0x03;		// 0x0303: legacy protocol version of TLS 1.2
+	*(aad+aad_len) = 0x03;		// 03 03: legacy protocol version of TLS 1.2
 	aad_len += 1;
 	*(aad+aad_len) = 0x03;
 	aad_len += 1;
@@ -221,7 +208,7 @@ DecryptCiphertext(tls_record *rec, uint8_t *key, uint8_t *iv)
 	}
 
 	out = (char*)calloc(sizeof(char), outlen + len);
-	if (out == NULL) {
+	if (!out) {
 		ERROR_PRINT("Error: calloc() failed\n");
 		exit(0);
 	}
@@ -275,7 +262,8 @@ DecryptCiphertext(tls_record *rec, uint8_t *key, uint8_t *iv)
         fprintf(stderr, "decrypt success!\n");
     } 
 	else {
-		ERROR_PRINT("Error: decrypt failed, tag value didn't match\n");
+		DECRYPT_PRINT("This packet is handshake finish or New Session Ticket. Unable to decrypt..\n");
+		// ERROR_PRINT("Error: decrypt failed, tag value didn't match\n");
     }
 	free(out);
 
@@ -326,34 +314,6 @@ DecryptTLSRecord(tls_context *tls_ctx)
 	}
 
 	return ret;
-}
-/*----------------------------------------------------------------------------*/
-/* Parse session address */
-/* Return length of parsed data, -1 of error */
-static int
-ParseSessionAddr(uint8_t *data, uint16_t datalen,
-				 session_address_t sess_addr)
-{
-	/* char *tok = NULL; */
-	/* uint32_t ip_addr; */
-	/* uint16_t port; */
-	char *ptr = (char*)data;
-
-#if VERBOSE_KEY
-	fprintf(stderr, "[%s] datalen: %u\n", __FUNCTION__, datalen);
-	hexdump("", data, datalen);
-#endif
-
-	sess_addr->client_ip = htonl(*(uint32_t*)ptr);
-	ptr += 4;
-	sess_addr->server_ip = htonl(*(uint32_t*)ptr);
-	ptr += 4;
-	sess_addr->client_port = htons(*(uint16_t*)ptr);
-	ptr += 2;
-	sess_addr->server_port = htons(*(uint16_t*)ptr);
-	ptr += 2;
-
-	return ptr - (char*)data;
 }
 /*----------------------------------------------------------------------------*/
 /* Parse payload to get TLS session key data into key_info */
@@ -413,7 +373,7 @@ ParseTLSKey(uint8_t *data, uint16_t datalen,
 /* Parse TCP payload to assemble single TLS record */
 /* Return byte of parsed record, 0 if no complete record */
 static uint32_t
-ParseTLSRecord(struct connection *c, int side)
+ParseTLSRecord(connection *c, int side)
 {
 	tls_context *tls_ctx;
 	tls_record *record;
@@ -422,7 +382,7 @@ ParseTLSRecord(struct connection *c, int side)
 	uint8_t record_type;
 	uint16_t version;
 	uint16_t record_len;
-	int off = 0;
+	int ret, off = 0;
 	
 	tls_ctx = &c->tls_ctx;
 	start_seq = tls_ctx->unparse_tcp_seq[side];
@@ -464,8 +424,20 @@ ParseTLSRecord(struct connection *c, int side)
 		memcpy(record->ciphertext, ptr + TLS_HEADER_LEN,
 			   record_len);
 		record->cipher_len = record_len;
-	} else {
+	} 
+	else if (record_type == HANDSHAKE) {
 		/* ToDo: We might need to verify HANDSHAKE_FINISHED */
+		if (*(ptr + off) == 0x01) {						// Client Hello
+			off += TLS_HANDSHAKE_HEADER_LEN;
+			off += sizeof(uint16_t);		// Client Version (03 03)
+
+			memcpy(c->tls_ctx.client_random, (const uint8_t*)(ptr + off), TLS_1_3_CLIENT_RANDOM_LEN);
+			ret = HT_Insert(g_ht, c, c->tls_ctx.client_random);
+			if (ret < 0) {
+				ERROR_PRINT("Error: HT_Insert() failed\n");
+				exit(-1);
+			}
+		}
 	}
 
 	/* Update tls_ctx */
@@ -502,13 +474,23 @@ static void
 cb_creation(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 {
     socklen_t addrslen = sizeof(struct sockaddr) * 2;
-    struct connection *c;
-    c = calloc(sizeof(struct connection), 1);
-    if (!c)
-        return;
+    connection *c;
 
+	/* ToDo: remove calloc */
+    c = calloc(sizeof(connection), 1);
+    if (!c) {
+		ERROR_PRINT("Error: [%s]calloc failed\n", __FUNCTION__);
+		exit(0);
+	}
+
+	c->he = (struct hash_elements*)calloc(sizeof(struct hash_elements), 1);
+	if (!c->he) {
+		ERROR_PRINT("Error: [%s]calloc failed\n", __FUNCTION__);
+		exit(0);
+	}
     /* Fill values of the connection structure */
     c->sock = sock;
+
     if (mtcp_getpeername(mctx, c->sock, (void *)c->addrs, &addrslen,
                          MOS_SIDE_BOTH) < 0) {
         perror("mtcp_getpeername");
@@ -524,11 +506,13 @@ cb_creation(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 static void
 cb_destroy(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 {
-    struct connection *c;
+    connection *c;
 
-    if (!(c = find_connection(mctx->cpu, sock)))
+    if (!(c = find_connection(mctx->cpu, sock))) {
         return;
+	}
 
+	HT_Remove(g_ht, c);
     TAILQ_REMOVE(&g_sockq[mctx->cpu], c, link);
     free(c);
 }
@@ -542,7 +526,7 @@ cb_new_data(mctx_t mctx, int sock, int side,
 	int len;
 	uint32_t buf_off;
 
-    struct connection *c;
+    connection *c;
     /* socklen_t intlen = sizeof(int); */
 
     if (!(c = find_connection(mctx->cpu, sock)))
@@ -574,7 +558,6 @@ cb_new_data(mctx_t mctx, int sock, int side,
 		while((record_len = ParseTLSRecord(c, side)) > 0) {
 			;
 		}
-
 		DecryptTLSRecord(&c->tls_ctx);
 	}
 }
@@ -589,10 +572,10 @@ cb_new_key(mctx_t mctx, int sock, int side,
 	uint16_t payloadlen;
 	struct udphdr *udph;
 	struct tls_crypto_info key_info;
-	struct session_address sess_addr = {0};
 	int sock_mon = 0;
 	int offset;
 	uint16_t left_len;
+	uint8_t client_random[TLS_1_3_CLIENT_RANDOM_LEN];
 
 	if (mtcp_getlastpkt(mctx, sock, side, &p) < 0) {
         fprintf(stderr, "Failed to get packet context!!!\n");
@@ -627,21 +610,27 @@ cb_new_key(mctx_t mctx, int sock, int side,
 	ptr += offset;
 	left_len -= offset;
 
-	offset = ParseSessionAddr(ptr, left_len, &sess_addr);
+	//offset = ParseSessionAddr(ptr, left_len, &sess_addr);
+	//ptr += offset;
+	//left_len -= offset;
 
-	sock_mon = mtcp_addrtosock(mctx, &sess_addr);
+	memcpy(client_random, ptr, TLS_1_3_CLIENT_RANDOM_LEN);
+	connection *c = HT_Search(g_ht, client_random);
+
+	if (!c) {
+		ERROR_PRINT("Error: Can't find connection with Client Random\n");
+		return;
+	}
+
+	//sock_mon = mtcp_addrtosock(mctx, &sess_addr);
+	sock_mon = c->sock;
 	fprintf(stderr, "sock: %d\n", sock_mon);
-
-#if VERBOSE_KEY
-	DumpTLSKey(&key_info, &sess_addr);
-#endif
-
 	if (sock_mon < 0) {
 		return;
 	}
 
 	/* Insert key info to the session */
-	struct connection *target = find_connection(mctx->cpu, sock_mon);
+	connection *target = find_connection(mctx->cpu, sock_mon);
 	target->tls_ctx.key_info = key_info;
 	
 	/* Decrypt records which reached before key arrival */
@@ -796,6 +785,9 @@ main(int argc, char **argv)
 		}
 	}
 
+	/* create hash table for socket matching */
+	g_ht = Create_Hashtable();
+
 	/* parse mos configuration file */
 	ret = mtcp_init(fname);
 	if (ret) {
@@ -830,6 +822,7 @@ main(int argc, char **argv)
 	}	
 	
 	mtcp_destroy();
+	Destroy_Hashtable(g_ht);
 
 	return EXIT_SUCCESS;
 }
