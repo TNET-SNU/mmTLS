@@ -31,13 +31,14 @@ LIBS    += -m64 -g -pthread -lrt -march=native -Wl,-export-dynamic -L$(RTE_SDK)/
 ######################################################################
 
 default: $(TARGET)
+SRCS-y := $(TARGET).c thash.c
 
 $(MTCP_TARGET):
 	cd $(MTCP_FLD)/src && make	
 
 $(TARGET): $(MTCP_TARGET) $(TARGET).c
 	$(MSG) "   CC $<"
-	$(HIDE) $(GCC) $(GCC_OPT) -o $@ $^ $(MTCP_INC) $(CMN_INC) $(UTIL_INC) $(LIB_DIR) $(LIBS)
+	$(HIDE) $(GCC) $(GCC_OPT) -o $@ $(SRCS-y) $(MTCP_INC) $(CMN_INC) $(UTIL_INC) $(LIB_DIR) $(LIBS)
 
 clean:
 	rm -rf *~ *.o $(TARGET) logs/*

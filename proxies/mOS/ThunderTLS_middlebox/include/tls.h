@@ -1,11 +1,16 @@
 #ifndef __TLS_H__
 #define __TLS_H__
 
+#include <stdint.h>
+#include <sys/queue.h>
+
+#define MAX_BUF_LEN      1048576    /* 1M */
 #define MAX_RECORD_LEN   16384		/* 16K */
 #define MAX_RECORD_NUM   128
 #define MAX_KEY_SIZE     128
 #define MAX_IV_SIZE      16
-	
+
+#define TLS_1_3_CLIENT_RANDOM_LEN 32
 #define TLS_CIPHER_AES_GCM_256_KEY_SIZE 32
 #define TLS_CIPHER_AES_GCM_256_TAG_SIZE 16
 #define TLS_CIPHER_AES_GCM_256_IV_SIZE 12
@@ -32,6 +37,7 @@
 #endif
 
 /* Print message coloring */
+#define ANSI_COLOR_YELLOW   "\x1b[33m"
 #define ANSI_COLOR_GREEN   "\x1b[32m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
 
@@ -40,14 +46,14 @@ enum {
     ALERT               = 0x15,
     HANDSHAKE           = 0x16,
     APPLICATION_DATA    = 0x17,
-} tls_record_type;
+}; 	// tls_record_type
 
 enum {
     CLI_KEY_MASK = 0x1,
 	SRV_KEY_MASK = 0x2,
 	CLI_IV_MASK  = 0x4,
 	SRV_IV_MASK  = 0x8,
-} tls_session_key_info_mask;
+}; 	// tls_session_key_info_mask
 
 struct tls_crypto_info {
     unsigned short version;
@@ -85,6 +91,8 @@ typedef struct tls_record {
 typedef struct tls_context {
 	uint16_t version;
 
+	uint8_t client_random[TLS_1_3_CLIENT_RANDOM_LEN];
+	
 	struct tls_crypto_info key_info;
 
 	uint64_t last_rec_seq[2];
@@ -99,5 +107,28 @@ typedef struct tls_context {
 	uint32_t record_cnt[2];
 	uint32_t decrypt_record_idx[2];
 } tls_context;
+
+struct hash_elements {		// ToDo: need to change name
+	struct hash_bucket_head *he_mybucket;
+	TAILQ_ENTRY(connection) he_link;	/* hash table entry link */
+};
+
+typedef struct connection {
+    int sock;                    	    /* socket ID */
+	struct sockaddr_in addrs[2];  		/* Address of a client and a serer */
+    int cli_state;              	  	/* TCP state of the client */
+    int svr_state;                 		/* TCP state of the server */
+	uint8_t ht_idx;						/* hash table index */
+
+	uint8_t buf[2][MAX_BUF_LEN];
+	uint32_t seq_head[2];
+	uint32_t seq_tail[2];
+
+	tls_context tls_ctx;
+
+	struct hash_elements *he;
+
+    TAILQ_ENTRY(connection) link;  /* link to next context in this core */
+} connection;
 
 #endif /* __TLS_H__ */
