@@ -56,7 +56,6 @@ Usage()
 void
 ssl_ctx_new_keylog (const SSL *ssl, const char *line)
 {
-	const char space = ' ';
 	const char new_line = '\n';
 
 	KEY_M_PRINT("[%s] Get keylog of SSL %p!\n%s\n",
@@ -66,57 +65,6 @@ ssl_ctx_new_keylog (const SSL *ssl, const char *line)
 		ERROR_PRINT("Error: write()\n");
 		exit(0);
 	}
-	if (fwrite(&space, sizeof(char), 1, fp) == -1) {
-		ERROR_PRINT("Error: write()\n");
-		exit(0);
-	}
-	
-	/* src ip */
-	if (fwrite((const char*)src_ip, sizeof(char), strlen(src_ip), fp) == -1) {
-		ERROR_PRINT("Error: write()\n");
-		exit(0);
-	}
-	if (fwrite(&space, sizeof(char), 1, fp) == -1) {
-		ERROR_PRINT("Error: write()\n");
-		exit(0);
-	}
-
-	/* dst ip */
-	if (fwrite((const char*)addr, sizeof(char), strlen(addr), fp) == -1) {
-		ERROR_PRINT("Error: write()\n");
-		exit(0);
-	}
-	if (fwrite(&space, sizeof(char), 1, fp) == -1) {
-		ERROR_PRINT("Error: write()\n");
-		exit(0);
-	}
-
-	/* src port */
-	char src_port[MAX_PORT_LEN+1];
-
-	sprintf(src_port, "%d", s_port);
-	if (fwrite((const char*)src_port, sizeof(char), strlen(src_port), fp) == -1) {
-		ERROR_PRINT("Error: write()\n");
-		exit(0);
-	}
-	if (fwrite(&space, sizeof(char), 1, fp) == -1) {
-		ERROR_PRINT("Error: write()\n");
-		exit(0);
-	}
-
-	/* dst port */
-	char dst_port[MAX_PORT_LEN+1];
-
-	sprintf(dst_port, "%d", port);
-	if (fwrite((const char*)dst_port, sizeof(char), strlen(dst_port), fp) == -1) {
-		ERROR_PRINT("Error: write()\n");
-		exit(0);
-	}
-	if (fwrite(&space, sizeof(char), 1, fp) == -1) {
-		ERROR_PRINT("Error: write()\n");
-		exit(0);
-	}
-
 	if (fwrite(&new_line, sizeof(char), 1, fp) == -1) {
 		ERROR_PRINT("Error: write()\n");
 		exit(0);
@@ -296,7 +244,7 @@ worker(void *arg)
 			CLOCK_EVAL(&t3);
 			bytes = SSL_read(ssl, buf, sizeof(buf)); /* get reply & decrypt */
 			buf[bytes] = 0;
-			sleep(5);
+			sleep(1);
 			/* release connection state */
 			SSL_free(ssl);
 		}

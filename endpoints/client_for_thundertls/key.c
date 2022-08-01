@@ -81,7 +81,7 @@ sig_handler(int sig)
 
 	if (inotify_rm_watch(g_ino_fd, g_ino_wd) < 0) {
 		ERROR_PRINT("Error: inotify_rm_watch()\n");
-		exit(0);
+		exit(-1);
 	}
 	
 	for (i = 0; i < g_session_num; i++) {
@@ -99,7 +99,7 @@ create_session(uint8_t *random)
 {
 	if (g_session_num == g_max_session_num) {
 		ERROR_PRINT("Error: session number exceeds max session number\n");
-		exit(0);
+		exit(-1);
 	}
 
 	session_info *s_info = g_session[g_session_num];
@@ -137,7 +137,7 @@ read_hex(const char *hex, uint8_t *out, size_t outmax, size_t *outlen)
     *outlen = 0;
     if (strlen(hex) > 2*outmax) {
 		ERROR_PRINT("Error: hex length exceeds outmax (%lu > %lu*2)\n", strlen(hex), outmax*2);
-		exit(1);
+		exit(-1);
 	}
 	
     for (i = 0; hex[i] && hex[i+1]; i += 2) {
@@ -145,14 +145,14 @@ read_hex(const char *hex, uint8_t *out, size_t outmax, size_t *outlen)
 
         if (!sscanf(hex + i, "%02x", &value)) {
 			ERROR_PRINT("Error: [%s] sscanf fail\n", __FUNCTION__);
-			exit(1);
+			exit(-1);
 		}
         out[(*outlen)++] = value;
     }
 }
 /*-----------------------------------------------------------------------------*/
 static unsigned char 
-*HKDF_Expand(const EVP_MD *evp_md,
+*HKDF_expand(const EVP_MD *evp_md,
              const unsigned char *prk, size_t prk_len,
              HkdfLabel *label, size_t label_len,
              unsigned char *okm, size_t okm_len)
@@ -251,7 +251,7 @@ get_write_key_1_3(uint8_t *secret, uint8_t *key_out)
 	hkdf_label.length = AES256_KEY_LEN;
 	memcpy(hkdf_label.label_ctx, "tls13 key", strlen("tls13 key"));
 
-	HKDF_Expand(evp_md, (const uint8_t*)secret, TRAFFIC_SECRET_LEN,
+	HKDF_expand(evp_md, (const uint8_t*)secret, TRAFFIC_SECRET_LEN,
 			     &hkdf_label, strlen("tls13 key"),
 				key_out, AES256_KEY_LEN);
 
@@ -270,7 +270,7 @@ get_write_iv_1_3(uint8_t *secret, uint8_t *iv_out)
 	hkdf_label.length = TLS_1_3_IV_LEN;
 	memcpy(hkdf_label.label_ctx, "tls13 iv", strlen("tls13 iv"));
 
-	HKDF_Expand(evp_md, (const uint8_t*)secret, TRAFFIC_SECRET_LEN,
+	HKDF_expand(evp_md, (const uint8_t*)secret, TRAFFIC_SECRET_LEN,
 			    &hkdf_label, strlen("tls13 iv"),
 				iv_out, TLS_1_3_IV_LEN);
 				
@@ -278,10 +278,10 @@ get_write_iv_1_3(uint8_t *secret, uint8_t *iv_out)
 }
 /*-----------------------------------------------------------------------------*/
 static void 
-UDP_send(session_info *s_info, int sd, struct sockaddr_in servaddr, int addrlen)
+udp_send(session_info *s_info, int sd, struct sockaddr_in servaddr, int addrlen)
 {
-	u_int8_t payload[BUF_SIZE];
-	u_int8_t *ptr;
+	uint8_t payload[BUF_SIZE];
+	uint8_t *ptr;
 	const int KEYBLOCK_SIZE = 124;
 
 	/* cipher suite */
@@ -308,7 +308,7 @@ UDP_send(session_info *s_info, int sd, struct sockaddr_in servaddr, int addrlen)
 
 	if ((sendto(sd, (const uint8_t*)payload, KEYBLOCK_SIZE, 0, (struct sockaddr *)&servaddr, addrlen)) !=  KEYBLOCK_SIZE) {
       	ERROR_PRINT("Error: sendto() failed\n");
-        exit(0);
+        exit(-1);
     }
 
     return;
@@ -321,9 +321,31 @@ send_session_key(int sd, struct sockaddr_in servaddr, int addrlen)
 	
 	/* send session keys via UDP */
 	for (i = 0; i < g_session_send.send_cnt; i++) {
-		UDP_send(g_session_send.session_to_send[i], sd, servaddr, addrlen);
+		udp_send(g_session_send.session_to_send[i], sd, servaddr, addrlen);
 	}
 	g_session_send.send_cnt = 0;
+}
+/*-----------------------------------------------------------------------------*/
+static void
+print_key(uint8_t *client_random, session_info *s_info, int client_key)
+{
+	int i;
+
+	fprintf(stderr, "[");
+	for (i = 0; i < 32; i++) {
+		fprintf(stderr, "%02X", client_random[i]);
+	}
+	fprintf(stderr, "]\n");
+	fprintf(stderr,"%s write key: ", client_key ? "client" : "server");
+	for (i = 0; i < 32; i++) {
+		fprintf(stderr,"%02X", client_key ? s_info->client_write_key[i] : s_info->server_write_key[i]);
+	}
+	fprintf(stderr,"\n");
+	fprintf(stderr,"%s write iv: ", client_key ? "client" : "server");
+	for (i = 0; i < 12; i++) {
+		fprintf(stderr,"%02X", client_key ? s_info->client_write_iv[i] : s_info->server_write_iv[i]);
+	}
+	fprintf(stderr,"\n");
 }
 /*-----------------------------------------------------------------------------*/
 static void 
@@ -331,17 +353,13 @@ parse_keylog(const char *line)
 {
 	char traffic_secret[BUF_SIZE], random[BUF_SIZE];
 	uint8_t secret[BUF_SIZE], client_random[BUF_SIZE];
-	char src_ip[MAX_ADDR_LEN], dst_ip[MAX_ADDR_LEN];
-	uint16_t src_port, dst_port;
 	size_t len, random_len;
-	int i, res, client_key = TRUE;
+	int res, client_key = TRUE;
 	session_info* s_info;
 
-	if ((res = sscanf(line, "CLIENT_TRAFFIC_SECRET_0 %s %s %s %s %hd %hd", random, 
-					traffic_secret, src_ip, dst_ip, &src_port, &dst_port)) > 0 )  {
+	if ((res = sscanf(line, "CLIENT_TRAFFIC_SECRET_0 %s %s", random, traffic_secret)) > 0 )  {
 	} 
-	else if ((res = sscanf(line, "SERVER_TRAFFIC_SECRET_0 %s %s %s %s %hd %hd", random, 
-							traffic_secret, src_ip, dst_ip, &src_port, &dst_port)) > 0) {
+	else if ((res = sscanf(line, "SERVER_TRAFFIC_SECRET_0 %s %s", random, traffic_secret)) > 0) {
 		client_key = FALSE;
 	} 
 	else {
@@ -350,7 +368,7 @@ parse_keylog(const char *line)
 	}
 
 	/* check the line format is correct */
-	if (res != 6) {
+	if (res != 2) {
 		ERROR_PRINT("%s wrong line format, line = %s", 
 				client_key ? "CLIENT_TRAFFIC_SECRET_0" : "SERVER_TRAFFIC_SECRET_0", line);
 		exit(-1);
@@ -374,17 +392,10 @@ parse_keylog(const char *line)
 		g_session_send.session_to_send[g_session_send.send_cnt] = s_info;
 		g_session_send.send_cnt++;
 	}
-	KEY_M_PRINT("[%s:%d -> %s:%d]\n%s write key: ", src_ip, src_port, dst_ip, dst_port,
-												 client_key ? "client" : "server");
-	for (i = 0; i < 32; i++) {
-		KEY_M_PRINT("%02X", client_key ? s_info->client_write_key[i] : s_info->server_write_key[i]);
+
+	if (VERBOSE_KEY_M) {
+		print_key(client_random, s_info, client_key);
 	}
-	KEY_M_PRINT("\n");
-	KEY_M_PRINT("%s write iv: ", client_key ? "client" : "server");
-	for (i = 0; i < 12; i++) {
-		KEY_M_PRINT("%02X", client_key ? s_info->client_write_iv[i] : s_info->server_write_iv[i]);
-	}
-	KEY_M_PRINT("\n");
 }
 /*-----------------------------------------------------------------------------*/
 static void
@@ -396,7 +407,7 @@ read_and_process_log(FILE *fp)
 	while (fgets(buf, MAX_DATA_LEN, fp) != NULL) {
 		if (strlen(buf) == MAX_DATA_LEN-1) {
 			ERROR_PRINT("Error: file crashed\n");
-			exit(0);
+			exit(-1);
 		}
 		parse_keylog((const char*)buf);
 	}
@@ -407,7 +418,7 @@ open_log()
 {
 	FILE *fp = fopen((const char*)g_path, "r");
 
-	if (fp == NULL) {
+	if (!fp) {
 		fprintf(stderr, "\"key_log.txt\" file isn't created...continue...\n");
 
 		return NULL;
@@ -432,25 +443,25 @@ global_init()
 
 	/* g_session init */
 	g_session = (session_info **)calloc(g_max_session_num, sizeof(session_info*));
-	if (g_session == NULL) {
+	if (!g_session) {
 		ERROR_PRINT("Error: calloc() failed\n");
-		exit(1);
+		exit(-1);
 	}
 	g_session_num = 0;
 
 	/* g_session_send init */
 	g_session_send.session_to_send = (session_info **)calloc(g_max_session_num, sizeof(session_info*));
-	if (g_session_send.session_to_send == NULL) {
+	if (!g_session_send.session_to_send) {
 		ERROR_PRINT("Error: calloc() failed\n");
-		exit(1);
+		exit(-1);
 	}
 	g_session_send.send_cnt = 0;
 
 	for (i = 0; i < g_max_session_num; i++) {
 		g_session[i] = (session_info*)calloc(1, sizeof(session_info));
-		if (g_session[i] == NULL) {
+		if (!g_session[i]) {
 			ERROR_PRINT("Error: calloc() failed\n");
-			exit(1);
+			exit(-1);
 		}
 	}
 }
@@ -462,10 +473,11 @@ main(int argc, char *argv[])
 	int sd;						 // UDP socket descripter
 	struct sockaddr_in servaddr;
 	int addrlen = sizeof(servaddr);
+	FILE *fp;
 	
 	if (argc < 4) {
 		Usage(argv);
-		exit(0);
+		exit(-1);
 	}
 
 	while ((c = getopt(argc, argv, "p:s:")) != -1) {
@@ -476,12 +488,12 @@ main(int argc, char *argv[])
 			g_max_session_num = atoi(optarg);
 			if (g_max_session_num < 1) {
 				ERROR_PRINT("Error: max session number should be more than 1\n");
-				exit(0);
+				exit(-1);
 			}
 		}
 		else {   
 			Usage(argv);
-			exit(0);
+			exit(-1);
 		}
   	}
 
@@ -490,7 +502,7 @@ main(int argc, char *argv[])
 	/* UDP socket */
 	if ((sd = socket(PF_INET, SOCK_DGRAM, 0)) < 0) {
         ERROR_PRINT("Error: socket() failed\n");
-        exit(0);
+        exit(-1);
     }
 
     memset(&servaddr, 0, addrlen);
@@ -500,45 +512,43 @@ main(int argc, char *argv[])
 
 	if ((g_ino_fd = inotify_init()) < 0) {
 		ERROR_PRINT("Error: inotify_init()\n");
-		exit(0);
+		exit(-1);
 	}
 
 	if ((g_ino_wd = inotify_add_watch(g_ino_fd, (const char*)g_path, IN_MODIFY|IN_CREATE)) < 0) {
 		ERROR_PRINT("Error: inotify_add_watch()\n");
-		exit(0);
+		exit(-1);
 	}
 
 	strcat(g_path, "/key_log.txt");	// file name fixed
 
-	FILE *fp = open_log();
-	if (fp != NULL) {
+	fp = open_log();
+	if (fp) {
 		read_and_process_log(fp);
+		send_session_key(sd, servaddr, addrlen);
 	}
-	send_session_key(sd, servaddr, addrlen);
 
 	while (1) {
 		int len;
 		char buf[BUF_SIZE];
 		const struct inotify_event *event;
+		char *ptr;
 
 		len = read(g_ino_fd, buf, BUF_SIZE);
 		if (len < 0) {
 			ERROR_PRINT("Error: read()\n");
-			exit(0);
+			exit(-1);
 		}
-		
-		char *ptr;
 
 		for (ptr = buf; ptr < buf + len; ptr += EVENT_SIZE + event->len) {
 			event = (const struct inotify_event*)ptr;
-
 			if (event->len) {
 				if (event->mask & IN_CREATE) {
 					/* file created */
 					fp = open_log();
-					if (fp == NULL) {
+					if (!fp) {
 						ERROR_PRINT("Error: fopen()\n");
-						exit(0);
+						exit(-1);
 					}
 					read_and_process_log(fp);
 					send_session_key(sd, servaddr, addrlen);
