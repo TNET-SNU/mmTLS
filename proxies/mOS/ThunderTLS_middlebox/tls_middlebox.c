@@ -54,7 +54,7 @@
 /*----------------------------------------------------------------------------*/
 int g_max_cores;                              /* Number of CPU cores to be used */
 mctx_t g_mctx[MAX_CORES];                     /* mOS context */
-TAILQ_HEAD(, connection) g_sockq[MAX_CORES];  /* connection queue */
+TAILQ_HEAD(, conn_info) g_sockq[MAX_CORES];  /* connection queue */
 struct hashtable *g_ht;						  /* hash table of connections */
 /**< ToDo: We should not use linked list for scalability */
 /*----------------------------------------------------------------------------*/
@@ -73,13 +73,13 @@ sigint_handler(int signum)
 }
 /*----------------------------------------------------------------------------*/
 /* Find connection structure by socket ID */
-static inline connection*
+static inline conn_info*
 find_connection(int cpu, int sock)
 {
-    connection *c;
+    conn_info *c;
 
-    TAILQ_FOREACH(c, &g_sockq[cpu], link)
-        if (c->sock == sock)
+    TAILQ_FOREACH(c, &g_sockq[cpu], ci_link)
+        if (c->ci_sock == sock)
             return c;
 
     return NULL;
@@ -111,7 +111,7 @@ hexdump(char *title, uint8_t *buf, size_t len)
 /* Parse session address */
 /* Return length of parsed data, -1 of error */
 static void
-DumpTLSKey(struct tls_crypto_info *key_info, session_address_t sess_addr)
+dump_tls_key(struct tls_crypto_info *key_info, session_address_t sess_addr)
 {
 	uint16_t cipher_suite = key_info->cipher_type;
 	uint16_t mask = key_info->key_mask;
@@ -141,122 +141,123 @@ DumpTLSKey(struct tls_crypto_info *key_info, session_address_t sess_addr)
 }
 #endif	/* VERBOSE_KEY */
 /*----------------------------------------------------------------------------*/
+/* Print AAD, TAG, cipher text and decrypted plain text */
+static void
+print_text(uint8_t *aad, uint8_t *tag, uint8_t *cipher, char *plain, int cipher_len, int out_len)
+{
+	int i;
+
+	fprintf(stderr,"*--------------------------------------------------------*\n");
+	/* aad */
+	fprintf(stderr,"[aad] ");
+    for (i = 0; i < TLS_CIPHER_AES_GCM_256_AAD_SIZE; i++)
+        fprintf(stderr,"%02hhX%c", aad[i],
+                ((i + 1) % 16)? ' ' : '\n');
+    fprintf(stderr,"\n");
+
+	/* tag */
+	fprintf(stderr,"[tag] ");
+    for (i = 0; i < TLS_CIPHER_AES_GCM_256_TAG_SIZE; i++)
+        fprintf(stderr,"%02hhX%c", tag[i],
+                ((i + 1) % 16)? ' ' : '\n');
+    fprintf(stderr,"\n");
+
+	/* cipher text */
+	fprintf(stderr,"ciphertext_len: 0x%x, ciphertext: \n", cipher_len);
+    for (i = 0; i < cipher_len; i++)
+        fprintf(stderr,"%02hhX%c", cipher[i],
+                ((i + 1) % 16)? ' ' : '\n');
+    fprintf(stderr,"\n");
+
+	/* plain text */
+    fprintf(stderr,"plaintext_len: 0x%x, plaintext: \n", out_len);
+    for (i = 0; i < out_len; i++)
+        fprintf(stderr,"%02hhX%c", plain[i],
+                ((i + 1) % 16)? ' ' : '\n');
+    fprintf(stderr,"\n");
+}
+/*----------------------------------------------------------------------------*/
 /* Decrypt single TLS record with given key_info */
 /* Return length of decrypted data, -1 of error */
 static int
-DecryptCiphertext(tls_record *rec, uint8_t *key, uint8_t *iv)
+decrypt_ciphertext(tls_record *rec, uint8_t *key, uint8_t *iv)
 {
-	uint8_t *cipher = rec->ciphertext;
-	uint8_t *plain = rec->plaintext;
-	int cipher_len = rec->cipher_len;
+	uint8_t *cipher = rec->tr_ciphertext;
+	uint8_t *plain = rec->tr_plaintext;
+	int cipher_len = rec->tr_cipher_len;
 	uint8_t aad[TLS_CIPHER_AES_GCM_256_AAD_SIZE], tag[TLS_CIPHER_AES_GCM_256_TAG_SIZE];
-	int i, len = 0, outlen = 0;
+	int final, len = 0, outlen = 0;
 	char *out;
-	size_t aad_len = 0;
+	uint8_t *temp, *ptr;
+	EVP_CIPHER_CTX *ctx;
 	
 	/* aad generate */
-	*(aad+aad_len) = APPLICATION_DATA;
-	aad_len += 1;
-	*(aad+aad_len) = 0x03;		// 03 03: legacy protocol version of TLS 1.2
-	aad_len += 1;
-	*(aad+aad_len) = 0x03;
-	aad_len += 1;
-	*(uint16_t*)(aad+aad_len) = htobe16(cipher_len);	// length of record payload
+	temp = aad;
+	*temp++ = APPLICATION_DATA;
+	*temp++ = 0x03;		// 03 03: legacy protocol version of TLS 1.2
+	*temp++ = 0x03;
+	*(uint16_t*)(temp) = htobe16(cipher_len);	// length of record payload
 
 	/* tag generate */
-	uint8_t *ptr = cipher + cipher_len - TLS_CIPHER_AES_GCM_256_TAG_SIZE;
-
+	ptr = cipher + cipher_len - TLS_CIPHER_AES_GCM_256_TAG_SIZE;
 	memcpy(tag, (const uint8_t*)ptr, TLS_CIPHER_AES_GCM_256_TAG_SIZE);
 	cipher_len -= TLS_CIPHER_AES_GCM_256_TAG_SIZE;						// optional
 
 	/* decrypt cipher text */
-	EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
-
+	ctx = EVP_CIPHER_CTX_new();
     if (!ctx) {
 		ERROR_PRINT("Error: cipher ctx creation failed\n");
-		exit(0);
+		exit(-1);
 	}
 
     if (!EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL)) {
 		ERROR_PRINT("Error: Init algorithm failed\n");
-		exit(0);
+		exit(-1);
 	}
 
     if (!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, TLS_CIPHER_AES_GCM_256_IV_SIZE, NULL)) {
 		ERROR_PRINT("Error: SET_IVLEN failed\n");
-		exit(0);
+		exit(-1);
 	}
 
     if (!EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv)) {
 		ERROR_PRINT("Error: Set KEY/IV faield\n");
-		exit(0);
+		exit(-1);
 	}
 
     if (!EVP_DecryptUpdate(ctx, NULL, &len, aad, TLS_CIPHER_AES_GCM_256_AAD_SIZE)) {
 		ERROR_PRINT("Error: Set AAD failed\n");
-		exit(0);
+		exit(-1);
 	}
 
     if (!EVP_DecryptUpdate(ctx, plain, &len, cipher, cipher_len)) {
 		ERROR_PRINT("Error: Decrypt failed\n");
-		exit(0);
+		exit(-1);
 	}
 
 	if (!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, TLS_CIPHER_AES_GCM_256_TAG_SIZE, tag)) {
 		ERROR_PRINT("Error: Set expected TAG failed\n");
-		exit(0);
+		exit(-1);
 	}
 
 	out = (char*)calloc(sizeof(char), outlen + len);
 	if (!out) {
 		ERROR_PRINT("Error: calloc() failed\n");
-		exit(0);
+		exit(-1);
 	}
     memcpy(out + outlen, plain, len);
     outlen += len;
 
-    int final = EVP_DecryptFinal_ex(ctx, plain+len, &len);;		// positive is success
+    final = EVP_DecryptFinal_ex(ctx, plain+len, &len);;		// positive is success
 
     outlen += len;
 
     EVP_CIPHER_CTX_free(ctx);
 
 	/* print value and results */
-	DECRYPT_PRINT("*--------------------------------------------------------*\n");
-	/* aad */
-	DECRYPT_PRINT("[aad] ");
-    for (i = 0; i < TLS_CIPHER_AES_GCM_256_AAD_SIZE; i++)
-        DECRYPT_PRINT("%02hhX%c", aad[i],
-                ((i + 1) % 16)? ' ' : '\n');
-    DECRYPT_PRINT("\n");
-
-	/* tag */
-	DECRYPT_PRINT("[tag] ");
-    for (i = 0; i < TLS_CIPHER_AES_GCM_256_TAG_SIZE; i++)
-        DECRYPT_PRINT("%02hhX%c", tag[i],
-                ((i + 1) % 16)? ' ' : '\n');
-    DECRYPT_PRINT("\n");
-
-	/* key */
-	DECRYPT_PRINT("[key] ");
-    for (i = 0; i < TLS_CIPHER_AES_GCM_256_KEY_SIZE; i++)
-        DECRYPT_PRINT("%02hhX%c", key[i],
-                ((i + 1) % 16)? ' ' : '\n');
-    DECRYPT_PRINT("\n");
-
-	/* cipher text */
-	DECRYPT_PRINT("ciphertext_len: 0x%x, ciphertext: \n", cipher_len);
-    for (i = 0; i < cipher_len; i++)
-        DECRYPT_PRINT("%02hhX%c", cipher[i],
-                ((i + 1) % 16)? ' ' : '\n');
-    DECRYPT_PRINT("\n");
-
-	/* plain text */
-    DECRYPT_PRINT("plaintext_len: 0x%x, plaintext: \n", outlen);
-    for (i = 0; i < outlen; i++)
-        DECRYPT_PRINT("%02hhX%c", out[i],
-                ((i + 1) % 16)? ' ' : '\n');
-    DECRYPT_PRINT("\n");
+	if (VERBOSE_DEBUG) {
+		print_text(aad, tag, cipher, out, cipher_len, outlen);
+	}
 
     if (final > 0) {
         fprintf(stderr, "decrypt success!\n");
@@ -267,19 +268,19 @@ DecryptCiphertext(tls_record *rec, uint8_t *key, uint8_t *iv)
     }
 	free(out);
 
-	rec->plain_len = outlen - TLS_CIPHER_AES_GCM_256_TAG_SIZE;
+	rec->tr_plain_len = outlen - TLS_CIPHER_AES_GCM_256_TAG_SIZE;
 	
-	return rec->plain_len;
+	return rec->tr_plain_len;
 }
 /*----------------------------------------------------------------------------*/
 /* Decrypt parsed TLS records */
 /* Return number of decrypted record, -1 of error */
 static int
-DecryptTLSRecord(tls_context *tls_ctx)
+decrypt_tls_record(tls_context *tls_ctx)
 {
 	int side, idx;
 	int start, end;
-	struct tls_crypto_info *key_info = &tls_ctx->key_info;
+	struct tls_crypto_info *key_info = &tls_ctx->tc_key_info;
 	uint8_t *key, *iv;
 	tls_record *rec;
 	int ret = 0;
@@ -289,8 +290,8 @@ DecryptTLSRecord(tls_context *tls_ctx)
 	}
 
 	for (side = 0; side < 2; side++) {
-		start = tls_ctx->decrypt_record_idx[side];
-		end = tls_ctx->record_tail[side];
+		start = tls_ctx->tc_decrypt_record_idx[side];
+		end = tls_ctx->tc_record_tail[side];
 
 		if (side != MOS_SIDE_CLI) {
 			key = key_info->client_key;	
@@ -303,14 +304,14 @@ DecryptTLSRecord(tls_context *tls_ctx)
 		idx = start;
 		while(idx != end) {
 			/* ToDo: only decrypt application data now */
-			rec = &tls_ctx->records[side][idx];
-			if (rec->type == APPLICATION_DATA) {
-				if (DecryptCiphertext(rec, key, iv) >= 0)
+			rec = &tls_ctx->tc_records[side][idx];
+			if (rec->tr_type == APPLICATION_DATA) {
+				if (decrypt_ciphertext(rec, key, iv) >= 0)
 					ret++;
 			}
-			idx = (idx+1)%MAX_RECORD_NUM;
+			idx = (idx+1) % MAX_RECORD_NUM;
 		}
-		tls_ctx->decrypt_record_idx[side] = end;
+		tls_ctx->tc_decrypt_record_idx[side] = end;
 	}
 
 	return ret;
@@ -319,7 +320,7 @@ DecryptTLSRecord(tls_context *tls_ctx)
 /* Parse payload to get TLS session key data into key_info */
 /* Return length of parsed data, -1 of error */
 static int
-ParseTLSKey(uint8_t *data, uint16_t datalen,
+parse_tls_key(uint8_t *data, uint16_t datalen,
 		    struct tls_crypto_info *key_info)
 {
 	uint16_t cipher_suite, key_mask;
@@ -373,7 +374,7 @@ ParseTLSKey(uint8_t *data, uint16_t datalen,
 /* Parse TCP payload to assemble single TLS record */
 /* Return byte of parsed record, 0 if no complete record */
 static uint32_t
-ParseTLSRecord(connection *c, int side)
+parse_tls_record(conn_info *c, int side)
 {
 	tls_context *tls_ctx;
 	tls_record *record;
@@ -384,17 +385,17 @@ ParseTLSRecord(connection *c, int side)
 	uint16_t record_len;
 	int ret, off = 0;
 	
-	tls_ctx = &c->tls_ctx;
-	start_seq = tls_ctx->unparse_tcp_seq[side];
+	tls_ctx = &c->ci_tls_ctx;
+	start_seq = tls_ctx->tc_unparse_tcp_seq[side];
 
-	assert(UINT32_GEQ(start_seq, c->seq_head[side]));
+	assert(UINT32_GEQ(start_seq, c->ci_seq_head[side]));
 
 	/* Parse header of new record */
-	if (UINT32_GT(start_seq + TLS_HEADER_LEN, c->seq_tail[side])) {
+	if (UINT32_GT(start_seq + TLS_HEADER_LEN, c->ci_seq_tail[side])) {
 		return 0;
 	}
 
-	ptr = c->buf[side] + start_seq - c->seq_head[side];
+	ptr = c->ci_buf[side] + start_seq - c->ci_seq_head[side];
 	record_type = *ptr + off;
 	off += sizeof(uint8_t);
 	
@@ -405,25 +406,25 @@ ParseTLSRecord(connection *c, int side)
 	off += sizeof(uint16_t);
 
 	/* Store TLS record info if complete */
-	if (UINT32_GT(start_seq + record_len + TLS_HEADER_LEN, c->seq_tail[side])) {
+	if (UINT32_GT(start_seq + record_len + TLS_HEADER_LEN, c->ci_seq_tail[side])) {
 		return 0;
 	}
 
-	if (tls_ctx->record_cnt[side] == MAX_RECORD_NUM) {
+	if (tls_ctx->tc_record_cnt[side] == MAX_RECORD_NUM) {
 		fprintf(stderr, "Error!\n");
 		exit(-1);
 	}
 
 	/* record = &tls_ctx->last_rec[side]; */
-	record = &tls_ctx->records[side][tls_ctx->record_tail[side]];
-	record->type = record_type;
-	record->tcp_seq = start_seq;
-	record->rec_seq = tls_ctx->record_cnt[side];
+	record = &tls_ctx->tc_records[side][tls_ctx->tc_record_tail[side]];
+	record->tr_type = record_type;
+	record->tr_tcp_seq = start_seq;
+	record->tr_rec_seq = tls_ctx->tc_record_cnt[side];
 
 	if (record_type == APPLICATION_DATA) {
-		memcpy(record->ciphertext, ptr + TLS_HEADER_LEN,
+		memcpy(record->tr_ciphertext, ptr + TLS_HEADER_LEN,
 			   record_len);
-		record->cipher_len = record_len;
+		record->tr_cipher_len = record_len;
 	} 
 	else if (record_type == HANDSHAKE) {
 		/* ToDo: We might need to verify HANDSHAKE_FINISHED */
@@ -431,10 +432,10 @@ ParseTLSRecord(connection *c, int side)
 			off += TLS_HANDSHAKE_HEADER_LEN;
 			off += sizeof(uint16_t);		// Client Version (03 03)
 
-			memcpy(c->tls_ctx.client_random, (const uint8_t*)(ptr + off), TLS_1_3_CLIENT_RANDOM_LEN);
-			ret = HT_Insert(g_ht, c, c->tls_ctx.client_random);
+			memcpy(c->ci_tls_ctx.tc_client_random, (const uint8_t*)(ptr + off), TLS_1_3_CLIENT_RANDOM_LEN);
+			ret = ct_insert(g_ht, c);
 			if (ret < 0) {
-				ERROR_PRINT("Error: HT_Insert() failed\n");
+				ERROR_PRINT("Error: ct_insert() failed\n");
 				exit(-1);
 			}
 		}
@@ -442,13 +443,13 @@ ParseTLSRecord(connection *c, int side)
 
 	/* Update tls_ctx */
 	/* ToDo: Add parsing cipher suite */
-	if (tls_ctx->version < version) {
-		tls_ctx->version = version;
+	if (tls_ctx->tc_version < version) {
+		tls_ctx->tc_version = version;
 	}
-	tls_ctx->record_tail[side] = (tls_ctx->record_tail[side]+1) % MAX_RECORD_NUM;
-	tls_ctx->record_cnt[side]++;
-	tls_ctx->unparse_tcp_seq[side] += record_len + TLS_HEADER_LEN;
-	tls_ctx->last_rec_seq[side] = tls_ctx->record_cnt[side];
+	tls_ctx->tc_record_tail[side] = (tls_ctx->tc_record_tail[side]+1) % MAX_RECORD_NUM;
+	tls_ctx->tc_record_cnt[side]++;
+	tls_ctx->tc_unparse_tcp_seq[side] += record_len + TLS_HEADER_LEN;
+	tls_ctx->tc_last_rec_seq[side] = tls_ctx->tc_record_cnt[side];
 
 	
 	/* ToDo: move below to separate function, e.g. PrintTLSStat() */
@@ -474,24 +475,24 @@ static void
 cb_creation(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 {
     socklen_t addrslen = sizeof(struct sockaddr) * 2;
-    connection *c;
+    conn_info *c;
 
 	/* ToDo: remove calloc */
-    c = calloc(sizeof(connection), 1);
+    c = calloc(sizeof(conn_info), 1);
     if (!c) {
 		ERROR_PRINT("Error: [%s]calloc failed\n", __FUNCTION__);
-		exit(0);
+		exit(-1);
 	}
 
-	c->he = (struct hash_elements*)calloc(sizeof(struct hash_elements), 1);
-	if (!c->he) {
+	c->ci_he = (struct hash_elements*)calloc(sizeof(struct hash_elements), 1);
+	if (!c->ci_he) {
 		ERROR_PRINT("Error: [%s]calloc failed\n", __FUNCTION__);
-		exit(0);
+		exit(-1);
 	}
     /* Fill values of the connection structure */
-    c->sock = sock;
+    c->ci_sock = sock;
 
-    if (mtcp_getpeername(mctx, c->sock, (void *)c->addrs, &addrslen,
+    if (mtcp_getpeername(mctx, c->ci_sock, (void *)c->ci_addrs, &addrslen,
                          MOS_SIDE_BOTH) < 0) {
         perror("mtcp_getpeername");
         /* it's better to stop here and do debugging */
@@ -499,21 +500,22 @@ cb_creation(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
     }
 
     /* Insert the structure to the queue */
-    TAILQ_INSERT_TAIL(&g_sockq[mctx->cpu], c, link);
+    TAILQ_INSERT_TAIL(&g_sockq[mctx->cpu], c, ci_link);
 }
 /*----------------------------------------------------------------------------*/
 /* Destroy connection structure */
 static void
 cb_destroy(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 {
-    connection *c;
+    conn_info *c;
 
     if (!(c = find_connection(mctx->cpu, sock))) {
+		ERROR_PRINT("Error: can't find connection to destroy\n");
         return;
 	}
 
-	HT_Remove(g_ht, c);
-    TAILQ_REMOVE(&g_sockq[mctx->cpu], c, link);
+	ct_remove(g_ht, c);
+    TAILQ_REMOVE(&g_sockq[mctx->cpu], c, ci_link);
     free(c);
 }
 /*----------------------------------------------------------------------------*/
@@ -525,8 +527,7 @@ cb_new_data(mctx_t mctx, int sock, int side,
 	uint16_t record_len;
 	int len;
 	uint32_t buf_off;
-
-    connection *c;
+    conn_info *c;
     /* socklen_t intlen = sizeof(int); */
 
     if (!(c = find_connection(mctx->cpu, sock)))
@@ -539,9 +540,9 @@ cb_new_data(mctx_t mctx, int sock, int side,
 #endif
 
 	
-	buf_off = c->seq_tail[side] - c->seq_head[side];
+	buf_off = c->ci_seq_tail[side] - c->ci_seq_head[side];
 	len = mtcp_peek(mctx, sock, side,
-					(char*)c->buf[side] + buf_off, MAX_BUF_LEN - buf_off);
+					(char*)c->ci_buf[side] + buf_off, MAX_BUF_LEN - buf_off);
 
 	if (len > 0) {
 #if VERBOSE_TCP
@@ -552,13 +553,13 @@ cb_new_data(mctx_t mctx, int sock, int side,
 		hexdump(NULL, c->buf[side] + buf_off, len);
 #endif 
 
-		c->seq_tail[side] += len;
+		c->ci_seq_tail[side] += len;
 
 		/* Reassemble TLS record */
-		while((record_len = ParseTLSRecord(c, side)) > 0) {
+		while((record_len = parse_tls_record(c, side)) > 0) {
 			;
 		}
-		DecryptTLSRecord(&c->tls_ctx);
+		decrypt_tls_record(&c->ci_tls_ctx);
 	}
 }
 /*----------------------------------------------------------------------------*/
@@ -576,6 +577,7 @@ cb_new_key(mctx_t mctx, int sock, int side,
 	int offset;
 	uint16_t left_len;
 	uint8_t client_random[TLS_1_3_CLIENT_RANDOM_LEN];
+	conn_info *c;
 
 	if (mtcp_getlastpkt(mctx, sock, side, &p) < 0) {
         fprintf(stderr, "Failed to get packet context!!!\n");
@@ -606,35 +608,31 @@ cb_new_key(mctx_t mctx, int sock, int side,
 	left_len = payloadlen;
 	ptr = payload;
 	
-	offset = ParseTLSKey(ptr, left_len, &key_info);
+	offset = parse_tls_key(ptr, left_len, &key_info);
 	ptr += offset;
 	left_len -= offset;
 
-	//offset = ParseSessionAddr(ptr, left_len, &sess_addr);
-	//ptr += offset;
-	//left_len -= offset;
-
 	memcpy(client_random, ptr, TLS_1_3_CLIENT_RANDOM_LEN);
-	connection *c = HT_Search(g_ht, client_random);
 
+	c = ct_search(g_ht, client_random);
 	if (!c) {
 		ERROR_PRINT("Error: Can't find connection with Client Random\n");
 		return;
 	}
 
 	//sock_mon = mtcp_addrtosock(mctx, &sess_addr);
-	sock_mon = c->sock;
+	sock_mon = c->ci_sock;
 	fprintf(stderr, "sock: %d\n", sock_mon);
 	if (sock_mon < 0) {
-		return;
+		ERROR_PRINT("Error: wrong socket descripotr\n");
+		exit(-1);
 	}
 
 	/* Insert key info to the session */
-	connection *target = find_connection(mctx->cpu, sock_mon);
-	target->tls_ctx.key_info = key_info;
+	c->ci_tls_ctx.tc_key_info = key_info;
 	
 	/* Decrypt records which reached before key arrival */
-	DecryptTLSRecord(&target->tls_ctx);
+	decrypt_tls_record(&c->ci_tls_ctx);
 
 	return;
 
@@ -649,7 +647,7 @@ cb_new_key(mctx_t mctx, int sock, int side,
 }
 /*----------------------------------------------------------------------------*/
 static bool
-CheckIsKey(mctx_t mctx, int sock,
+check_is_key(mctx_t mctx, int sock,
 		   int side, uint64_t events, filter_arg_t *arg)
 {
 	struct pkt_info p;
@@ -671,11 +669,11 @@ CheckIsKey(mctx_t mctx, int sock,
 }
 /*----------------------------------------------------------------------------*/
 static void
-RegisterSessionKeyCallback(mctx_t mctx, int sock)
+register_sessionkey_callback(mctx_t mctx, int sock)
 {
 	event_t ude_from_ctrl;
 
-	ude_from_ctrl = mtcp_define_event(MOS_ON_PKT_IN, CheckIsKey, NULL);
+	ude_from_ctrl = mtcp_define_event(MOS_ON_PKT_IN, check_is_key, NULL);
 	if (ude_from_ctrl == MOS_NULL_EVENT) {
         fprintf(stderr, "mtcp_define_event() failed!");
 		exit(EXIT_FAILURE);
@@ -689,20 +687,20 @@ RegisterSessionKeyCallback(mctx_t mctx, int sock)
 }
 /*----------------------------------------------------------------------------*/
 static void
-RegisterDataCallback(mctx_t mctx, int sock)
+register_data_callback(mctx_t mctx, int sock)
 {
     if (mtcp_register_callback(mctx, sock, MOS_ON_CONN_START,
                    MOS_HK_SND, cb_creation)) {
         fprintf(stderr, "Failed to register cb_creation()\n");
         exit(-1); /* no point in proceeding if callback registration fails */
     }
+
     if (mtcp_register_callback(mctx, sock, MOS_ON_CONN_END,
                    MOS_HK_SND, cb_destroy)) {
         fprintf(stderr, "Failed to register cb_destroy()\n");
         exit(-1); /* no point in proceeding if callback registration fails */
     }
 
-	
     if (mtcp_register_callback(mctx, sock, MOS_ON_CONN_NEW_DATA,
                    MOS_NULL, cb_new_data)) {
         fprintf(stderr, "Failed to register cb_new_data()\n");
@@ -712,7 +710,7 @@ RegisterDataCallback(mctx_t mctx, int sock)
 /*----------------------------------------------------------------------------*/
 /* Register required callbacks */
 static void
-RegisterCallbacks(mctx_t mctx)
+register_callbacks(mctx_t mctx)
 {
     int sock_key, sock_stream;
 
@@ -728,7 +726,7 @@ RegisterCallbacks(mctx_t mctx)
 		fprintf(stderr, "Failed to bind ft to the listening socket!\n");
 		exit(-1);
 	}
-	RegisterSessionKeyCallback(mctx, sock_key);
+	register_sessionkey_callback(mctx, sock_key);
 
 	
 	/* Register UDE for TCP connetions */
@@ -737,17 +735,17 @@ RegisterCallbacks(mctx_t mctx)
         fprintf(stderr, "Failed to create monitor listening socket!\n");
         exit(-1); /* no point in proceeding if we don't have a listening socket */
     }
-	RegisterDataCallback(mctx, sock_stream);
+	register_data_callback(mctx, sock_stream);
 }
 /*----------------------------------------------------------------------------*/
 /* Open monitoring socket and ready it for monitoring */
 static void
-InitMonitor(mctx_t mctx)
+init_monitor(mctx_t mctx)
 {
     /* Initialize internal memory structures */
     TAILQ_INIT(&g_sockq[mctx->cpu]);
 
-    RegisterCallbacks(mctx);
+    register_callbacks(mctx);
 }
 /*----------------------------------------------------------------------------*/
 int
@@ -786,7 +784,7 @@ main(int argc, char **argv)
 	}
 
 	/* create hash table for socket matching */
-	g_ht = Create_Hashtable();
+	g_ht = ct_create();
 
 	/* parse mos configuration file */
 	ret = mtcp_init(fname);
@@ -812,7 +810,7 @@ main(int argc, char **argv)
         }
 
         /* init monitor */
-        InitMonitor(g_mctx[i]);
+        init_monitor(g_mctx[i]);
 	}
 
 	/* wait until all threads finish */	
@@ -822,7 +820,7 @@ main(int argc, char **argv)
 	}	
 	
 	mtcp_destroy();
-	Destroy_Hashtable(g_ht);
+	ct_destroy(g_ht);
 
 	return EXIT_SUCCESS;
 }

@@ -1,32 +1,20 @@
 #ifndef __HASH_H__
 #define __HASH_H__
 
-#include <sys/queue.h>
-
 #include "tls.h"
 
-#define NUM_BINS (131072)     /* 132 K */
+#define NUM_BINS (65536)
 #define AR_CNT (3)
 
-typedef struct hash_bucket_head {
-	connection *tqh_first;
-	connection **tqh_last;
-} hash_bucket_head;
-
 /* hashtable structure */
-struct hashtable {
-	uint8_t ht_count ;                    // count for # entry
+struct hashtable;
 
-	hash_bucket_head ht_table[NUM_BINS];
-};
+/* functions for connection info table */
+struct hashtable *ct_create(void);
+void ct_destroy(struct hashtable *ht);
 
-/*functions for hashtable*/
-struct hashtable *Create_Hashtable(void);
-void Destroy_Hashtable(struct hashtable *ht);
-
-
-int HT_Insert(struct hashtable *ht, connection *item, uint8_t *hash);
-void* HT_Remove(struct hashtable *ht, connection *item);
-connection* HT_Search(struct hashtable *ht, uint8_t *hash);
+int ct_insert(struct hashtable *ht, conn_info *item);
+void* ct_remove(struct hashtable *ht, conn_info *item);
+conn_info* ct_search(struct hashtable *ht, uint8_t *hash);
 
 #endif /* __HASH_H__ */

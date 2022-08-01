@@ -37,7 +37,7 @@
 #endif
 
 /* Print message coloring */
-#define ANSI_COLOR_YELLOW   "\x1b[33m"
+#define ANSI_COLOR_YELLOW  "\x1b[33m"
 #define ANSI_COLOR_GREEN   "\x1b[32m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
 
@@ -78,57 +78,53 @@ struct tls_crypto_info {
 /* }; */
 
 typedef struct tls_record {
-	uint8_t type;
-	uint32_t tcp_seq;
-	uint64_t rec_seq;
+	uint8_t tr_type;
+	uint32_t tr_tcp_seq;
+	uint64_t tr_rec_seq;
 
-	uint8_t plaintext[MAX_RECORD_LEN];
-	uint8_t ciphertext[MAX_RECORD_LEN];
-	uint16_t plain_len;
-	uint16_t cipher_len;
+	uint8_t tr_plaintext[MAX_RECORD_LEN];
+	uint8_t tr_ciphertext[MAX_RECORD_LEN];
+	uint16_t tr_plain_len;
+	uint16_t tr_cipher_len;
 } tls_record;
 
 typedef struct tls_context {
-	uint16_t version;
-
-	uint8_t client_random[TLS_1_3_CLIENT_RANDOM_LEN];
-	
-	struct tls_crypto_info key_info;
-
-	uint64_t last_rec_seq[2];
-	
-	uint32_t unparse_tcp_seq[2];
+	uint16_t tc_version;
+	uint8_t tc_client_random[TLS_1_3_CLIENT_RANDOM_LEN];
+	struct tls_crypto_info tc_key_info;
+	uint64_t tc_last_rec_seq[2];
+	uint32_t tc_unparse_tcp_seq[2];
 	/**< starting point to parse a new record */
 
 	/* tls_record last_rec[2]; */
-	tls_record records[2][MAX_RECORD_NUM];
-	uint32_t record_head[2];
-	uint32_t record_tail[2];
-	uint32_t record_cnt[2];
-	uint32_t decrypt_record_idx[2];
+	tls_record tc_records[2][MAX_RECORD_NUM];
+	uint32_t tc_record_head[2];
+	uint32_t tc_record_tail[2];
+	uint32_t tc_record_cnt[2];
+	uint32_t tc_decrypt_record_idx[2];
 } tls_context;
 
-struct hash_elements {		// ToDo: need to change name
+struct hash_elements {
 	struct hash_bucket_head *he_mybucket;
-	TAILQ_ENTRY(connection) he_link;	/* hash table entry link */
+	TAILQ_ENTRY(conn_info) he_link;	/* hash table entry link */
 };
 
-typedef struct connection {
-    int sock;                    	    /* socket ID */
-	struct sockaddr_in addrs[2];  		/* Address of a client and a serer */
-    int cli_state;              	  	/* TCP state of the client */
-    int svr_state;                 		/* TCP state of the server */
-	uint8_t ht_idx;						/* hash table index */
+typedef struct conn_info {					/* connection info */
+    int ci_sock;                    	    /* socket ID */
+	struct sockaddr_in ci_addrs[2];  		    /* Address of a client and a serer */
+    int ci_cli_state;              	  	    /* TCP state of the client */
+    int ci_svr_state;                 		/* TCP state of the server */
+	uint8_t ci_ht_idx;						/* hash table index */
 
-	uint8_t buf[2][MAX_BUF_LEN];
-	uint32_t seq_head[2];
-	uint32_t seq_tail[2];
+	uint8_t ci_buf[2][MAX_BUF_LEN];			/* TLS record buffer */
+	uint32_t ci_seq_head[2];
+	uint32_t ci_seq_tail[2];
 
-	tls_context tls_ctx;
+	tls_context ci_tls_ctx;
 
-	struct hash_elements *he;
+	struct hash_elements *ci_he;
 
-    TAILQ_ENTRY(connection) link;  /* link to next context in this core */
-} connection;
+    TAILQ_ENTRY(conn_info) ci_link;         /* link to next context in this core */
+} conn_info;
 
 #endif /* __TLS_H__ */
