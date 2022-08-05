@@ -43,9 +43,10 @@
 
 #define UDP_PORT      6666		/* only for debug */
 
-#define VERBOSE_TCP   0
-#define VERBOSE_TLS   0
-#define VERBOSE_KEY   0
+#define VERBOSE_TCP   	0
+#define VERBOSE_TLS   	0
+#define VERBOSE_KEY   	0
+#define VERBOSE_DEBUG   0
 
 #define UINT32_LT(a,b)         ((int32_t)((a)-(b)) < 0)
 #define UINT32_LEQ(a,b)        ((int32_t)((a)-(b)) <= 0)
@@ -54,8 +55,9 @@
 /*----------------------------------------------------------------------------*/
 int g_max_cores;                              /* Number of CPU cores to be used */
 mctx_t g_mctx[MAX_CORES];                     /* mOS context */
-TAILQ_HEAD(, conn_info) g_sockq[MAX_CORES];  /* connection queue */
-struct hashtable *g_ht;						  /* hash table of connections */
+// TAILQ_HEAD(, conn_info) g_sockq[MAX_CORES];   /* connection queue */
+struct ct_hashtable *g_ct;					  /* hash table of connections with client random */
+struct st_hashtable *g_st;					  /* hash table of connections with socket */
 /**< ToDo: We should not use linked list for scalability */
 /*----------------------------------------------------------------------------*/
 /* Signal handler */
@@ -73,17 +75,17 @@ sigint_handler(int signum)
 }
 /*----------------------------------------------------------------------------*/
 /* Find connection structure by socket ID */
-static inline conn_info*
-find_connection(int cpu, int sock)
-{
-    conn_info *c;
+// static inline conn_info*
+// find_connection(int cpu, int sock)
+// {
+//     conn_info *c;
 
-    TAILQ_FOREACH(c, &g_sockq[cpu], ci_link)
-        if (c->ci_sock == sock)
-            return c;
+//     TAILQ_FOREACH(c, &g_sockq[cpu], ci_link)
+//         if (c->ci_sock == sock)
+//             return c;
 
-    return NULL;
-}
+//     return NULL;
+// }
 /*----------------------------------------------------------------------------*/
 /* Dump bytestream in hexademical form */
 #if VERBOSE_TCP | VERBOSE_TLS | VERBOSE_KEY
@@ -107,41 +109,42 @@ hexdump(char *title, uint8_t *buf, size_t len)
 }
 #endif	/* !VERBOSEs */
 /*----------------------------------------------------------------------------*/
-#if VERBOSE_KEY
-/* Parse session address */
-/* Return length of parsed data, -1 of error */
-static void
-dump_tls_key(struct tls_crypto_info *key_info, session_address_t sess_addr)
-{
-	uint16_t cipher_suite = key_info->cipher_type;
-	uint16_t mask = key_info->key_mask;
-	uint16_t key_len;
-	uint16_t iv_len;
+// #if VERBOSE_KEY
+// /* Parse session address */
+// /* Return length of parsed data, -1 of error */
+// static void
+// dump_tls_key(struct tls_crypto_info *key_info, session_address_t sess_addr)
+// {
+// 	uint16_t cipher_suite = key_info->cipher_type;
+// 	uint16_t mask = key_info->key_mask;
+// 	uint16_t key_len;
+// 	uint16_t iv_len;
 
-	UNUSED(cipher_suite);
-	key_len = TLS_CIPHER_AES_GCM_256_KEY_SIZE;
-	iv_len = TLS_CIPHER_AES_GCM_256_IV_SIZE;
+// 	UNUSED(cipher_suite);
+// 	key_len = TLS_CIPHER_AES_GCM_256_KEY_SIZE;
+// 	iv_len = TLS_CIPHER_AES_GCM_256_IV_SIZE;
 
-	fprintf(stderr, "------------------------------\n[%s] %x:%u -> %x:%u\n",
-			__FUNCTION__, sess_addr->client_ip, sess_addr->client_port,
-			sess_addr->server_ip, sess_addr->server_port);
+// 	fprintf(stderr, "------------------------------\n[%s] %x:%u -> %x:%u\n",
+// 			__FUNCTION__, sess_addr->client_ip, sess_addr->client_port,
+// 			sess_addr->server_ip, sess_addr->server_port);
 	
-	if (mask & CLI_KEY_MASK) {
-		hexdump("client_write_key:", key_info->client_key, key_len);
-	}
-	if (mask & SRV_KEY_MASK) {
-		hexdump("server_write_key:", key_info->server_key, key_len);
-	}
-	if (mask & CLI_IV_MASK) {
-		hexdump("client_write_iv:", key_info->client_iv, iv_len);
-	}
-	if (mask & SRV_IV_MASK) {
-		hexdump("server_write_iv:", key_info->server_iv, iv_len);
-	}
-}
-#endif	/* VERBOSE_KEY */
+// 	if (mask & CLI_KEY_MASK) {
+// 		hexdump("client_write_key:", key_info->client_key, key_len);
+// 	}
+// 	if (mask & SRV_KEY_MASK) {
+// 		hexdump("server_write_key:", key_info->server_key, key_len);
+// 	}
+// 	if (mask & CLI_IV_MASK) {
+// 		hexdump("client_write_iv:", key_info->client_iv, iv_len);
+// 	}
+// 	if (mask & SRV_IV_MASK) {
+// 		hexdump("server_write_iv:", key_info->server_iv, iv_len);
+// 	}
+// }
+// #endif	/* VERBOSE_KEY */
 /*----------------------------------------------------------------------------*/
 /* Print AAD, TAG, cipher text and decrypted plain text */
+#if VERBOSE_DEBUG
 static void
 print_text(uint8_t *aad, uint8_t *tag, uint8_t *cipher, char *plain, int cipher_len, int out_len)
 {
@@ -176,6 +179,12 @@ print_text(uint8_t *aad, uint8_t *tag, uint8_t *cipher, char *plain, int cipher_
                 ((i + 1) % 16)? ' ' : '\n');
     fprintf(stderr,"\n");
 }
+#else
+static void
+print_text(uint8_t *aad, uint8_t *tag, uint8_t *cipher, char *plain, int cipher_len, int out_len)
+{
+}
+#endif	/* !VERBOSE_DEBUG */
 /*----------------------------------------------------------------------------*/
 /* Decrypt single TLS record with given key_info */
 /* Return length of decrypted data, -1 of error */
@@ -255,15 +264,13 @@ decrypt_ciphertext(tls_record *rec, uint8_t *key, uint8_t *iv)
     EVP_CIPHER_CTX_free(ctx);
 
 	/* print value and results */
-	if (VERBOSE_DEBUG) {
-		print_text(aad, tag, cipher, out, cipher_len, outlen);
-	}
+	print_text(aad, tag, cipher, out, cipher_len, outlen);
 
     if (final > 0) {
         fprintf(stderr, "decrypt success!\n");
     } 
 	else {
-		DECRYPT_PRINT("This packet is handshake finish or New Session Ticket. Unable to decrypt..\n");
+		fprintf(stderr, "Can't decrypt with given key. Might be handshake finish or etc..\n");
 		// ERROR_PRINT("Error: decrypt failed, tag value didn't match\n");
     }
 	free(out);
@@ -384,7 +391,8 @@ parse_tls_record(conn_info *c, int side)
 	uint16_t version;
 	uint16_t record_len;
 	int ret, off = 0;
-	
+	uint8_t client_random[TLS_1_3_CLIENT_RANDOM_LEN];
+
 	tls_ctx = &c->ci_tls_ctx;
 	start_seq = tls_ctx->tc_unparse_tcp_seq[side];
 
@@ -432,8 +440,8 @@ parse_tls_record(conn_info *c, int side)
 			off += TLS_HANDSHAKE_HEADER_LEN;
 			off += sizeof(uint16_t);		// Client Version (03 03)
 
-			memcpy(c->ci_tls_ctx.tc_client_random, (const uint8_t*)(ptr + off), TLS_1_3_CLIENT_RANDOM_LEN);
-			ret = ct_insert(g_ht, c);
+			memcpy(client_random, (const uint8_t*)(ptr + off), TLS_1_3_CLIENT_RANDOM_LEN);
+			ret = ct_insert(g_ct, c, client_random);
 			if (ret < 0) {
 				ERROR_PRINT("Error: ct_insert() failed\n");
 				exit(-1);
@@ -458,12 +466,12 @@ parse_tls_record(conn_info *c, int side)
 			__FUNCTION__);
 	fprintf(stderr, "Record type %x, length %u (TCP %u ~ %u), "
 			"rec seq %lu, cipher len %u\n",
-			record->type, record->tcp_seq, record_len,
-			record->tcp_seq + record_len + TLS_HEADER_LEN,
-			record->rec_seq, record->cipher_len);
-	if (record->cipher_len) {
+			record->tr_type, record->tr_tcp_seq, record_len,
+			record->tr_tcp_seq + record_len + TLS_HEADER_LEN,
+			record->tr_rec_seq, record->tr_cipher_len);
+	if (record->tr_cipher_len) {
 		hexdump("Dump of ciphertext of the record:",
-				record->ciphertext, record->cipher_len);
+				record->tr_ciphertext, record->tr_cipher_len);
 	} 
 #endif	/* VERBOSE_TLS */
 	
@@ -475,7 +483,9 @@ static void
 cb_creation(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 {
     socklen_t addrslen = sizeof(struct sockaddr) * 2;
+	struct sockaddr addrs[2];
     conn_info *c;
+	int ret;
 
 	/* ToDo: remove calloc */
     c = calloc(sizeof(conn_info), 1);
@@ -484,15 +494,11 @@ cb_creation(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 		exit(-1);
 	}
 
-	c->ci_he = (struct hash_elements*)calloc(sizeof(struct hash_elements), 1);
-	if (!c->ci_he) {
-		ERROR_PRINT("Error: [%s]calloc failed\n", __FUNCTION__);
-		exit(-1);
-	}
     /* Fill values of the connection structure */
-    c->ci_sock = sock;
+    //c->ci_sock = sock;
 
-    if (mtcp_getpeername(mctx, c->ci_sock, (void *)c->ci_addrs, &addrslen,
+	/* ToDo: remove conn_info.ci_addrs */
+    if (mtcp_getpeername(mctx, sock, addrs, &addrslen,
                          MOS_SIDE_BOTH) < 0) {
         perror("mtcp_getpeername");
         /* it's better to stop here and do debugging */
@@ -500,7 +506,12 @@ cb_creation(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
     }
 
     /* Insert the structure to the queue */
-    TAILQ_INSERT_TAIL(&g_sockq[mctx->cpu], c, ci_link);
+	ret = st_insert(g_st, c, sock);
+	if (ret < 0) {
+		ERROR_PRINT("Error: st_insert() failed\n");
+		exit(-1);
+	}
+    //TAILQ_INSERT_TAIL(&g_sockq[mctx->cpu], c, ci_link);
 }
 /*----------------------------------------------------------------------------*/
 /* Destroy connection structure */
@@ -509,20 +520,22 @@ cb_destroy(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 {
     conn_info *c;
 
-    if (!(c = find_connection(mctx->cpu, sock))) {
-		ERROR_PRINT("Error: can't find connection to destroy\n");
+    /*if (!(c = find_connection(mctx->cpu, sock))) {
         return;
+	}*/
+	if (!(c = st_search(g_st, sock))) {
+		return;
 	}
 
-	ct_remove(g_ht, c);
-    TAILQ_REMOVE(&g_sockq[mctx->cpu], c, ci_link);
+	ct_remove(g_ct, c);
+	st_remove(g_st, c);
+    //TAILQ_REMOVE(&g_sockq[mctx->cpu], c, ci_link);
     free(c);
 }
 /*----------------------------------------------------------------------------*/
 /* Update connection's TCP state of each side */
 static void
-cb_new_data(mctx_t mctx, int sock, int side,
-			uint64_t events, filter_arg_t *arg)
+cb_new_data(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 {
 	uint16_t record_len;
 	int len;
@@ -530,13 +543,16 @@ cb_new_data(mctx_t mctx, int sock, int side,
     conn_info *c;
     /* socklen_t intlen = sizeof(int); */
 
-    if (!(c = find_connection(mctx->cpu, sock)))
+    /*if (!(c = find_connection(mctx->cpu, sock)))
         return;
-
+	*/
+	if (!(c = st_search(g_st, sock))) {
+		return;
+	}
 #if VERBOSE_TCP
 	fprintf(stderr, "\n--------------------------------------------------\n");
 	fprintf(stderr, "[%s] sock: %u, c->sock: %u, side: %u\n",
-			__FUNCTION__, sock, c->sock, side);
+			__FUNCTION__, sock, sock, side);
 #endif
 
 	
@@ -548,9 +564,9 @@ cb_new_data(mctx_t mctx, int sock, int side,
 #if VERBOSE_TCP
 		fprintf(stderr, "[%s] from %s, received %u B (seq %u ~ %u) TCP data!\n",
 				__FUNCTION__, (side == MOS_SIDE_CLI) ? "server":"client",
-				len, c->seq_tail[side], c->seq_tail[side] + len);
+				len, c->ci_seq_tail[side], c->ci_seq_tail[side] + len);
 
-		hexdump(NULL, c->buf[side] + buf_off, len);
+		hexdump(NULL, c->ci_buf[side] + buf_off, len);
 #endif 
 
 		c->ci_seq_tail[side] += len;
@@ -565,15 +581,14 @@ cb_new_data(mctx_t mctx, int sock, int side,
 /*----------------------------------------------------------------------------*/
 /* Update connection's TCP state of each side */
 static void
-cb_new_key(mctx_t mctx, int sock, int side,
-		   uint64_t events, filter_arg_t *arg)
+cb_new_key(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 {
 	struct pkt_info p;
 	uint8_t *payload, *ptr;
 	uint16_t payloadlen;
 	struct udphdr *udph;
 	struct tls_crypto_info key_info;
-	int sock_mon = 0;
+	// int sock_mon = 0;
 	int offset;
 	uint16_t left_len;
 	uint8_t client_random[TLS_1_3_CLIENT_RANDOM_LEN];
@@ -614,19 +629,18 @@ cb_new_key(mctx_t mctx, int sock, int side,
 
 	memcpy(client_random, ptr, TLS_1_3_CLIENT_RANDOM_LEN);
 
-	c = ct_search(g_ht, client_random);
+	c = ct_search(g_ct, client_random);
 	if (!c) {
 		ERROR_PRINT("Error: Can't find connection with Client Random\n");
 		return;
 	}
 
-	//sock_mon = mtcp_addrtosock(mctx, &sess_addr);
-	sock_mon = c->ci_sock;
-	fprintf(stderr, "sock: %d\n", sock_mon);
-	if (sock_mon < 0) {
-		ERROR_PRINT("Error: wrong socket descripotr\n");
-		exit(-1);
-	}
+	// sock_mon = c->ci_sock;
+	// fprintf(stderr, "sock: %d\n", sock_mon);
+	// if (sock_mon < 0) {
+	// 	ERROR_PRINT("Error: wrong socket descripotr\n");
+	// 	exit(-1);
+	// }
 
 	/* Insert key info to the session */
 	c->ci_tls_ctx.tc_key_info = key_info;
@@ -647,8 +661,7 @@ cb_new_key(mctx_t mctx, int sock, int side,
 }
 /*----------------------------------------------------------------------------*/
 static bool
-check_is_key(mctx_t mctx, int sock,
-		   int side, uint64_t events, filter_arg_t *arg)
+check_is_key(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 {
 	struct pkt_info p;
 	struct udphdr *udph;
@@ -743,7 +756,7 @@ static void
 init_monitor(mctx_t mctx)
 {
     /* Initialize internal memory structures */
-    TAILQ_INIT(&g_sockq[mctx->cpu]);
+    // TAILQ_INIT(&g_sockq[mctx->cpu]);
 
     register_callbacks(mctx);
 }
@@ -783,8 +796,9 @@ main(int argc, char **argv)
 		}
 	}
 
-	/* create hash table for socket matching */
-	g_ht = ct_create();
+	/* create hash table */
+	g_ct = ct_create();
+	g_st = st_create();
 
 	/* parse mos configuration file */
 	ret = mtcp_init(fname);
@@ -820,7 +834,8 @@ main(int argc, char **argv)
 	}	
 	
 	mtcp_destroy();
-	ct_destroy(g_ht);
+	ct_destroy(g_ct);
+	st_destroy(g_st);
 
 	return EXIT_SUCCESS;
 }

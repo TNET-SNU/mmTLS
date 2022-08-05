@@ -20,7 +20,6 @@
 
 #define PRINT (stderr)  
 
-#define VERBOSE_DEBUG   0
 #define VERBOSE_ERROR   1
 
 #if VERBOSE_ERROR
@@ -28,12 +27,6 @@
                                     ""fmt""ANSI_COLOR_RESET, ##args)
 #else
 #define ERROR_PRINT(fmt, args...) (void)0
-#endif
-
-#if VERBOSE_DEBUG
-#define DECRYPT_PRINT(fmt, args...) fprintf(PRINT, ""fmt"", ##args)
-#else
-#define DECRYPT_PRINT(fmt, args...) (void)0
 #endif
 
 /* Print message coloring */
@@ -90,7 +83,7 @@ typedef struct tls_record {
 
 typedef struct tls_context {
 	uint16_t tc_version;
-	uint8_t tc_client_random[TLS_1_3_CLIENT_RANDOM_LEN];
+	// uint8_t tc_client_random[TLS_1_3_CLIENT_RANDOM_LEN];
 	struct tls_crypto_info tc_key_info;
 	uint64_t tc_last_rec_seq[2];
 	uint32_t tc_unparse_tcp_seq[2];
@@ -104,17 +97,20 @@ typedef struct tls_context {
 	uint32_t tc_decrypt_record_idx[2];
 } tls_context;
 
-struct hash_elements {
-	struct hash_bucket_head *he_mybucket;
-	TAILQ_ENTRY(conn_info) he_link;	/* hash table entry link */
+struct ct_hash_elements {
+	struct ct_hash_bucket_head *he_mybucket;
+	TAILQ_ENTRY(ct_element) he_link;		/* hash table entry link */
+};
+
+struct st_hash_elements {
+	struct st_hash_bucket_head *he_mybucket;
+	TAILQ_ENTRY(st_element) he_link;		/* hash table entry link */
 };
 
 typedef struct conn_info {					/* connection info */
-    int ci_sock;                    	    /* socket ID */
-	struct sockaddr_in ci_addrs[2];  		    /* Address of a client and a serer */
+    // int ci_sock;                    	    /* socket ID */
     int ci_cli_state;              	  	    /* TCP state of the client */
     int ci_svr_state;                 		/* TCP state of the server */
-	uint8_t ci_ht_idx;						/* hash table index */
 
 	uint8_t ci_buf[2][MAX_BUF_LEN];			/* TLS record buffer */
 	uint32_t ci_seq_head[2];
@@ -122,9 +118,10 @@ typedef struct conn_info {					/* connection info */
 
 	tls_context ci_tls_ctx;
 
-	struct hash_elements *ci_he;
-
-    TAILQ_ENTRY(conn_info) ci_link;         /* link to next context in this core */
+	struct ct_hash_elements ci_ct_he;
+	struct st_hash_elements ci_st_he;
+    // TAILQ_ENTRY(conn_info) ci_link;         /* link to next context in this core */
 } conn_info;
+
 
 #endif /* __TLS_H__ */
