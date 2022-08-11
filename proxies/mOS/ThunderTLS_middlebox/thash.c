@@ -116,9 +116,8 @@ ct_search_int(struct ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN
 conn_info*
 ct_search(struct ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN])
 {
-	struct ct_element* item;
+	struct ct_element* item = ct_search_int(ht, crandom);
 
-	item = ct_search_int(ht, crandom);
 	if (!item) {
 		return NULL;
 	}
@@ -225,9 +224,8 @@ st_search_int(struct st_hashtable *ht, int sock)
 conn_info* 
 st_search(struct st_hashtable *ht, int sock)
 {
-	struct st_element* item;
+	struct st_element* item = st_search_int(ht, sock);
 
-	item = st_search_int(ht, sock);
 	if (!item) {
 		return NULL;
 	}
