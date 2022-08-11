@@ -391,7 +391,6 @@ parse_tls_record(conn_info *c, int side)
 	uint16_t version;
 	uint16_t record_len;
 	int ret, off = 0;
-	uint8_t client_random[TLS_1_3_CLIENT_RANDOM_LEN];
 
 	tls_ctx = &c->ci_tls_ctx;
 	start_seq = tls_ctx->tc_unparse_tcp_seq[side];
@@ -440,8 +439,8 @@ parse_tls_record(conn_info *c, int side)
 			off += TLS_HANDSHAKE_HEADER_LEN;
 			off += sizeof(uint16_t);		// Client Version (03 03)
 
-			memcpy(client_random, (const uint8_t*)(ptr + off), TLS_1_3_CLIENT_RANDOM_LEN);
-			ret = ct_insert(g_ct, c, client_random);
+			memcpy(c->ci_client_random, (const uint8_t*)(ptr + off), TLS_1_3_CLIENT_RANDOM_LEN);
+			ret = ct_insert(g_ct, c, c->ci_client_random);
 			if (ret < 0) {
 				ERROR_PRINT("Error: ct_insert() failed\n");
 				exit(-1);
@@ -495,7 +494,7 @@ cb_creation(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 	}
 
     /* Fill values of the connection structure */
-    //c->ci_sock = sock;
+    c->ci_sock = sock;
 
 	/* ToDo: remove conn_info.ci_addrs */
     if (mtcp_getpeername(mctx, sock, addrs, &addrslen,
@@ -506,7 +505,7 @@ cb_creation(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
     }
 
     /* Insert the structure to the queue */
-	ret = st_insert(g_st, c, sock);
+	ret = st_insert(g_st, c, c->ci_sock);
 	if (ret < 0) {
 		ERROR_PRINT("Error: st_insert() failed\n");
 		exit(-1);
@@ -527,8 +526,8 @@ cb_destroy(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 		return;
 	}
 
-	ct_remove(g_ct, c);
-	st_remove(g_st, c);
+	ct_remove(g_ct, c->ci_client_random);
+	st_remove(g_st, c->ci_sock);
     //TAILQ_REMOVE(&g_sockq[mctx->cpu], c, ci_link);
     free(c);
 }
@@ -648,9 +647,6 @@ cb_new_key(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 	/* Decrypt records which reached before key arrival */
 	decrypt_tls_record(&c->ci_tls_ctx);
 
-	return;
-
-	
 	/* mtcp_setsockopt(mctx, sock_mon, SOL_MONSOCKET, */
 	/* 				MOS_TLS_SP, &key_info, sizeof(key_info)); */
 	/* struct tls_crypto_info key_info_tmp; */
@@ -677,8 +673,8 @@ check_is_key(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg
 		ntohs(udph->dest) == UDP_PORT &&
 		p.ip_len > IP_HEADER_LEN)
 		return 1;
-	else
-		return 0;
+
+	return 0;
 }
 /*----------------------------------------------------------------------------*/
 static void
