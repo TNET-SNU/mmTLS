@@ -6,7 +6,8 @@
 
 #include "include/thash.h"
 
-#define NUM_BINS (65536)
+#define NUM_BINS 		(65536)
+#define LOWER_16BITS 	(0x0000FFFF)
 
 /* ToDo: remove client random and sock number from conn_info */
 
@@ -94,7 +95,7 @@ ct_insert(struct ct_hashtable *ht, conn_info *c, uint8_t crandom[TLS_1_3_CLIENT_
 	TAILQ_INSERT_TAIL(&ht->ht_table[idx], item, ct_link);
 	ht->ht_count++;
 	
-	return 0;
+	return 1;
 }
 /*----------------------------------------------------------------------------*/
 static struct ct_element* 
@@ -189,7 +190,7 @@ st_insert(struct st_hashtable *ht, conn_info *c, int sock)
 		ERROR_PRINT("Error: wrong sock descriptor\n");
         exit(-1);
     }
-	idx = (unsigned short)sock;
+	idx = sock & LOWER_16BITS;
 
 	item = (struct st_element*)calloc(1, sizeof(struct st_element));
 	if (!item) {
@@ -201,14 +202,14 @@ st_insert(struct st_hashtable *ht, conn_info *c, int sock)
 	TAILQ_INSERT_TAIL(&ht->ht_table[idx], item, st_link);
 	ht->ht_count++;
 	
-	return 0;
+	return 1;
 }
 /*----------------------------------------------------------------------------*/
 static struct st_element*
 st_search_int(struct st_hashtable *ht, int sock)
 {
 	struct st_element *walk;
-	unsigned short idx = (unsigned short)sock;
+	unsigned short idx = sock & LOWER_16BITS;
 	st_hash_bucket_head *head = &ht->ht_table[idx];
 
 	head = &ht->ht_table[idx];
@@ -246,7 +247,7 @@ st_remove(struct st_hashtable *ht, int sock)
 		exit(-1);
 	}
 
-	idx = (unsigned short)sock;
+	idx = sock & LOWER_16BITS;
 	head = &ht->ht_table[idx];
     TAILQ_REMOVE(head, item, st_link);
 	ht->ht_count--;

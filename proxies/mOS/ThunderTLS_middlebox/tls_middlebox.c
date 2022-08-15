@@ -55,10 +55,8 @@
 /*----------------------------------------------------------------------------*/
 int g_max_cores;                              /* Number of CPU cores to be used */
 mctx_t g_mctx[MAX_CORES];                     /* mOS context */
-// TAILQ_HEAD(, conn_info) g_sockq[MAX_CORES];   /* connection queue */
-struct ct_hashtable *g_ct;					  /* hash table of connections with client random */
-struct st_hashtable *g_st;					  /* hash table of connections with socket */
-/**< ToDo: We should not use linked list for scalability */
+struct ct_hashtable **g_ct;					  /* hash table of connections with client random */
+struct st_hashtable **g_st;					  /* hash table of connections with socket */
 /*----------------------------------------------------------------------------*/
 /* Signal handler */
 static void
@@ -73,19 +71,6 @@ sigint_handler(int signum)
 
 	exit(0);
 }
-/*----------------------------------------------------------------------------*/
-/* Find connection structure by socket ID */
-// static inline conn_info*
-// find_connection(int cpu, int sock)
-// {
-//     conn_info *c;
-
-//     TAILQ_FOREACH(c, &g_sockq[cpu], ci_link)
-//         if (c->ci_sock == sock)
-//             return c;
-
-//     return NULL;
-// }
 /*----------------------------------------------------------------------------*/
 /* Dump bytestream in hexademical form */
 #if VERBOSE_TCP | VERBOSE_TLS | VERBOSE_KEY
@@ -381,7 +366,7 @@ parse_tls_key(uint8_t *data, uint16_t datalen,
 /* Parse TCP payload to assemble single TLS record */
 /* Return byte of parsed record, 0 if no complete record */
 static uint32_t
-parse_tls_record(conn_info *c, int side)
+parse_tls_record(mctx_t mctx, conn_info *c, int side)
 {
 	tls_context *tls_ctx;
 	tls_record *record;
@@ -440,7 +425,7 @@ parse_tls_record(conn_info *c, int side)
 			off += sizeof(uint16_t);		// Client Version (03 03)
 
 			memcpy(c->ci_client_random, (const uint8_t*)(ptr + off), TLS_1_3_CLIENT_RANDOM_LEN);
-			ret = ct_insert(g_ct, c, c->ci_client_random);
+			ret = ct_insert(g_ct[mctx->cpu], c, c->ci_client_random);
 			if (ret < 0) {
 				ERROR_PRINT("Error: ct_insert() failed\n");
 				exit(-1);
@@ -496,7 +481,6 @@ cb_creation(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
     /* Fill values of the connection structure */
     c->ci_sock = sock;
 
-	/* ToDo: remove conn_info.ci_addrs */
     if (mtcp_getpeername(mctx, sock, addrs, &addrslen,
                          MOS_SIDE_BOTH) < 0) {
         perror("mtcp_getpeername");
@@ -505,12 +489,11 @@ cb_creation(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
     }
 
     /* Insert the structure to the queue */
-	ret = st_insert(g_st, c, c->ci_sock);
+	ret = st_insert(g_st[mctx->cpu], c, c->ci_sock);
 	if (ret < 0) {
 		ERROR_PRINT("Error: st_insert() failed\n");
 		exit(-1);
 	}
-    //TAILQ_INSERT_TAIL(&g_sockq[mctx->cpu], c, ci_link);
 }
 /*----------------------------------------------------------------------------*/
 /* Destroy connection structure */
@@ -519,16 +502,13 @@ cb_destroy(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 {
     conn_info *c;
 
-    /*if (!(c = find_connection(mctx->cpu, sock))) {
-        return;
-	}*/
-	if (!(c = st_search(g_st, sock))) {
+	if (!(c = st_search(g_st[mctx->cpu], sock))) {
 		return;
 	}
 
-	ct_remove(g_ct, c->ci_client_random);
-	st_remove(g_st, c->ci_sock);
-    //TAILQ_REMOVE(&g_sockq[mctx->cpu], c, ci_link);
+	ct_remove(g_ct[mctx->cpu], c->ci_client_random);
+	st_remove(g_st[mctx->cpu], c->ci_sock);
+
     free(c);
 }
 /*----------------------------------------------------------------------------*/
@@ -542,10 +522,7 @@ cb_new_data(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
     conn_info *c;
     /* socklen_t intlen = sizeof(int); */
 
-    /*if (!(c = find_connection(mctx->cpu, sock)))
-        return;
-	*/
-	if (!(c = st_search(g_st, sock))) {
+	if (!(c = st_search(g_st[mctx->cpu], sock))) {
 		return;
 	}
 #if VERBOSE_TCP
@@ -571,7 +548,7 @@ cb_new_data(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 		c->ci_seq_tail[side] += len;
 
 		/* Reassemble TLS record */
-		while((record_len = parse_tls_record(c, side)) > 0) {
+		while((record_len = parse_tls_record(mctx, c, side)) > 0) {
 			;
 		}
 		decrypt_tls_record(&c->ci_tls_ctx);
@@ -587,7 +564,6 @@ cb_new_key(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 	uint16_t payloadlen;
 	struct udphdr *udph;
 	struct tls_crypto_info key_info;
-	// int sock_mon = 0;
 	int offset;
 	uint16_t left_len;
 	uint8_t client_random[TLS_1_3_CLIENT_RANDOM_LEN];
@@ -628,18 +604,11 @@ cb_new_key(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 
 	memcpy(client_random, ptr, TLS_1_3_CLIENT_RANDOM_LEN);
 
-	c = ct_search(g_ct, client_random);
+	c = ct_search(g_ct[mctx->cpu], client_random);
 	if (!c) {
 		ERROR_PRINT("Error: Can't find connection with Client Random\n");
 		return;
 	}
-
-	// sock_mon = c->ci_sock;
-	// fprintf(stderr, "sock: %d\n", sock_mon);
-	// if (sock_mon < 0) {
-	// 	ERROR_PRINT("Error: wrong socket descripotr\n");
-	// 	exit(-1);
-	// }
 
 	/* Insert key info to the session */
 	c->ci_tls_ctx.tc_key_info = key_info;
@@ -751,9 +720,6 @@ register_callbacks(mctx_t mctx)
 static void
 init_monitor(mctx_t mctx)
 {
-    /* Initialize internal memory structures */
-    // TAILQ_INIT(&g_sockq[mctx->cpu]);
-
     register_callbacks(mctx);
 }
 /*----------------------------------------------------------------------------*/
@@ -793,8 +759,12 @@ main(int argc, char **argv)
 	}
 
 	/* create hash table */
-	g_ct = ct_create();
-	g_st = st_create();
+	g_ct = (struct ct_hashtable**)calloc(num_cpus, sizeof(struct ct_hashtable*));
+	g_st = (struct st_hashtable**)calloc(num_cpus, sizeof(struct st_hashtable*));
+	for (i = 0; i < num_cpus; i++) {
+		g_ct[i] = ct_create();
+		g_st[i] = st_create();
+	}
 
 	/* parse mos configuration file */
 	ret = mtcp_init(fname);
@@ -822,7 +792,7 @@ main(int argc, char **argv)
         /* init monitor */
         init_monitor(g_mctx[i]);
 	}
-
+	
 	/* wait until all threads finish */	
 	for (i = 0; i < mcfg.num_cores; i++) {
 		mtcp_app_join(g_mctx[i]);
@@ -830,8 +800,10 @@ main(int argc, char **argv)
 	}	
 	
 	mtcp_destroy();
-	ct_destroy(g_ct);
-	st_destroy(g_st);
+	for (i = 0; i < num_cpus; i++) {
+		ct_destroy(g_ct[i]);
+		st_destroy(g_st[i]);
+	}
 
 	return EXIT_SUCCESS;
 }
