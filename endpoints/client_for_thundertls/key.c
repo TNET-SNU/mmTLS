@@ -27,7 +27,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define PROXY_IP "10.0.40.6"		// wine6
+#define PROXY_IP "10.0.40.10"		// giant2.kaist.ac.kr
 #define KEY_PORT 6666
 /*----------------------------*/
 
@@ -281,14 +281,20 @@ static void
 udp_send(session_info *s_info, int sd, struct sockaddr_in servaddr, int addrlen)
 {
 	uint8_t payload[BUF_SIZE];
-	uint8_t *ptr;
-	const int KEYBLOCK_SIZE = 124;
+	uint8_t *ptr = payload;
+	const int KEYBLOCK_SIZE = 125;
+
+
+	/* client random */
+	memcpy(ptr, s_info->client_random, CLIENT_RANDOM_LEN);
+	ptr += CLIENT_RANDOM_LEN;
+	*ptr = '\n';
+	ptr += 1;
 
 	/* cipher suite */
-    ptr = payload;
 	*(uint16_t*)ptr = htons(0x1302);	// AES_256_GCM_SHA384
 	ptr += 2;
-	
+
 	/* key mask */
 	*(uint16_t*)ptr = htons(0xffff);
 	ptr += 2;
@@ -302,9 +308,6 @@ udp_send(session_info *s_info, int sd, struct sockaddr_in servaddr, int addrlen)
 	ptr += TLS_1_3_IV_LEN;
 	memcpy(ptr, s_info->server_write_iv, TLS_1_3_IV_LEN);
 	ptr += TLS_1_3_IV_LEN;
-
-	/* client random */
-	memcpy(ptr, s_info->client_random, CLIENT_RANDOM_LEN);
 
 	if ((sendto(sd, (const uint8_t*)payload, KEYBLOCK_SIZE, 0, (struct sockaddr *)&servaddr, addrlen)) !=  KEYBLOCK_SIZE) {
       	ERROR_PRINT("Error: sendto() failed\n");
