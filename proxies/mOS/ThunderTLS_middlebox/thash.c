@@ -126,7 +126,7 @@ ct_search(struct ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN])
 	return item->ct_ci;
 }
 /*----------------------------------------------------------------------------*/
-void
+int
 ct_remove(struct ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN])
 {
 	ct_hash_bucket_head *head;
@@ -134,17 +134,16 @@ ct_remove(struct ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN])
 	struct ct_element* item;
 
 	item = ct_search_int(ht, crandom);
-	if (!item) {
-		ERROR_PRINT("Error: No session with given client random\n");
-		exit(-1);
-	}
+	if (!item) 
+		return 0;
 
 	idx = *(unsigned short*)crandom;
     head = &ht->ht_table[idx];
     TAILQ_REMOVE(head, item, ct_link);
 	ht->ht_count--;
-
 	free(item);
+
+	return 1;
 }
 /*----------------------------------------------------------------------------*/
 struct st_hashtable*
@@ -234,7 +233,7 @@ st_search(struct st_hashtable *ht, int sock)
 	return item->st_ci;
 }
 /*----------------------------------------------------------------------------*/
-void
+int
 st_remove(struct st_hashtable *ht, int sock)
 {
 	st_hash_bucket_head *head;
@@ -242,16 +241,15 @@ st_remove(struct st_hashtable *ht, int sock)
 	struct st_element* item;
 
 	item = st_search_int(ht, sock);
-	if (!item) {
-		ERROR_PRINT("Error: No session with given sock\n");
-		exit(-1);
-	}
+	if (!item) 
+		return 0;
 
 	idx = sock & LOWER_16BITS;
 	head = &ht->ht_table[idx];
     TAILQ_REMOVE(head, item, st_link);
 	ht->ht_count--;
-
 	free(item);
+
+	return 1;
 }
 /*----------------------------------------------------------------------------*/

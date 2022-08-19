@@ -26,7 +26,7 @@ LIB_DIR     += -L$(MTCP_FLD)/lib
 UTIL_INC    = -I../util/include
 
 # I/O library parameter (PSIO or DPDK)
-LIBS    += -m64 -g -pthread -lrt -march=native -Wl,-export-dynamic -L$(RTE_SDK)/$(RTE_TARGET)/lib -Wl,-lnuma -Wl,-lmtcp -Wl,-lpthread -Wl,-lrt -Wl,-ldl -Wl,$(shell cat $(RTE_SDK)/$(RTE_TARGET)/lib/ldflags.txt)
+LIBS    += -m64 -g -pthread -lrt -march=native -Wl,-export-dynamic -L$(RTE_SDK)/$(RTE_TARGET)/lib -Wl,-lnuma -Wl,-lmtcp -Wl,-lpthread -Wl,-lrt -Wl,-ldl $(shell cat $(RTE_SDK)/$(RTE_TARGET)/lib/ldflags.txt)
 
 ######################################################################
 
