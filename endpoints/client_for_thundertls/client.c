@@ -63,11 +63,11 @@ ssl_ctx_new_keylog (const SSL *ssl, const char *line)
 
 	if (fwrite(line, sizeof(char), strlen(line), fp) == -1) {
 		ERROR_PRINT("Error: write()\n");
-		exit(0);
+		exit(-1);
 	}
 	if (fwrite(&new_line, sizeof(char), 1, fp) == -1) {
 		ERROR_PRINT("Error: write()\n");
-		exit(0);
+		exit(-1);
 	}
 	
 }
@@ -120,7 +120,7 @@ InitCTX(void)
   SSL_CTX *ctx;
   static int flag = 0;
 
-  if(flag == 0) {
+  if (flag == 0) {
   	  flag = 1;
   	  OpenSSL_add_all_algorithms();  /* Load cryptos, et.al. */
   	  SSL_load_error_strings();   /* Bring in and register error messages */
@@ -199,8 +199,6 @@ worker(void *arg)
 		}
 		else {
 			ShowCerts(ssl);        /* get any certs */
-			fclose(fp);
-		CLOCK_EVAL(&t1);
 #if USE_TLS_1_2
 			/* extract master secret, and calculate session key block */
 			uint8_t client_random[128], server_random[128];
@@ -241,10 +239,9 @@ worker(void *arg)
 			KEY_M_PRINT("\n");
 #endif	/* USE_TLS_1_2 */
 			SSL_write(ssl, msg, strlen(msg));   /* encrypt & send message */
-			CLOCK_EVAL(&t3);
 			bytes = SSL_read(ssl, buf, sizeof(buf)); /* get reply & decrypt */
 			buf[bytes] = 0;
-			sleep(1);
+			usleep(10000);
 			/* release connection state */
 			SSL_free(ssl);
 		}
@@ -272,7 +269,7 @@ main(int argc, char *argv[])
 		if (c == 'a') { 
 			if (strlen(optarg) > MAX_ADDR_LEN) {
 				ERROR_PRINT("error: invalid ip address\n");
-				exit(0);
+			exit(-1);
 			}
 			memcpy(addr, optarg, strlen(optarg)); 
 			addr[strlen(optarg)] = '\0';
@@ -280,9 +277,9 @@ main(int argc, char *argv[])
 			port = atoi(optarg); 
 		} else if (c == 't') { 
 			thread_num = atoi(optarg);
-			if(thread_num < 1) {
+			if (thread_num < 1) {
 				ERROR_PRINT("Error: thread_num should be more than 0\n");
-				exit(0);
+				exit(-1);
 			}
 		} else if (c == 'n') { 
 			test_cnt = atoi(optarg); 
@@ -301,13 +298,13 @@ main(int argc, char *argv[])
 
 	if (0 > (fp = fopen("keylog/key_log.txt", "a+w"))) {
 		ERROR_PRINT("Error: open() failed");
-		exit(0);
+		exit(-1);
 	}
 
 	for(i = 0; i < thread_num; i++) {
-		if(pthread_create(&p_thread[i], NULL, worker, NULL) < 0) {
+		if (pthread_create(&p_thread[i], NULL, worker, NULL) < 0) {
 			ERROR_PRINT("Error: thread create failed\n");
-			exit(0);
+			exit(-1);
 		}
 	}
 
@@ -315,48 +312,7 @@ main(int argc, char *argv[])
 		pthread_join(p_thread[i], NULL);
 	}
 
-	
-	CLOCK_EVAL(&t2);
-	
-#if VERBOSE_EVAL
-		sleep(0.1);
-		const char new_line = '\n';
-		FILE *fp1 = fopen("client.txt", "a+w");
-		char line1[128];
-		sprintf(line1, "%lf", (double)t2.tv_nsec/1000 );
-		if (fwrite(line1, sizeof(char), strlen(line1), fp1) == -1) {
-			ERROR_PRINT("Error: write()\n");
-			exit(0);
-		}
-		if (fwrite(&new_line, sizeof(char), 1, fp1) == -1) {
-			ERROR_PRINT("Error: write()\n");
-			exit(0);
-		}
-
-		FILE *fp2 = fopen("connect-send.txt", "a+w");
-		char line2[128];
-		sprintf(line2, "%lf", (double)t3.tv_nsec/1000-(double)t1.tv_nsec/1000);
-		if (fwrite(line2, sizeof(char), strlen(line2), fp2) == -1) {
-			ERROR_PRINT("Error: write()\n");
-			exit(0);
-		}
-		if (fwrite(&new_line, sizeof(char), 1, fp2) == -1) {
-			ERROR_PRINT("Error: write()\n");
-			exit(0);
-		}
-
-		FILE *fp3 = fopen("send-close.txt", "a+w");
-		char line3[128];
-		sprintf(line3, "%lf", (double)t2.tv_nsec/1000-(double)t3.tv_nsec/1000);
-		if (fwrite(line3, sizeof(char), strlen(line3), fp3) == -1) {
-			ERROR_PRINT("Error: write()\n");
-			exit(0);
-		}
-		if (fwrite(&new_line, sizeof(char), 1, fp3) == -1) {
-			ERROR_PRINT("Error: write()\n");
-			exit(0);
-		}
-#endif
+	fclose(fp);
 
 	return 0;
 }

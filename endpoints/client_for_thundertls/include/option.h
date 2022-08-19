@@ -11,9 +11,8 @@
 
 #define PRINT (stderr)    
 
-#define VERBOSE_KEY_M    FALSE
+#define VERBOSE_KEY_M    TRUE
 #define VERBOSE_ERROR    TRUE
-#define VERBOSE_EVAL     FALSE
 
 #if VERBOSE_KEY_M
 #define KEY_M_PRINT(fmt, args...) fprintf(PRINT, ""fmt"", ##args)
@@ -26,12 +25,6 @@
                                     ""fmt""ANSI_COLOR_RESET, ##args)
 #else
 #define ERROR_PRINT(fmt, args...) (void)0
-#endif
-
-#if VERBOSE_EVAL
-#define CLOCK_EVAL(args...) clock_gettime(CLOCK_MONOTONIC, ##args)
-#else
-#define CLOCK_EVAL(args...)  (void)0
 #endif
 
 #define UNUSED(x) (void)(x)

@@ -162,6 +162,7 @@ InitServerCTX(void)
 		abort();
 	}
 	SSL_CTX_set_options(ctx, SSL_OP_NO_TICKET);
+	SSL_CTX_set_ciphersuites(ctx, "TLS_AES_256_GCM_SHA384");
 
 	return ctx;
 }
