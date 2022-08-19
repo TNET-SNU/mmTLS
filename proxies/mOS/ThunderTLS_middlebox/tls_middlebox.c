@@ -205,7 +205,7 @@ decrypt_tls_cli_record(tls_cli_context *ctx, uint8_t *key, uint8_t *iv)
 {
 	int idx, len = ctx->tc_plain_len;
 	int start, end, ret = 0;
-	tls_cli_record *rec;
+	tls_record *rec;
 	uint8_t *plaintext = ctx->tc_plaintext;
 
 	start = ctx->tc_decrypt_record_idx;
@@ -236,7 +236,7 @@ decrypt_tls_svr_record(tls_svr_context *ctx, uint8_t *key, uint8_t *iv)
 {
 	int idx, len = ctx->tc_plain_len;
 	int start, end, ret = 0;
-	tls_svr_record *rec;
+	tls_record *rec;
 	uint8_t *plaintext = ctx->tc_plaintext;
 
 	start = ctx->tc_decrypt_record_idx;
@@ -341,11 +341,11 @@ parse_tls_key(uint8_t *data, struct tls_crypto_info *key_info)
 /*----------------------------------------------------------------------------*/
 /* Parse TCP payload to assemble single TLS record sending to client */
 /* Return byte of parsed record, 0 if no complete record */
-static uint32_t
+static uint16_t
 parse_tls_cli_record(mctx_t mctx, conn_info *c)
 {
 	tls_cli_context *ctx;
-	tls_cli_record *rec;
+	tls_record *rec;
 	uint32_t start_seq;
 	uint8_t *ptr;
 	uint8_t record_type;
@@ -427,11 +427,11 @@ parse_tls_cli_record(mctx_t mctx, conn_info *c)
 /*----------------------------------------------------------------------------*/
 /* Parse TCP payload to assemble single TLS record sending to server */
 /* Return byte of parsed record, 0 if no complete record */
-static uint32_t
+static uint16_t
 parse_tls_svr_record(mctx_t mctx, conn_info *c)
 {
 	tls_svr_context *context;
-	tls_svr_record *record;
+	tls_record *record;
 	uint32_t start_seq;
 	uint8_t *ptr;
 	uint8_t record_type;
@@ -521,7 +521,7 @@ parse_tls_svr_record(mctx_t mctx, conn_info *c)
 	return record_len;
 }
 /*----------------------------------------------------------------------------*/
-static int
+static uint16_t
 parse_tls_record(mctx_t mctx, conn_info *c, int side)
 {
 	if (side == MOS_SIDE_CLI) {
@@ -611,6 +611,7 @@ cb_new_data(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 		tls_cli_context *tc_cli = &c->ci_cli_tc;
 
 		buf_off = tc_cli->tc_seq_tail - tc_cli->tc_seq_head;
+		/* ToDo: while() */
 		len = mtcp_peek(mctx, sock, side,
 						(char*)tc_cli->tc_buf + buf_off, MAX_BUF_LEN - buf_off);
 
