@@ -881,6 +881,9 @@ RunMainLoop(struct mtcp_thread_context *ctx)
 
 	ts = ts_prev = 0;
 	while ((!ctx->done || mtcp->flow_cnt) && !ctx->exit) {
+		/* check per thread callback defined by application */
+		if (ctx->fp_callback != NULL)
+			ctx->fp_callback(g_ctx[mtcp->ctx->cpu]);
 		
 		STAT_COUNT(mtcp->runstat.rounds);
 		recv_cnt = 0;
