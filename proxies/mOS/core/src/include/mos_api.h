@@ -339,6 +339,17 @@ mtcp_bind_monitor_filter(mctx_t mctx, int sock, monitor_filter_t ft);
 
 /** Register a callback function in hook_point
  * @param [in] mctx: mtcp context
+ * @param [in] fp_callback: callback function
+ * @return zero on success, -1 on error
+ *
+ * (both for packet-level and flow-level) for events in hook_point
+ */
+int
+mtcp_register_thread_callback(mctx_t mctx, void (*fp_callback)(mctx_t));
+/*----------------------------------------------------------------------------*/
+
+/** Register a callback function in hook_point
+ * @param [in] mctx: mtcp context
  * @param [in] sock: socket id
  * @param [in] event: event id
  * @param [in] hook_point: MOS_HK_RCV, MOS_HK_SND, MOS_DONTCARE
