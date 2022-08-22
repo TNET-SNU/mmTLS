@@ -333,6 +333,7 @@ struct mtcp_thread_context
 	pthread_mutex_t destroyq_lock;
 #endif /* USE_SPIN_LOCK */
 #endif /* LOCK_STREAM_QUEUE */
+	void (*fp_callback)(mctx_t);
 };
 /*----------------------------------------------------------------------------*/
 typedef struct mtcp_thread_context* mtcp_thread_context_t;

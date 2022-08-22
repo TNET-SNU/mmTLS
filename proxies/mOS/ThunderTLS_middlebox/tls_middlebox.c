@@ -34,6 +34,9 @@
 /* Default path to mOS configuration file */
 #define MOS_CONFIG_FILE     "config/mos.conf"
 
+/* multicore mode */
+#define MC				1
+
 #define IP_HEADER_LEN    		  20
 #define UDP_HEADER_LEN   		  8
 #define TLS_HEADER_LEN   		  5
@@ -57,6 +60,15 @@ int g_max_cores;                              /* Number of CPU cores to be used 
 mctx_t g_mctx[MAX_CORES];                     /* mOS context */
 struct ct_hashtable **g_ct;					  /* hash table of connections with client random */
 struct st_hashtable **g_st;					  /* hash table of connections with socket */
+#if MC
+typedef struct shared_q {					  /* key pair <client_random, key> */
+	conn_info ci;
+	int valid;
+} shared_q;
+struct shared_q *g_shared_q;				  /* circular queue of <client random, key> pare */
+int local_tail[MAX_CORES];
+int tail = 0;
+#endif
 /*----------------------------------------------------------------------------*/
 /* Signal handler */
 static void
@@ -460,8 +472,8 @@ cb_new_data(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 
 #if VERBOSE_TCP
 	fprintf(stderr, "\n--------------------------------------------------\n");
-	fprintf(stderr, "[%s] sock: %u, c->sock: %u, side: %u\n",
-			__FUNCTION__, sock, sock, side);
+	fprintf(stderr, "[%s] core: %d, sock: %u, c->sock: %u, side: %u\n",
+			__FUNCTION__, mctx->cpu, sock, sock, side);
 #endif
 
 	ctx = &c->ci_tls_ctx[side];
@@ -506,29 +518,38 @@ cb_new_key(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 	
 #if VERBOSE_KEY
 	fprintf(stderr, "\n--------------------------------------------------\n");
-	fprintf(stderr, "[%s] sock: %d, side: %u\n",
-			__FUNCTION__, sock, side);
+	fprintf(stderr, "[%s] core: %d, sock: %d, side: %u\n",
+			__FUNCTION__, mctx->cpu, sock, side);
+	hexdump("In cb_new_key: client random", payload, TLS_1_3_CLIENT_RANDOM_LEN);
 	if (p.ip_len > IP_HEADER_LEN) {
 		fprintf(stderr, "[%s] p.iph: %p, p.ip_len: %u, ip payload: %p\n",
 				__FUNCTION__, p.iph, p.ip_len, payload);
 	}
 #endif
 	*(payload+TLS_1_3_CLIENT_RANDOM_LEN) = '\0';
+#if MC
+	c = &((g_shared_q + tail)->ci);
+#else
 	c = ct_search(g_ct[mctx->cpu], payload);
+#endif
 	if (!c) {
 		ERROR_PRINT("Error: Can't find connection with Client Random\n");
 		return;
 	}
-	
 	payload += TLS_1_3_CLIENT_RANDOM_LEN;
 	payload++;									// '\0'
 
 	parse_tls_key(payload, c);
-
+#if MC
+	(g_shared_q + tail)->valid = 1;
+	if (++tail >= NUM_BINS * g_max_cores)
+		tail = 0;
+	assert(!(g_shared_q + tail)->valid);
+#else
 	/* Decrypt records which reached before key arrival */
 	decrypt_tls_record(&c->ci_tls_ctx[MOS_SIDE_CLI]);
 	decrypt_tls_record(&c->ci_tls_ctx[MOS_SIDE_SVR]);
-
+#endif
 	/* mtcp_setsockopt(mctx, sock_mon, SOL_MONSOCKET, */
 	/* 				MOS_TLS_SP, &key_info, sizeof(key_info)); */
 	/* struct tls_crypto_info key_info_tmp; */
@@ -559,6 +580,44 @@ check_is_key(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
+#if MC
+static void
+find_key_and_decrypt(mctx_t mctx)
+{
+	if (local_tail[mctx->cpu] == tail)
+		return;
+
+	int i, found = 0;
+	conn_info *c;
+	shared_q *walk;
+	for (i = local_tail[mctx->cpu]; i != tail; i++) {
+		if (i == g_max_cores * 65536)
+			i = 0;
+		walk = g_shared_q + i;
+		if (!walk->valid)
+			continue;
+		c = ct_search(g_ct[mctx->cpu], walk->ci.ci_client_random);
+		if (!c) {
+			fprintf(stderr, "search fail");
+			continue;
+		}
+		/* copy keys to local hashtable */
+		c->ci_tls_ctx->tc_key_info = walk->ci.ci_tls_ctx->tc_key_info;
+		walk->valid = 0;
+		found = 1;
+		break;
+	}
+	local_tail[mctx->cpu] = i;
+	fprintf(stderr, "[%s] core: %d found: %d tail: %d local_tail[%d]: %d\n",
+		__FUNCTION__, mctx->cpu, found, tail, mctx->cpu, local_tail[mctx->cpu]);
+	hexdump("client random", walk->ci.ci_client_random, TLS_1_3_CLIENT_RANDOM_LEN);
+	if (found) {
+		decrypt_tls_record(&c->ci_tls_ctx[MOS_SIDE_CLI]);
+		decrypt_tls_record(&c->ci_tls_ctx[MOS_SIDE_SVR]);
+	}
+}
+#endif
+/*----------------------------------------------------------------------------*/
 static void
 register_sessionkey_callback(mctx_t mctx, int sock)
 {
@@ -575,6 +634,13 @@ register_sessionkey_callback(mctx_t mctx, int sock)
         fprintf(stderr, "Failed to register cb_new_key()\n");
         exit(EXIT_FAILURE);
     }
+#if MC
+	/* slaves check whether added key is for themselves */
+	if (mtcp_register_thread_callback(mctx, find_key_and_decrypt)) {
+		fprintf(stderr, "Failed to register find_key_and_decrypt()\n");
+		exit(EXIT_FAILURE);
+	}
+#endif
 }
 /*----------------------------------------------------------------------------*/
 static void
@@ -671,22 +737,25 @@ main(int argc, char **argv)
 		}
 	}
 
+	g_max_cores = num_cpus;
+
 	/* create hash table */
-	g_ct = (struct ct_hashtable**)calloc(num_cpus, sizeof(struct ct_hashtable*));
+	g_ct = (struct ct_hashtable**)calloc(g_max_cores, sizeof(struct ct_hashtable*));
 	if (!g_ct) {
 		ERROR_PRINT("Error: calloc() failed\n");
 		exit(-1);
 	}
 
-	g_st = (struct st_hashtable**)calloc(num_cpus, sizeof(struct st_hashtable*));
+	g_st = (struct st_hashtable**)calloc(g_max_cores, sizeof(struct st_hashtable*));
 	if (!g_st) {
 		ERROR_PRINT("Error: calloc() failed\n");
 		exit(-1);
 	}
-	for (i = 0; i < num_cpus; i++) {
+	for (i = 0; i < g_max_cores; i++) {
 		g_ct[i] = ct_create();
 		g_st[i] = st_create();
 	}
+	g_shared_q = (shared_q *)calloc(g_max_cores, sizeof(shared_q) * NUM_BINS);
 
 	/* parse mos configuration file */
 	ret = mtcp_init(fname);
@@ -697,14 +766,14 @@ main(int argc, char **argv)
 
 	/* set the core limit */
 	mtcp_getconf(&mcfg);
-	mcfg.num_cores = num_cpus;
+	mcfg.num_cores = g_max_cores;
 	mtcp_setconf(&mcfg);
 
 	/* Register signal handler */
     mtcp_register_signal(SIGINT, sigint_handler);
 
 	/* initialize monitor threads */	
-	for (i = 0; i < mcfg.num_cores; i++) {
+	for (i = 0; i < g_max_cores; i++) {
         /* Run mOS for each CPU core */
         if (!(g_mctx[i] = mtcp_create_context(i))) {
             fprintf(stderr, "Failed to craete mtcp context.\n");
@@ -716,16 +785,17 @@ main(int argc, char **argv)
 	}
 	
 	/* wait until all threads finish */	
-	for (i = 0; i < mcfg.num_cores; i++) {
+	for (i = 0; i < g_max_cores; i++) {
 		mtcp_app_join(g_mctx[i]);
 	  	fprintf(stderr, "Message test thread %d joined.\n", i);	  
 	}	
 	
 	mtcp_destroy();
-	for (i = 0; i < num_cpus; i++) {
+	for (i = 0; i < g_max_cores; i++) {
 		ct_destroy(g_ct[i]);
 		st_destroy(g_st[i]);
 	}
+	free(g_shared_q);
 
 	return EXIT_SUCCESS;
 }

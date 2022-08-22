@@ -936,6 +936,23 @@ HandleCb(mctx_t const mctx, int sock, int side,
 }
 /*----------------------------------------------------------------------------*/
 int
+mtcp_register_thread_callback(mctx_t mctx, void (*fp_callback)(mctx_t))
+{
+	if (fp_callback == NULL)
+		return -1;
+	mtcp_manager_t mtcp = GetMTCPManager(mctx);
+	if (!mtcp)
+		return -1;
+	
+	mtcp_thread_context_t mt_ctx = mtcp->ctx;
+	if (!mt_ctx)
+		return -1;
+
+	mt_ctx->fp_callback = fp_callback;
+	return 0;
+}
+/*----------------------------------------------------------------------------*/
+int
 mtcp_register_callback(mctx_t mctx, int sockid, event_t event,
 					   int hook_point, callback_t callback)
 {

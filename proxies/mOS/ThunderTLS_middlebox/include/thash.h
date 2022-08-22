@@ -3,6 +3,9 @@
 
 #include "tls.h"
 
+#define NUM_BINS 		(65536)
+#define LOWER_16BITS 	(0x0000FFFF)
+
 /* hashtable structure */
 struct ct_hashtable;
 struct st_hashtable;

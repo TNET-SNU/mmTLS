@@ -6,9 +6,6 @@
 
 #include "include/thash.h"
 
-#define NUM_BINS 		(65536)
-#define LOWER_16BITS 	(0x0000FFFF)
-
 /* ToDo: remove client random and sock number from conn_info */
 
 /* structures for hashtable with client random */
