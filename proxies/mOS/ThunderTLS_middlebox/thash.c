@@ -66,7 +66,7 @@ ct_destroy(struct ct_hashtable *ht)
 }
 /*----------------------------------------------------------------------------*/
 int 
-ct_insert(struct ct_hashtable *ht, conn_info *c, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN])
+ct_insert(struct ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN], conn_info *c)
 {
 	unsigned short idx;
 	struct ct_element *item;
@@ -172,7 +172,7 @@ st_destroy(struct st_hashtable *ht)
 }
 /*----------------------------------------------------------------------------*/
 int 
-st_insert(struct st_hashtable *ht, conn_info *c, int sock)
+st_insert(struct st_hashtable *ht, int sock, conn_info *c)
 {
 	unsigned short idx;
 	struct st_element *item;

@@ -53,11 +53,8 @@ struct tls_crypto_info {
     unsigned short cipher_type;
 
 	uint16_t key_mask;
-    unsigned char client_key[TLS_CIPHER_AES_GCM_256_KEY_SIZE];
-    unsigned char client_iv[TLS_CIPHER_AES_GCM_256_IV_SIZE];
-    unsigned char server_key[TLS_CIPHER_AES_GCM_256_KEY_SIZE];
-    unsigned char server_iv[TLS_CIPHER_AES_GCM_256_IV_SIZE];
-
+    uint8_t key[TLS_CIPHER_AES_GCM_256_KEY_SIZE];
+    uint8_t iv[TLS_CIPHER_AES_GCM_256_IV_SIZE];
 	/* union { */
 	/* 	struct tls13_crypto_info_aes_gcm_256 key_block; */
 	/* }; */
@@ -70,56 +67,31 @@ struct tls_crypto_info {
 /*     unsigned char server_iv[TLS_CIPHER_AES_GCM_256_IV_SIZE]; */
 /* }; */
 
-typedef struct tls_record {
-	uint8_t tr_type;
-	uint32_t tr_tcp_seq;
-	uint64_t tr_rec_seq;
+// typedef struct tls_record {
+// 	uint8_t tr_type;
+// 	uint32_t tr_tcp_seq;
 
-	uint8_t tr_ciphertext[MAX_RECORD_LEN];
-	uint16_t tr_cipher_len;
-} tls_record;
+// 	uint8_t tr_ciphertext[MAX_RECORD_LEN];
+// 	uint16_t tr_cipher_len;
+// } tls_record;
 
-typedef struct tls_cli_context {
+typedef struct tls_context {
 	uint8_t tc_buf[MAX_BUF_LEN];			/* TLS record buffer */
 	uint32_t tc_seq_head;
 	uint32_t tc_seq_tail;
 
+	struct tls_crypto_info tc_key_info;
 	uint16_t tc_version;
-	uint64_t tc_last_rec_seq;
 	uint32_t tc_unparse_tcp_seq;
+	uint32_t tc_undecrypt_tcp_seq;
 	/**< starting point to parse a new record */
 
 	/* tls_record last_rec; */
-	tls_record tc_records[MAX_RECORD_NUM];
-	uint32_t tc_record_head;
-	uint32_t tc_record_tail;
-	uint32_t tc_record_cnt;
-	uint32_t tc_decrypt_record_idx;
+	// tls_record tc_records[MAX_RECORD_NUM];
 	
-	uint8_t tc_plaintext[CLI_RECBUF_LEN];
+	uint8_t *tc_plaintext;
 	uint16_t tc_plain_len;
-} tls_cli_context;
-
-typedef struct tls_svr_context {
-	uint8_t tc_buf[MAX_BUF_LEN];			/* TLS record buffer */
-	uint32_t tc_seq_head;
-	uint32_t tc_seq_tail;
-
-	uint16_t tc_version;
-	uint64_t tc_last_rec_seq;
-	uint32_t tc_unparse_tcp_seq;
-	/**< starting point to parse a new record */
-
-	/* tls_record last_rec; */
-	tls_record tc_records[MAX_RECORD_NUM];
-	uint32_t tc_record_head;
-	uint32_t tc_record_tail;
-	uint32_t tc_record_cnt;
-	uint32_t tc_decrypt_record_idx;
-	
-	uint8_t tc_plaintext[SVR_RECBUF_LEN];
-	uint16_t tc_plain_len;
-} tls_svr_context;
+} tls_context;
 
 typedef struct conn_info {					/* connection info */
     int ci_sock;                    	    /* socket ID */
@@ -127,9 +99,7 @@ typedef struct conn_info {					/* connection info */
     int ci_svr_state;                 		/* TCP state of the server */
 	uint8_t ci_client_random[TLS_1_3_CLIENT_RANDOM_LEN];
 
-	struct tls_crypto_info ci_key_info;
-	tls_cli_context ci_cli_tc;
-	tls_svr_context ci_svr_tc;
+	tls_context ci_tls_ctx[2];
 } conn_info;
 
 

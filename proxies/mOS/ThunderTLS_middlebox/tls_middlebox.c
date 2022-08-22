@@ -104,9 +104,9 @@ print_text(uint8_t *aad, uint8_t *tag, uint8_t *cipher, uint8_t *plain,
 	hexdump("[aad]", aad, TLS_CIPHER_AES_GCM_256_AAD_SIZE);
 	hexdump("[tag]", tag, TLS_CIPHER_AES_GCM_256_TAG_SIZE);
 
-	fprintf(stderr,"ciphertext_len: 0x%x", cipher_len);
+	fprintf(stderr,"ciphertext_len: 0x%x\n", cipher_len);
 	hexdump("[cipher text]", cipher, cipher_len);
-	fprintf(stderr,"plaintext_len: 0x%x", plain_len);
+	fprintf(stderr,"plaintext_len: 0x%x\n", plain_len);
 	hexdump("[plain text]", plain, plain_len);
 }
 #else
@@ -120,27 +120,29 @@ print_text(uint8_t *aad, uint8_t *tag, uint8_t *cipher, uint8_t *plain,
 /* Decrypt single TLS record with given key_info */
 /* Return length of decrypted data, -1 of error */
 static int
-decrypt_ciphertext(uint8_t *cipher, uint8_t *plain, uint16_t cipher_len,
-				   uint8_t *key, uint8_t *iv)
+decrypt_ciphertext(uint8_t *data, uint8_t *plain, uint8_t *key, uint8_t *iv)
 {
 	uint8_t aad[TLS_CIPHER_AES_GCM_256_AAD_SIZE], tag[TLS_CIPHER_AES_GCM_256_TAG_SIZE];
 	int final, len = 0, outlen = 0;
-	uint8_t *temp, *ptr;
+	uint8_t *ptr, *cipher;
 	EVP_CIPHER_CTX *ctx;
+	uint16_t cipher_len;
 
 	/* aad generate */
-	temp = aad;
-	*temp++ = APPLICATION_DATA;
-	*temp++ = 0x03;		// 03 03: legacy protocol version of TLS 1.2
-	*temp++ = 0x03;
-	*(uint16_t*)(temp) = htobe16(cipher_len);	// length of record payload
+	memcpy(aad, data, TLS_CIPHER_AES_GCM_256_AAD_SIZE);
+	cipher_len = htons(*(uint16_t*)(aad + TLS_CIPHER_AES_GCM_256_AAD_SIZE - sizeof(uint16_t)));   // aad format: type(1B) version(2B) len(2B)
+	if (*aad != APPLICATION_DATA) {
+		ERROR_PRINT("Error: Not APPLICATION DATA!!\n");
+		exit(-1);
+	}
 
 	/* tag generate */
-	ptr = cipher + cipher_len - TLS_CIPHER_AES_GCM_256_TAG_SIZE;
-	memcpy(tag, (const uint8_t*)ptr, TLS_CIPHER_AES_GCM_256_TAG_SIZE);
-	cipher_len -= TLS_CIPHER_AES_GCM_256_TAG_SIZE;						// optional
+	ptr = data + TLS_HEADER_LEN + cipher_len - TLS_CIPHER_AES_GCM_256_TAG_SIZE;
+	memcpy(tag, ptr, TLS_CIPHER_AES_GCM_256_TAG_SIZE);
+	cipher_len -= TLS_CIPHER_AES_GCM_256_TAG_SIZE;
 
 	/* decrypt cipher text */
+	cipher = data + TLS_HEADER_LEN;
 	ctx = EVP_CIPHER_CTX_new();
     if (!ctx) {
 		ERROR_PRINT("Error: cipher ctx creation failed\n");
@@ -184,6 +186,9 @@ decrypt_ciphertext(uint8_t *cipher, uint8_t *plain, uint16_t cipher_len,
     EVP_CIPHER_CTX_free(ctx);
 
 	/* print value and results */
+	if (cipher_len != outlen) {
+		ERROR_PRINT("Error: decrypted text length unmatched!!\n");
+	}
 	print_text(aad, tag, cipher, plain, cipher_len, outlen);
 
     if (final > 0) {
@@ -201,88 +206,27 @@ decrypt_ciphertext(uint8_t *cipher, uint8_t *plain, uint16_t cipher_len,
 /* Decrypt parsed TLS client records */
 /* Return number of decrypted record, -1 of error */
 static int
-decrypt_tls_cli_record(tls_cli_context *ctx, uint8_t *key, uint8_t *iv)
+decrypt_tls_record(tls_context *ctx)
 {
-	int idx, len = ctx->tc_plain_len;
-	int start, end, ret = 0;
-	tls_record *rec;
-	uint8_t *plaintext = ctx->tc_plaintext;
-
-	start = ctx->tc_decrypt_record_idx;
-	end = ctx->tc_record_tail;
-
-	idx = start;
-	while (idx != end) {
-		/* ToDo: only decrypt application data now */
-		rec = &ctx->tc_records[idx];
-		if (rec->tr_type == APPLICATION_DATA) {
-			len += decrypt_ciphertext(rec->tr_ciphertext, plaintext+len, 
-								rec->tr_cipher_len, key, iv);
-			if (len >= 0)
-				ret++;
-		}
-		idx = (idx+1) % MAX_RECORD_NUM;
-	}
-	ctx->tc_decrypt_record_idx = end;
-	ctx->tc_plain_len += len;
-
-	return ret;
-}
-/*----------------------------------------------------------------------------*/
-/* Decrypt parsed TLS client records */
-/* Return number of decrypted record, -1 of error */
-static int
-decrypt_tls_svr_record(tls_svr_context *ctx, uint8_t *key, uint8_t *iv)
-{
-	int idx, len = ctx->tc_plain_len;
-	int start, end, ret = 0;
-	tls_record *rec;
-	uint8_t *plaintext = ctx->tc_plaintext;
-
-	start = ctx->tc_decrypt_record_idx;
-	end = ctx->tc_record_tail;
-
-	idx = start;
-	while (idx != end) {
-		/* ToDo: only decrypt application data now */
-		rec = &ctx->tc_records[idx];
-		if (rec->tr_type == APPLICATION_DATA) {
-			len += decrypt_ciphertext(rec->tr_ciphertext, plaintext+len, 
-								rec->tr_cipher_len, key, iv);
-			if (len >= 0)
-				ret++;
-		}
-		idx = (idx+1) % MAX_RECORD_NUM;
-	}
-	ctx->tc_decrypt_record_idx = end;
-	ctx->tc_plain_len += len;
-
-	return ret;
-}
-/*----------------------------------------------------------------------------*/
-static int
-decrypt_tls_record(conn_info *c, int side) 
-{
-	struct tls_crypto_info *key_info = &c->ci_key_info;
+	struct tls_crypto_info *key_info = &ctx->tc_key_info;
+	int len, ret = 0;
 	uint8_t *key, *iv;
-	int ret;
 
 	if ((key_info->key_mask & 0xf) != 0xf){
 		return -1;
 	}
-	if (side == MOS_SIDE_CLI) {
-		tls_cli_context *tc_cli = &c->ci_cli_tc;
-		
-		key = key_info->server_key;	
-		iv = key_info->server_iv;
-		ret = decrypt_tls_cli_record(tc_cli, key, iv);
-	}
-	else if (side == MOS_SIDE_SVR) {
-		tls_svr_context *tc_svr = &c->ci_svr_tc;
-		
-		key = key_info->client_key;	
-		iv = key_info->client_iv;
-		ret = decrypt_tls_svr_record(tc_svr, key, iv);
+	key = key_info->key;	
+	iv = key_info->iv;
+	
+	/* decrypt all parsed records */
+	while (ctx->tc_unparse_tcp_seq != ctx->tc_undecrypt_tcp_seq) {
+		len = decrypt_ciphertext(ctx->tc_buf + ctx->tc_undecrypt_tcp_seq,
+								ctx->tc_plaintext + ctx->tc_plain_len, key, iv);
+		if (len > 0) {
+			ctx->tc_plain_len += len;
+			ctx->tc_undecrypt_tcp_seq += TLS_HEADER_LEN + len + TLS_CIPHER_AES_GCM_256_TAG_SIZE;
+			ret++;
+		}
 	}
 
 	return ret;
@@ -291,154 +235,73 @@ decrypt_tls_record(conn_info *c, int side)
 /* Parse payload to get TLS session key data into key_info */
 /* Return length of parsed data, -1 of error */
 static int
-parse_tls_key(uint8_t *data, struct tls_crypto_info *key_info)
+parse_tls_key(uint8_t *data, conn_info *c)
 {
+	struct tls_crypto_info *client, *server;
 	uint16_t cipher_suite, key_mask;
 	char *ptr = NULL;
 	int key_len, iv_len;
 
-	assert(key_info);
+	client = &c->ci_tls_ctx[!MOS_SIDE_CLI].tc_key_info;
+	server = &c->ci_tls_ctx[!MOS_SIDE_SVR].tc_key_info;
+	assert(client && server);
 
 	ptr = (char*)data;
 	
 	cipher_suite = ntohs(*(uint16_t*)ptr);
-	key_info->cipher_type = cipher_suite;
+	// client->cipher_type = cipher_suite;
+	// server->cipher_type = cipher_suite;
 	key_len = TLS_CIPHER_AES_GCM_256_KEY_SIZE;
 	iv_len = TLS_CIPHER_AES_GCM_256_IV_SIZE;
 	ptr += sizeof(cipher_suite);
 
 	key_mask = ntohs(*((uint16_t*)ptr));
-	key_info->key_mask |= key_mask;
+	client->key_mask |= key_mask;
+	server->key_mask |= key_mask;
 	ptr += sizeof(key_mask);
 	
 	if (key_mask & CLI_KEY_MASK) {
 		hexdump("cli key", (uint8_t*)ptr, key_len);
 			
-		memcpy(key_info->client_key, ptr, key_len);
+		memcpy(client->key, ptr, key_len);
 		ptr += key_len;
 	}
 	if (key_mask & SRV_KEY_MASK) {
 		hexdump("srv key", (uint8_t*)ptr, key_len);
 		
-		memcpy(key_info->server_key, ptr, key_len);
+		memcpy(server->key, ptr, key_len);
 		ptr += key_len;
 	}
 	if (key_mask & CLI_IV_MASK) {
 		hexdump("cli iv", (uint8_t*)ptr, iv_len);
 		
-		memcpy(key_info->client_iv, ptr, iv_len);
+		memcpy(client->iv, ptr, iv_len);
 		ptr += iv_len;
 	}
 	if (key_mask & SRV_IV_MASK) {
 		hexdump("srv iv", (uint8_t*)ptr, iv_len);
 
-		memcpy(key_info->server_iv, ptr, iv_len);
+		memcpy(server->iv, ptr, iv_len);
 		ptr += iv_len;
 	}
 
 	return ptr - (char*)data;
 }
 /*----------------------------------------------------------------------------*/
-/* Parse TCP payload to assemble single TLS record sending to client */
-/* Return byte of parsed record, 0 if no complete record */
-static uint16_t
-parse_tls_cli_record(mctx_t mctx, conn_info *c)
-{
-	tls_cli_context *ctx;
-	tls_record *rec;
-	uint32_t start_seq;
-	uint8_t *ptr;
-	uint8_t record_type;
-	uint16_t version;
-	uint16_t record_len;
-
-	ctx = &c->ci_cli_tc;
-	start_seq = ctx->tc_unparse_tcp_seq;
-
-	assert(UINT32_GEQ(start_seq, ctx->tc_seq_head));
-
-	/* Parse header of new record */
-	if (UINT32_GT(start_seq + TLS_HEADER_LEN, ctx->tc_seq_tail)) {
-		return 0;
-	}
-
-	ptr = ctx->tc_buf + start_seq - ctx->tc_seq_head;
-	record_type = *ptr;
-	ptr += sizeof(uint8_t);
-	
-	version = htons(*(uint16_t*)ptr);
-	ptr += sizeof(uint16_t);
-
-	record_len = htons(*(uint16_t*)ptr);
-	ptr += sizeof(uint16_t);
-
-	/* Store TLS record info if complete */
-	if (UINT32_GT(start_seq + record_len + TLS_HEADER_LEN, ctx->tc_seq_tail)) {
-		return 0;
-	}
-
-	if (ctx->tc_record_cnt == MAX_RECORD_NUM) {
-		ERROR_PRINT("Error: Record number exceedes MAX_RECORD_NUM!!\n");
-		exit(-1);
-	}
-
-	/* rec = &ctx->last_rec[side]; */
-	rec = &ctx->tc_records[ctx->tc_record_tail];
-	rec->tr_type = record_type;
-	rec->tr_tcp_seq = start_seq;
-	rec->tr_rec_seq = ctx->tc_record_cnt;
-
-	if (record_type == APPLICATION_DATA) {
-		memcpy(rec->tr_ciphertext, ptr, record_len);
-		rec->tr_cipher_len = record_len;
-	} 
-	else if (record_type == HANDSHAKE) {
-		/* ToDo: We might need to verify HANDSHAKE_FINISHED */
-	}
-
-	/* Update context */
-	/* ToDo: Add parsing cipher suite */
-	if (ctx->tc_version < version) {
-		ctx->tc_version = version;
-	}
-	ctx->tc_record_tail = (ctx->tc_record_tail+1) % MAX_RECORD_NUM;
-	ctx->tc_record_cnt++;
-	ctx->tc_unparse_tcp_seq += record_len + TLS_HEADER_LEN;
-	ctx->tc_last_rec_seq = ctx->tc_record_cnt;
-
-	
-	/* ToDo: move below to separate function, e.g. PrintTLSStat() */
-#if VERBOSE_TLS
-	fprintf(stderr, "[%s] Parse new record to follow session!\n",
-			__FUNCTION__);
-	fprintf(stderr, "Record type %x, length %u (TCP %u ~ %u), "
-			"rec seq %lu, cipher len %u\n",
-			rec->tr_type, rec->tr_tcp_seq, record_len,
-			rec->tr_tcp_seq + record_len + TLS_HEADER_LEN,
-			rec->tr_rec_seq, rec->tr_cipher_len);
-	if (rec->tr_cipher_len) {
-		hexdump("Dump of ciphertext of the record:",
-				rec->tr_ciphertext, rec->tr_cipher_len);
-	} 
-#endif	/* VERBOSE_TLS */
-	
-	return record_len;
-}
-/*----------------------------------------------------------------------------*/
 /* Parse TCP payload to assemble single TLS record sending to server */
 /* Return byte of parsed record, 0 if no complete record */
 static uint16_t
-parse_tls_svr_record(mctx_t mctx, conn_info *c)
+parse_and_decrypt_tls_record(mctx_t mctx, conn_info *c, int side)
 {
-	tls_svr_context *context;
-	tls_record *record;
+	tls_context *context;
+	// tls_record *record;
 	uint32_t start_seq;
 	uint8_t *ptr;
 	uint8_t record_type;
 	uint16_t version;
 	uint16_t record_len;
 
-	context = &c->ci_svr_tc;
+	context = &c->ci_tls_ctx[side];
 	start_seq = context->tc_unparse_tcp_seq;
 
 	assert(UINT32_GEQ(start_seq, context->tc_seq_head));
@@ -457,35 +320,28 @@ parse_tls_svr_record(mctx_t mctx, conn_info *c)
 
 	record_len = htons(*(uint16_t*)ptr);
 	ptr += sizeof(uint16_t);
-
 	/* Store TLS record info if complete */
 	if (UINT32_GT(start_seq + record_len + TLS_HEADER_LEN, context->tc_seq_tail)) {
 		return 0;
 	}
 
-	if (context->tc_record_cnt == MAX_RECORD_NUM) {
-		ERROR_PRINT("Error: Record number exceedes MAX_RECORD_NUM!!\n");
-		exit(-1);
-	}
+	// if (context->tc_record_cnt == MAX_RECORD_NUM) {
+	// 	ERROR_PRINT("Error: Record number exceedes MAX_RECORD_NUM!!\n");
+	// 	exit(-1);
+	// }
 
-	/* record = &context->last_rec[side]; */
-	record = &context->tc_records[context->tc_record_tail];
-	record->tr_type = record_type;
-	record->tr_tcp_seq = start_seq;
-	record->tr_rec_seq = context->tc_record_cnt;
-
-	if (record_type == APPLICATION_DATA) {
-		memcpy(record->tr_ciphertext, ptr, record_len);
-		record->tr_cipher_len = record_len;
-	} 
-	else if (record_type == HANDSHAKE) {
+	// /* record = &context->last_rec[side]; */
+	// record = &context->tc_records[context->tc_record_tail];
+	// record->tr_type = record_type;
+	// record->tr_tcp_seq = start_seq;
+	if (record_type == HANDSHAKE) {
 		/* ToDo: We might need to verify HANDSHAKE_FINISHED */
 		if (*ptr == 0x01) {						// Client Hello
 			ptr += TLS_HANDSHAKE_HEADER_LEN;
 			ptr += sizeof(uint16_t);		// Client Version (03 03)
 
 			memcpy(c->ci_client_random, ptr, TLS_1_3_CLIENT_RANDOM_LEN);
-			if (ct_insert(g_ct[mctx->cpu], c, c->ci_client_random) < 0) {
+			if (ct_insert(g_ct[mctx->cpu], c->ci_client_random, c) < 0) {
 				ERROR_PRINT("Error: ct_insert() failed\n");
 				exit(-1);
 			}
@@ -497,43 +353,32 @@ parse_tls_svr_record(mctx_t mctx, conn_info *c)
 	if (context->tc_version < version) {
 		context->tc_version = version;
 	}
-	context->tc_record_tail = (context->tc_record_tail+1) % MAX_RECORD_NUM;
-	context->tc_record_cnt++;
-	context->tc_unparse_tcp_seq += record_len + TLS_HEADER_LEN;
-	context->tc_last_rec_seq = context->tc_record_cnt;
-
+	// context->tc_record_tail = (context->tc_record_tail+1) % MAX_RECORD_NUM;
+	context->tc_unparse_tcp_seq += TLS_HEADER_LEN + record_len;
 	
 	/* ToDo: move below to separate function, e.g. PrintTLSStat() */
 #if VERBOSE_TLS
 	fprintf(stderr, "[%s] Parse new record to follow session!\n",
 			__FUNCTION__);
 	fprintf(stderr, "Record type %x, length %u (TCP %u ~ %u), "
-			"rec seq %lu, cipher len %u\n",
-			record->tr_type, record->tr_tcp_seq, record_len,
-			record->tr_tcp_seq + record_len + TLS_HEADER_LEN,
-			record->tr_rec_seq, record->tr_cipher_len);
-	if (record->tr_cipher_len) {
-		hexdump("Dump of ciphertext of the record:",
-				record->tr_ciphertext, record->tr_cipher_len);
+			"cipher len %u\n",
+			record_type, record_len, start_seq,
+			start_seq + record_len + TLS_HEADER_LEN,
+			record_len);
+	if (record_len) {
+		hexdump("Dump of ciphertext of the record:", ptr, record_len);
 	} 
 #endif	/* VERBOSE_TLS */
+
+	if (record_type == APPLICATION_DATA) {
+		decrypt_tls_record(context);
+	}
+	else {
+		/* no need to decrypt */
+		context->tc_undecrypt_tcp_seq += TLS_HEADER_LEN + record_len;
+	}
 	
 	return record_len;
-}
-/*----------------------------------------------------------------------------*/
-static uint16_t
-parse_tls_record(mctx_t mctx, conn_info *c, int side)
-{
-	if (side == MOS_SIDE_CLI) {
-		return parse_tls_cli_record(mctx, c);
-
-	}
-	else if (side == MOS_SIDE_SVR) {
-		return parse_tls_svr_record(mctx, c);
-	}
-	ERROR_PRINT("Error: Wrong side!!\n");
-	
-	return -1;
 }
 /*----------------------------------------------------------------------------*/
 /* Create connection structure for new connection */
@@ -545,8 +390,18 @@ cb_creation(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
     conn_info *c;
 
 	/* ToDo: remove calloc */
-    c = calloc(sizeof(conn_info), 1);
+    c = calloc(1, sizeof(conn_info));
     if (!c) {
+		ERROR_PRINT("Error: [%s]calloc failed\n", __FUNCTION__);
+		exit(-1);
+	}
+	c->ci_tls_ctx[MOS_SIDE_CLI].tc_plaintext = calloc(CLI_RECBUF_LEN, sizeof(uint8_t));
+	if (!c->ci_tls_ctx[MOS_SIDE_CLI].tc_plaintext) {
+		ERROR_PRINT("Error: [%s]calloc failed\n", __FUNCTION__);
+		exit(-1);
+	}
+	c->ci_tls_ctx[MOS_SIDE_SVR].tc_plaintext = calloc(SVR_RECBUF_LEN, sizeof(uint8_t));
+	if (!c->ci_tls_ctx[MOS_SIDE_SVR].tc_plaintext) {
 		ERROR_PRINT("Error: [%s]calloc failed\n", __FUNCTION__);
 		exit(-1);
 	}
@@ -562,7 +417,7 @@ cb_creation(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
     }
 
     /* Insert the structure to the queue */
-	if (st_insert(g_st[mctx->cpu], c, c->ci_sock) < 0) {
+	if (st_insert(g_st[mctx->cpu], c->ci_sock, c) < 0) {
 		ERROR_PRINT("Error: st_insert() failed\n");
 		exit(-1);
 	}
@@ -596,69 +451,41 @@ cb_new_data(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 	int len;
 	uint32_t buf_off;
     conn_info *c;
+	tls_context *ctx;
     /* socklen_t intlen = sizeof(int); */
 
 	if (!(c = st_search(g_st[mctx->cpu], sock))) {
 		return;
 	}
+
 #if VERBOSE_TCP
 	fprintf(stderr, "\n--------------------------------------------------\n");
 	fprintf(stderr, "[%s] sock: %u, c->sock: %u, side: %u\n",
 			__FUNCTION__, sock, sock, side);
 #endif
 
-	if (side == MOS_SIDE_CLI) {
-		tls_cli_context *tc_cli = &c->ci_cli_tc;
+	ctx = &c->ci_tls_ctx[side];
+	buf_off = ctx->tc_seq_tail - ctx->tc_seq_head;
+	/* ToDo: while() */
+	len = mtcp_peek(mctx, sock, side,
+					(char*)ctx->tc_buf + buf_off, MAX_BUF_LEN - buf_off);
 
-		buf_off = tc_cli->tc_seq_tail - tc_cli->tc_seq_head;
-		/* ToDo: while() */
-		len = mtcp_peek(mctx, sock, side,
-						(char*)tc_cli->tc_buf + buf_off, MAX_BUF_LEN - buf_off);
+	if (len > 0) {
 
-		if (len > 0) {
 #if VERBOSE_TCP
-			fprintf(stderr, "[%s] from server, received %u B (seq %u ~ %u) TCP data!\n",
-					__FUNCTION__, len, tc_cli->tc_seq_tail, tc_cli->tc_seq_tail + len);
+		fprintf(stderr, "[%s] from %s, received %u B (seq %u ~ %u) TCP data!\n",
+				__FUNCTION__,  (side == MOS_SIDE_CLI) ? "server":"client",
+				len, ctx->tc_seq_tail, ctx->tc_seq_tail + len);
 
-			hexdump(NULL, tc_cli->tc_buf + buf_off, len);
+		hexdump(NULL, ctx->tc_buf + buf_off, len);
 #endif 
 
-			tc_cli->tc_seq_tail += len;
+		ctx->tc_seq_tail += len;
 
-			/* Reassemble TLS record */
-			while((record_len = parse_tls_record(mctx, c, side)) > 0) {
-				;
-			}
-			decrypt_tls_record(c, side);
+		/* Reassemble TLS record */
+		while((record_len = parse_and_decrypt_tls_record(mctx, c, side)) > 0) {
+			;
 		}
-	}
-	else if (side == MOS_SIDE_SVR) {
-		tls_svr_context *tc_svr = &c->ci_svr_tc;
-
-		buf_off = tc_svr->tc_seq_tail - tc_svr->tc_seq_head;
-		len = mtcp_peek(mctx, sock, side,
-						(char*)tc_svr->tc_buf + buf_off, MAX_BUF_LEN - buf_off);
-
-		if (len > 0) {
-#if VERBOSE_TCP
-			fprintf(stderr, "[%s] from client, received %u B (seq %u ~ %u) TCP data!\n",
-					__FUNCTION__, len, tc_svr->tc_seq_tail, tc_svr->tc_seq_tail + len);
-
-			hexdump(NULL, tc_svr->tc_buf + buf_off, len);
-#endif 
-
-			tc_svr->tc_seq_tail += len;
-
-			/* Reassemble TLS record */
-			while((record_len = parse_tls_record(mctx, c, side)) > 0) {
-				;
-			}
-			decrypt_tls_record(c, side);
-		}
-	}
-	else {
-		ERROR_PRINT("Error: Wrong side!!\n");
-		exit(-1);
 	}
 }
 /*----------------------------------------------------------------------------*/
@@ -696,11 +523,11 @@ cb_new_key(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 	payload += TLS_1_3_CLIENT_RANDOM_LEN;
 	payload++;									// '\0'
 
-	parse_tls_key(payload, &c->ci_key_info);
+	parse_tls_key(payload, c);
 
 	/* Decrypt records which reached before key arrival */
-	decrypt_tls_record(c, MOS_SIDE_CLI);
-	decrypt_tls_record(c, MOS_SIDE_SVR);
+	decrypt_tls_record(&c->ci_tls_ctx[MOS_SIDE_CLI]);
+	decrypt_tls_record(&c->ci_tls_ctx[MOS_SIDE_SVR]);
 
 	/* mtcp_setsockopt(mctx, sock_mon, SOL_MONSOCKET, */
 	/* 				MOS_TLS_SP, &key_info, sizeof(key_info)); */
