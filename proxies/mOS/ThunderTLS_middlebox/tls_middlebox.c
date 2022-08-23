@@ -1,4 +1,5 @@
 #define _LARGEFILE64_SOURCE
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -19,6 +20,7 @@
 #include <sys/queue.h>
 #include <errno.h>
 #include <endian.h>
+#include <sched.h>
 
 #include <openssl/evp.h>
 
@@ -33,9 +35,6 @@
 #define NUM_FLAG        6
 /* Default path to mOS configuration file */
 #define MOS_CONFIG_FILE     "config/mos.conf"
-
-/* multicore mode */
-#define MC				1
 
 #define IP_HEADER_LEN    		  20
 #define UDP_HEADER_LEN   		  8
@@ -60,15 +59,14 @@ int g_max_cores;                              /* Number of CPU cores to be used 
 mctx_t g_mctx[MAX_CORES];                     /* mOS context */
 struct ct_hashtable **g_ct;					  /* hash table of connections with client random */
 struct st_hashtable **g_st;					  /* hash table of connections with socket */
-#if MC
-typedef struct shared_q {					  /* key pair <client_random, key> */
-	conn_info ci;
-	int valid;
-} shared_q;
-struct shared_q *g_shared_q;				  /* circular queue of <client random, key> pare */
-int local_tail[MAX_CORES];
-int tail = 0;
-#endif
+struct keytable {					  /* key pair <client_random, key> table */
+	uint8_t kt_client_random[TLS_1_3_CLIENT_RANDOM_LEN];
+	struct tls_crypto_info kt_key_info[2];
+	int kt_valid;
+};
+struct keytable *g_kt;				  /* circular queue of <client random, key> pare */
+int l_tail[MAX_CORES] = {0,};
+int g_tail = 0;
 /*----------------------------------------------------------------------------*/
 /* Signal handler */
 static void
@@ -204,10 +202,10 @@ decrypt_ciphertext(uint8_t *data, uint8_t *plain, uint8_t *key, uint8_t *iv)
 	print_text(aad, tag, cipher, plain, cipher_len, outlen);
 
     if (final > 0) {
-		fprintf(stderr, "decrypt success!\n");
+		fprintf(stderr, "[core: %d], decrypt success!\n", sched_getcpu());
     }
 	else {
-		fprintf(stderr, "Can't decrypt with given key. Might be handshake finish or etc..\n");
+		fprintf(stderr, "[core: %d], Can't decrypt with given key. Might be handshake finish or etc..\n", sched_getcpu());
 		// ERROR_PRINT("Error: decrypt failed, tag value didn't match\n");
 	}
 
@@ -224,7 +222,7 @@ decrypt_tls_record(tls_context *ctx)
 	int len, ret = 0;
 	uint8_t *key, *iv;
 
-	if ((key_info->key_mask & 0xf) != 0xf){
+	if ((key_info->key_mask & 0xf) != 0xf) {
 		return -1;
 	}
 	key = key_info->key;	
@@ -247,15 +245,12 @@ decrypt_tls_record(tls_context *ctx)
 /* Parse payload to get TLS session key data into key_info */
 /* Return length of parsed data, -1 of error */
 static int
-parse_tls_key(uint8_t *data, conn_info *c)
+parse_tls_key(uint8_t *data, struct tls_crypto_info *client, struct tls_crypto_info *server)
 {
-	struct tls_crypto_info *client, *server;
 	uint16_t cipher_suite, key_mask;
 	char *ptr = NULL;
 	int key_len, iv_len;
 
-	client = &c->ci_tls_ctx[!MOS_SIDE_CLI].tc_key_info;
-	server = &c->ci_tls_ctx[!MOS_SIDE_SVR].tc_key_info;
 	assert(client && server);
 
 	ptr = (char*)data;
@@ -383,7 +378,12 @@ parse_and_decrypt_tls_record(mctx_t mctx, conn_info *c, int side)
 #endif	/* VERBOSE_TLS */
 
 	if (record_type == APPLICATION_DATA) {
-		decrypt_tls_record(context);
+		if (decrypt_tls_record(context) == -1) {
+			ERROR_PRINT("No Key\n");
+		}
+		else {
+			ERROR_PRINT("Yes Key\n");
+		}
 	}
 	else {
 		/* no need to decrypt */
@@ -507,7 +507,7 @@ cb_new_key(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 {
 	struct pkt_info p;
 	uint8_t *payload;
-	conn_info *c;
+	struct tls_crypto_info *client, *server;
 
 	if (mtcp_getlastpkt(mctx, sock, side, &p) < 0) {
         fprintf(stderr, "Failed to get packet context!!!\n");
@@ -520,43 +520,22 @@ cb_new_key(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 	fprintf(stderr, "\n--------------------------------------------------\n");
 	fprintf(stderr, "[%s] core: %d, sock: %d, side: %u\n",
 			__FUNCTION__, mctx->cpu, sock, side);
-	hexdump("In cb_new_key: client random", payload, TLS_1_3_CLIENT_RANDOM_LEN);
 	if (p.ip_len > IP_HEADER_LEN) {
 		fprintf(stderr, "[%s] p.iph: %p, p.ip_len: %u, ip payload: %p\n",
 				__FUNCTION__, p.iph, p.ip_len, payload);
 	}
 #endif
-	*(payload+TLS_1_3_CLIENT_RANDOM_LEN) = '\0';
-#if MC
-	c = &((g_shared_q + tail)->ci);
-#else
-	c = ct_search(g_ct[mctx->cpu], payload);
-#endif
-	if (!c) {
-		ERROR_PRINT("Error: Can't find connection with Client Random\n");
-		return;
-	}
-	payload += TLS_1_3_CLIENT_RANDOM_LEN;
-	payload++;									// '\0'
 
-	parse_tls_key(payload, c);
-#if MC
-	(g_shared_q + tail)->valid = 1;
-	if (++tail >= NUM_BINS * g_max_cores)
-		tail = 0;
-	assert(!(g_shared_q + tail)->valid);
-#else
-	/* Decrypt records which reached before key arrival */
-	decrypt_tls_record(&c->ci_tls_ctx[MOS_SIDE_CLI]);
-	decrypt_tls_record(&c->ci_tls_ctx[MOS_SIDE_SVR]);
-#endif
-	/* mtcp_setsockopt(mctx, sock_mon, SOL_MONSOCKET, */
-	/* 				MOS_TLS_SP, &key_info, sizeof(key_info)); */
-	/* struct tls_crypto_info key_info_tmp; */
-	/* socklen_t key_info_len = sizeof(key_info_tmp); */
-	/* mtcp_getsockopt(mctx, sock_mon, SOL_MONSOCKET, */
-	/* 				MOS_TLS_SP, &key_info_tmp, &key_info_len); */
-	/* hexdump("Get tls_crypto_info:", (uint8_t*)&key_info_tmp, key_info_len); */
+	memcpy(g_kt[g_tail].kt_client_random, payload, TLS_1_3_CLIENT_RANDOM_LEN);
+	payload += TLS_1_3_CLIENT_RANDOM_LEN + 1; // consider '\0'
+
+	client = &g_kt[g_tail].kt_key_info[!MOS_SIDE_CLI];
+	server = &g_kt[g_tail].kt_key_info[!MOS_SIDE_SVR];
+	parse_tls_key(payload, client, server);
+	g_kt[g_tail].kt_valid = 1;
+	if (++g_tail >= NUM_BINS * g_max_cores)
+		g_tail = 0;
+	assert(!g_kt[g_tail].kt_valid);
 }
 /*----------------------------------------------------------------------------*/
 static bool
@@ -580,43 +559,45 @@ check_is_key(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
-#if MC
 static void
 find_key_and_decrypt(mctx_t mctx)
 {
-	if (local_tail[mctx->cpu] == tail)
-		return;
-
 	int i, found = 0;
 	conn_info *c;
-	shared_q *walk;
-	for (i = local_tail[mctx->cpu]; i != tail; i++) {
-		if (i == g_max_cores * 65536)
+	struct keytable *walk;
+
+	if (l_tail[mctx->cpu] == g_tail)
+		return;
+
+	for (i = l_tail[mctx->cpu]; i != g_tail; i++) {
+		if (i == g_max_cores * NUM_BINS)
 			i = 0;
-		walk = g_shared_q + i;
-		if (!walk->valid)
+		walk = g_kt + i;
+		if (!walk->kt_valid)
 			continue;
-		c = ct_search(g_ct[mctx->cpu], walk->ci.ci_client_random);
+		c = ct_search(g_ct[mctx->cpu], walk->kt_client_random);
 		if (!c) {
 			fprintf(stderr, "search fail");
 			continue;
 		}
 		/* copy keys to local hashtable */
-		c->ci_tls_ctx->tc_key_info = walk->ci.ci_tls_ctx->tc_key_info;
-		walk->valid = 0;
+		c->ci_tls_ctx[MOS_SIDE_CLI].tc_key_info = walk->kt_key_info[MOS_SIDE_CLI];
+		c->ci_tls_ctx[MOS_SIDE_SVR].tc_key_info = walk->kt_key_info[MOS_SIDE_SVR];
+		walk->kt_valid = 0;
 		found = 1;
 		break;
 	}
-	local_tail[mctx->cpu] = i;
 	fprintf(stderr, "[%s] core: %d found: %d tail: %d local_tail[%d]: %d\n",
-		__FUNCTION__, mctx->cpu, found, tail, mctx->cpu, local_tail[mctx->cpu]);
-	hexdump("client random", walk->ci.ci_client_random, TLS_1_3_CLIENT_RANDOM_LEN);
+		__FUNCTION__, mctx->cpu, found, g_tail, mctx->cpu, l_tail[mctx->cpu]);
 	if (found) {
+		ERROR_PRINT("[%s] 1\n", __FUNCTION__);
 		decrypt_tls_record(&c->ci_tls_ctx[MOS_SIDE_CLI]);
+		ERROR_PRINT("[%s] 2\n", __FUNCTION__);
 		decrypt_tls_record(&c->ci_tls_ctx[MOS_SIDE_SVR]);
+		ERROR_PRINT("[%s] 3\n", __FUNCTION__);
 	}
+	l_tail[mctx->cpu] = i + found;
 }
-#endif
 /*----------------------------------------------------------------------------*/
 static void
 register_sessionkey_callback(mctx_t mctx, int sock)
@@ -634,13 +615,6 @@ register_sessionkey_callback(mctx_t mctx, int sock)
         fprintf(stderr, "Failed to register cb_new_key()\n");
         exit(EXIT_FAILURE);
     }
-#if MC
-	/* slaves check whether added key is for themselves */
-	if (mtcp_register_thread_callback(mctx, find_key_and_decrypt)) {
-		fprintf(stderr, "Failed to register find_key_and_decrypt()\n");
-		exit(EXIT_FAILURE);
-	}
-#endif
 }
 /*----------------------------------------------------------------------------*/
 static void
@@ -693,6 +667,12 @@ register_callbacks(mctx_t mctx)
         exit(-1); /* no point in proceeding if we don't have a listening socket */
     }
 	register_data_callback(mctx, sock_stream);
+
+	/* slaves check whether added key is for themselves */
+	if (mtcp_register_thread_callback(mctx, find_key_and_decrypt)) {
+		fprintf(stderr, "Failed to register find_key_and_decrypt()\n");
+		exit(EXIT_FAILURE);
+	}
 }
 /*----------------------------------------------------------------------------*/
 /* Open monitoring socket and ready it for monitoring */
@@ -745,7 +725,6 @@ main(int argc, char **argv)
 		ERROR_PRINT("Error: calloc() failed\n");
 		exit(-1);
 	}
-
 	g_st = (struct st_hashtable**)calloc(g_max_cores, sizeof(struct st_hashtable*));
 	if (!g_st) {
 		ERROR_PRINT("Error: calloc() failed\n");
@@ -755,8 +734,11 @@ main(int argc, char **argv)
 		g_ct[i] = ct_create();
 		g_st[i] = st_create();
 	}
-	g_shared_q = (shared_q *)calloc(g_max_cores, sizeof(shared_q) * NUM_BINS);
-
+	g_kt = (struct keytable *)calloc(g_max_cores * NUM_BINS, sizeof(struct keytable));
+	if (!g_kt) {
+		ERROR_PRINT("Error: calloc() failed\n");
+		exit(-1);
+	}
 	/* parse mos configuration file */
 	ret = mtcp_init(fname);
 	if (ret) {
@@ -795,7 +777,7 @@ main(int argc, char **argv)
 		ct_destroy(g_ct[i]);
 		st_destroy(g_st[i]);
 	}
-	free(g_shared_q);
+	free(g_kt);
 
 	return EXIT_SUCCESS;
 }
