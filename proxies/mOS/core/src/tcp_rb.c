@@ -607,7 +607,7 @@ tcprb_ppeek(tcprb_t *rb, uint8_t *buf, int len, loff_t off)
 	struct _tcpfrag_t *f;
 
 	if (!rb || rb->buf_mgmt != BUFMGMT_FULL || !buf || len < 0)
-		return -1;
+		return -6;
 	else if (len == 0)
 		return 0;
 
@@ -619,7 +619,7 @@ tcprb_ppeek(tcprb_t *rb, uint8_t *buf, int len, loff_t off)
 		}
 
 	if (!f) /* No proper fragment found */
-		return -1;
+		return -7;
 
 	int plen = MIN(len, f->tail - off);
 

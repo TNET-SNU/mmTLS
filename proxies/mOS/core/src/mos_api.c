@@ -258,7 +258,7 @@ mtcp_peek(mctx_t mctx, int msock, int side, char *buf, size_t len)
 	/* check if the calling thread is in MOS context */
 	if (mtcp->ctx->thread != pthread_self()) {
 		errno = EPERM;
-		return -1;
+		return -2;
 	}
 
 	/* check if the socket is monitor stream */
@@ -266,13 +266,13 @@ mtcp_peek(mctx_t mctx, int msock, int side, char *buf, size_t len)
 	if (sock->socktype != MOS_SOCK_MONITOR_STREAM_ACTIVE) {
 		TRACE_DBG("Invalid socket type!\n");
 		errno = EBADF;
-		return -1;
+		return -3;
 	}
 
 	if (side != MOS_SIDE_CLI && side != MOS_SIDE_SVR) {
 		TRACE_ERROR("Invalid side requested!\n");
 		exit(EXIT_FAILURE);
-		return -1;
+		return -4;
 	}
 
 	struct tcp_stream *mstrm = sock->monitor_stream->stream;
@@ -281,7 +281,7 @@ mtcp_peek(mctx_t mctx, int msock, int side, char *buf, size_t len)
 	if (!cur_stream || !cur_stream->buffer_mgmt) {
 		TRACE_DBG("Stream is NULL!! or buffer management is disabled\n");
 		errno = EINVAL;
-		return -1;
+		return -5;
 	}
 
 	/* Check if the read was not just due to syn-ack recv */
@@ -294,8 +294,9 @@ mtcp_peek(mctx_t mctx, int msock, int side, char *buf, size_t len)
 		if (rc < 0) {
 			if (*poff >= rcvbuf->head) {
 				/* this should not happen */
-				TRACE_ERROR("tcprb_ppeek() failed\n");
-				exit(EXIT_FAILURE);
+				// TRACE_ERROR("tcprb_ppeek() failed\n");
+				// exit(EXIT_FAILURE);
+				return rc;
 			}
 			/*
 			 * if we already missed some bytes to read, 
@@ -477,7 +478,7 @@ mtcp_getlastpkt(mctx_t mctx, int sock, int side, struct pkt_info *pkt)
 	case MOS_SOCK_MONITOR_STREAM:
 		if (mtcp->pctx == NULL) {
 			errno = EACCES;
-			return -1;
+			return -2;
 		}
 		cur_pkt_ctx = mtcp->pctx;
 		break;
@@ -520,6 +521,12 @@ mtcp_getlastpkt(mctx_t mctx, int sock, int side, struct pkt_info *pkt)
 	ClonePacketCtx(pkt, local_frame, &(cur_pkt_ctx->p));
 	return 0;
 }
+/*----------------------------------------------------------------------------*/
+void
+mtcp_clonepkt(struct pkt_info *to, unsigned char *frame, struct pkt_info *from)
+{
+	ClonePacketCtx(to, frame, from);
+}
 #else
 /*----------------------------------------------------------------------------*/
 int
@@ -544,12 +551,6 @@ mtcp_getlastpkt(mctx_t mctx, int sock, int side, struct pkt_ctx **pctx)
 	return 0;
 }
 #endif
-/*----------------------------------------------------------------------------*/
-void
-mtcp_clonepkt(struct pkt_info *to, unsigned char *frame, struct pkt_info *from)
-{
-	ClonePacketCtx(to, frame, from);
-}
 /*----------------------------------------------------------------------------*/
 int
 mtcp_sendpkt(mctx_t mctx, int sock, const struct pkt_info *pkt)

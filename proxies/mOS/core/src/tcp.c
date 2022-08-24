@@ -292,7 +292,7 @@ UpdateMonitor(mtcp_manager_t mtcp, struct tcp_stream *sendside_stream,
 #ifdef RECORDPKT_PER_STREAM 
 	/* clone sendside_stream even if sender is disabled */
 	ClonePacketCtx(&sendside_stream->last_pctx.p,
-		       sendside_stream->last_pkt_data, &(pctx.p));
+		       sendside_stream->last_pkt_data, &(pctx->p));
 #endif
 
 	/* update send stream context first */

@@ -461,8 +461,9 @@ ssize_t mtcp_ppeek(mctx_t mctx, int sock, int side,
 			  char *buf, size_t count, uint64_t off);
 
 /* Use this macro to copy packets when mtcp_getlastpkt is called */
-#define MTCP_CB_GETCURPKT_CREATE_COPY
+// #define MTCP_CB_GETCURPKT_CREATE_COPY
 
+#ifdef MTCP_CB_GETCURPKT_CREATE_COPY
 /** Get current packet of mtcp context
  * @param [in] mctx: mTCP/mOS context
  * @param [in] sock: monitoring stream socket id
@@ -475,6 +476,10 @@ ssize_t mtcp_ppeek(mctx_t mctx, int sock, int side,
  */
 int
 mtcp_getlastpkt(mctx_t mctx, int sock, int side, struct pkt_info *p);
+#else
+int
+mtcp_getlastpkt(mctx_t mctx, int sock, int side, struct pkt_ctx **pctx);
+#endif
 
 /** Register user's custom timer
  * @param [in] mctx: mtcp context
