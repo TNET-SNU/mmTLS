@@ -619,7 +619,8 @@ tcprb_ppeek(tcprb_t *rb, uint8_t *buf, int len, loff_t off)
 		}
 
 	if (!f) /* No proper fragment found */
-		return -7;
+		// return -7;
+		return 0; /* modified for ThunderTLS */
 
 	int plen = MIN(len, f->tail - off);
 

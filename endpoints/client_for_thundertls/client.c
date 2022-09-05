@@ -36,6 +36,7 @@ int thread_num;
 int test_cnt;
 char src_ip[MAX_ADDR_LEN + 1];
 int s_port;
+static char g_path[30] = "/home/junghan/";	// path for "key_log.txt"
 
 struct timespec t1, t2, t3;
 
@@ -49,7 +50,7 @@ typedef struct __attribute__((__packed__)) {
 void
 Usage()
 {
-	printf("Usage: ./ssl-client -a [ip address] -p [portnum]\n");
+	printf("Usage: ./ssl-client -a [ip address] -p [portnum] -k [key log path]\n");
 	exit(0);
 }
 /*-----------------------------------------------------------------------------*/
@@ -89,8 +90,8 @@ OpenConnection(const char *hostname, int port)
 		}
 		bzero(&addr, sizeof(addr));
 		addr.sin_family = AF_INET;
-		addr.sin_port = htons(port /* + rand() % thread_num */);
 		addr.sin_addr.s_addr = *(long*)(host->h_addr);
+		addr.sin_port = htons(port /* + rand() % thread_num */);
 	}
 
 	sd = socket(PF_INET, SOCK_STREAM, 0);
@@ -199,6 +200,7 @@ worker(void *arg)
 		}
 		else {
 			ShowCerts(ssl);        /* get any certs */
+			fclose(fp);
 #if USE_TLS_1_2
 			/* extract master secret, and calculate session key block */
 			uint8_t client_random[128], server_random[128];
@@ -241,7 +243,7 @@ worker(void *arg)
 			SSL_write(ssl, msg, strlen(msg));   /* encrypt & send message */
 			bytes = SSL_read(ssl, buf, sizeof(buf)); /* get reply & decrypt */
 			buf[bytes] = 0;
-			usleep(10000);
+			// usleep(10000);
 			/* release connection state */
 			SSL_free(ssl);
 		}
@@ -265,7 +267,7 @@ main(int argc, char *argv[])
 	port = 4888;
 
 	/* parse arguments */
-	while ((c = getopt(argc, argv, "a:p:t:n:")) != -1) {
+	while ((c = getopt(argc, argv, "a:p:k:t:n:")) != -1) {
 		if (c == 'a') { 
 			if (strlen(optarg) > MAX_ADDR_LEN) {
 				ERROR_PRINT("error: invalid ip address\n");
@@ -275,6 +277,8 @@ main(int argc, char *argv[])
 			addr[strlen(optarg)] = '\0';
 		} else if (c == 'p') { 
 			port = atoi(optarg); 
+		} else if (c == 'k') { 
+			strcpy(g_path, optarg);
 		} else if (c == 't') { 
 			thread_num = atoi(optarg);
 			if (thread_num < 1) {
@@ -296,7 +300,8 @@ main(int argc, char *argv[])
 
 	SSL_library_init();
 
-	if (0 > (fp = fopen("keylog/key_log.txt", "a+w"))) {
+	strcat(g_path, "/key_log.txt");	// file name fixed
+	if ((fp = fopen((const char*)g_path, "a+w")) < 0) {
 		ERROR_PRINT("Error: open() failed");
 		exit(-1);
 	}
@@ -312,7 +317,7 @@ main(int argc, char *argv[])
 		pthread_join(p_thread[i], NULL);
 	}
 
-	fclose(fp);
+	// fclose(fp);
 
 	return 0;
 }

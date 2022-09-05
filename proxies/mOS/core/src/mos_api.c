@@ -258,7 +258,7 @@ mtcp_peek(mctx_t mctx, int msock, int side, char *buf, size_t len)
 	/* check if the calling thread is in MOS context */
 	if (mtcp->ctx->thread != pthread_self()) {
 		errno = EPERM;
-		return -2;
+		return -1;
 	}
 
 	/* check if the socket is monitor stream */
@@ -266,13 +266,13 @@ mtcp_peek(mctx_t mctx, int msock, int side, char *buf, size_t len)
 	if (sock->socktype != MOS_SOCK_MONITOR_STREAM_ACTIVE) {
 		TRACE_DBG("Invalid socket type!\n");
 		errno = EBADF;
-		return -3;
+		return -1;
 	}
 
 	if (side != MOS_SIDE_CLI && side != MOS_SIDE_SVR) {
 		TRACE_ERROR("Invalid side requested!\n");
 		exit(EXIT_FAILURE);
-		return -4;
+		return -1;
 	}
 
 	struct tcp_stream *mstrm = sock->monitor_stream->stream;
@@ -281,7 +281,7 @@ mtcp_peek(mctx_t mctx, int msock, int side, char *buf, size_t len)
 	if (!cur_stream || !cur_stream->buffer_mgmt) {
 		TRACE_DBG("Stream is NULL!! or buffer management is disabled\n");
 		errno = EINVAL;
-		return -5;
+		return -1;
 	}
 
 	/* Check if the read was not just due to syn-ack recv */
@@ -584,13 +584,62 @@ mtcp_sendpkt(mctx_t mctx, int sock, const struct pkt_info *pkt)
 				   pkt->iph->saddr, pkt->tcph->source,
 				   pkt->iph->daddr, pkt->tcph->dest,
 				   htonl(pkt->tcph->seq), htonl(pkt->tcph->ack_seq),
-				   ntohs(pkt->tcph->window), TCP_FLAG_ACK,
+				   ntohs(pkt->tcph->window),
+				   *((uint8_t *)pkt->tcph + TCP_FLAGS_OFFSET),
 				   pkt->payload, pkt->payloadlen,
 				   socket->monitor_stream->stream->rcvvar->ts_recent,
 				   socket->monitor_stream->stream->rcvvar->ts_lastack_rcvd,
 				   pkt->iph->id, pkt->in_ifidx);
 
 
+	}
+
+	return 0;
+}
+/*----------------------------------------------------------------------------*/
+int
+mtcp_sendpkt_timestamp(mctx_t mctx, int sock, const struct pkt_info *pkt)
+{
+	mtcp_manager_t mtcp;
+	socket_map_t socket;
+	uint8_t *tcpopt;
+	uint32_t *ts;
+
+	mtcp = GetMTCPManager(mctx);
+	if (!mtcp || !pkt) {
+		errno = EACCES;
+		return -1;
+	}
+
+	/* check if the calling thread is in MOS context */
+	if (mtcp->ctx->thread != pthread_self()) {
+		errno = EPERM;
+		return -1;
+	}
+
+	/* check if the socket is monitor stream */
+	socket = &mtcp->msmap[sock];
+
+	if (!(pkt->iph) || !(pkt->tcph)) {
+		errno = ENODATA;
+		TRACE_INFO("mtcp_sendpkt() only supports TCP packet for now.\n");
+		return -1;
+	}
+
+	tcpopt = (uint8_t *)(pkt->tcph) + TCP_HEADER_LEN;
+	ts = (uint32_t *)(tcpopt + 4);
+	
+	if (socket->socktype == MOS_SOCK_MONITOR_STREAM_ACTIVE) {
+		SendTCPPacketStandalone(mtcp,
+				   pkt->iph->saddr, pkt->tcph->source,
+				   pkt->iph->daddr, pkt->tcph->dest,
+				   htonl(pkt->tcph->seq), htonl(pkt->tcph->ack_seq),
+				   ntohs(pkt->tcph->window),
+				   *((uint8_t *)pkt->tcph + TCP_FLAGS_OFFSET),
+				   pkt->payload, pkt->payloadlen,
+				   ntohl(ts[0]),
+				   ntohl(ts[1]),
+				   pkt->iph->id, pkt->in_ifidx);
 	}
 
 	return 0;

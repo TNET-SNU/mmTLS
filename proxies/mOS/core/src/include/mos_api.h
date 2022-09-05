@@ -556,6 +556,8 @@ mtcp_setlastpkt(mctx_t mctx, int sock, int side, off_t offset,
  */ 
 int
 mtcp_sendpkt(mctx_t mctx, int sock, const struct pkt_info *pkt);
+int
+mtcp_sendpkt_timestamp(mctx_t mctx, int sock, const struct pkt_info *pkt);
 
 /*----------------------------------------------------------------------------*/
 typedef struct session_address *session_address_t;

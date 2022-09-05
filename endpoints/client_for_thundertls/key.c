@@ -26,9 +26,6 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-
-#define PROXY_IP "10.0.40.10"		// giant2.kaist.ac.kr
-#define KEY_PORT 6666
 /*----------------------------*/
 
 #define MAX_DATA_LEN 	   512
@@ -38,7 +35,10 @@
 #define TRAFFIC_SECRET_LEN 48
 #define EVENT_SIZE		   sizeof(struct inotify_event)
 #define BUF_SIZE		   4096
+#define MAX_PORT		   65535
 
+char addr[MAX_ADDR_LEN + 1];
+int port;
 static int g_ino_fd, g_ino_wd;		// inotify file descriptor
 
 typedef struct {
@@ -65,13 +65,13 @@ static int g_max_session_num;			// max session number
 static session_info **g_session;		// session array
 static int g_session_num;				// # of connected sessions
 static session_send g_session_send;		// sessions to send
-static char g_path[1024];				// path for "key_log.txt"
+static char g_path[30];				// path for "key_log.txt"
 
 /*-----------------------------------------------------------------------------*/
 static void
 Usage(char *argv[])
 {
-	printf("Usage: %s -p [path] -s [max session number]\n", argv[0]);
+	printf("Usage: %s -a [address] -p [port] -k [path] -s [max session number]\n", argv[0]);
 }
 /*-----------------------------------------------------------------------------*/
 static void 
@@ -474,27 +474,36 @@ main(int argc, char *argv[])
 {
 	char c;
 	int sd;						 // UDP socket descripter
-	struct sockaddr_in servaddr;
+	struct sockaddr_in servaddr, cliaddr;
 	int addrlen = sizeof(servaddr);
 	FILE *fp;
-	
+	static struct hostent *host;
+	port = 6666;
+
 	if (argc < 4) {
 		Usage(argv);
 		exit(-1);
 	}
 
-	while ((c = getopt(argc, argv, "p:s:")) != -1) {
-		if (c == 'p') { 
+	while ((c = getopt(argc, argv, "a:p:k:s:")) != -1) {
+		if (c == 'a') { 
+			if (strlen(optarg) > MAX_ADDR_LEN) {
+				ERROR_PRINT("error: invalid ip address\n");
+			exit(-1);
+			}
+			memcpy(addr, optarg, strlen(optarg)); 
+			addr[strlen(optarg)] = '\0';
+		} else if (c == 'p') { 
+			port = atoi(optarg); 
+		} else if (c == 'k') { 
 			strcpy(g_path, optarg);
-		}
-		else if (c == 's') {
+		} else if (c == 's') {
 			g_max_session_num = atoi(optarg);
 			if (g_max_session_num < 1) {
 				ERROR_PRINT("Error: max session number should be more than 1\n");
 				exit(-1);
 			}
-		}
-		else {   
+		} else {   
 			Usage(argv);
 			exit(-1);
 		}
@@ -508,10 +517,21 @@ main(int argc, char *argv[])
         exit(-1);
     }
 
+	if ((host = gethostbyname(addr)) == NULL) {
+		perror(addr);
+		abort();
+	}
+
     memset(&servaddr, 0, addrlen);
     servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = inet_addr(PROXY_IP);
-    servaddr.sin_port = htons(KEY_PORT);
+    servaddr.sin_addr.s_addr = *(long*)(host->h_addr);
+    servaddr.sin_port = htons(port);
+
+    memset(&cliaddr, 0, addrlen);
+	cliaddr.sin_family = AF_INET;
+	cliaddr.sin_addr.s_addr= htonl(INADDR_ANY);
+	cliaddr.sin_port=htons(port); //source port for outgoing packets
+	bind(sd, (struct sockaddr *)&cliaddr, sizeof(cliaddr));
 
 	if ((g_ino_fd = inotify_init()) < 0) {
 		ERROR_PRINT("Error: inotify_init()\n");
