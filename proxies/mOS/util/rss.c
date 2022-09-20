@@ -89,7 +89,10 @@ BuildKeyCache(uint32_t *cache, int cache_len)
 		 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05
 	};
 
-	uint32_t result = (((uint32_t)key[0]) << 24) | (((uint32_t)key[1]) << 16) | 		              (((uint32_t)key[2]) << 8)  | ((uint32_t)key[3]);
+	uint32_t result = (((uint32_t)key[0]) << 24) |
+					  (((uint32_t)key[1]) << 16) |
+					  (((uint32_t)key[2]) << 8)  |
+					  ((uint32_t)key[3]);
 	uint32_t idx = 32;
 	int i;
 
@@ -150,7 +153,6 @@ GetRSSHash(in_addr_t sip, in_addr_t dip, in_port_t sp, in_port_t dp)
 /* val: 3 2 1 0 | 7 6 5 4 | 11 10 9 8 | 15 14 13 12 | 19 18 17 16 ...*/
 /* qid = val % num_queues */
 /*-------------------------------------------------------------------*/
-#if 0
 int
 GetRSSCPUCore(in_addr_t sip, in_addr_t dip, 
 			  in_port_t sp, in_port_t dp, int num_queues)
@@ -166,7 +168,6 @@ GetRSSCPUCore(in_addr_t sip, in_addr_t dip,
 	return (masked % num_queues);
 
 }
-#endif
 #if _TEST_RSS_
 /*-------------------------------------------------------------*/ 
 static void

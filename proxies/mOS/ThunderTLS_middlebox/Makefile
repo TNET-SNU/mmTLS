@@ -28,6 +28,12 @@ UTIL_INC    = -I../util/include
 # I/O library parameter (PSIO or DPDK)
 LIBS    += -m64 -g -pthread -lrt -march=native -Wl,-export-dynamic -L$(RTE_SDK)/$(RTE_TARGET)/lib -Wl,-lnuma -Wl,-lmtcp -Wl,-lpthread -Wl,-lrt -Wl,-ldl $(shell cat $(RTE_SDK)/$(RTE_TARGET)/lib/ldflags.txt)
 
+# DPDK HEADER
+DPDK_INC=$(RTE_SDK)/$(RTE_TARGET)/include
+# CFLAGS for DPDK-related compilation
+include $(RTE_SDK)/mk/rte.vars.mk
+INC = -DENABLE_DPDK -I${DPDK_INC} -include $(DPDK_INC)/rte_config.h
+
 ######################################################################
 
 default: $(TARGET)
@@ -38,7 +44,7 @@ $(MTCP_TARGET):
 
 $(TARGET): $(MTCP_TARGET) $(TARGET).c
 	$(MSG) "   CC $<"
-	$(HIDE) $(GCC) $(GCC_OPT) -o $@ $(SRCS-y) $(MTCP_INC) $(CMN_INC) $(UTIL_INC) $(LIB_DIR) $(LIBS)
+	$(HIDE) $(GCC) $(GCC_OPT) -o $@ $(SRCS-y) $(MTCP_INC) $(CMN_INC) $(UTIL_INC) $(INC) $(LIB_DIR) $(LIBS)
 
 clean:
 	rm -rf *~ *.o $(TARGET) logs/*

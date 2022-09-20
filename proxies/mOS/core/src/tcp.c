@@ -418,6 +418,7 @@ ProcessInTCPPacket(mtcp_manager_t mtcp, struct pkt_ctx *pctx)
 	iph = pctx->p.iph;
 	tcph = (struct tcphdr *)((u_char *)pctx->p.iph + (pctx->p.iph->ihl << 2));
 	
+	pctx->p.l4len = (tcph->doff << 2);
 	FillPacketContextTCPInfo(pctx, tcph);
 
 	/* callback for monitor raw socket */
@@ -429,19 +430,19 @@ ProcessInTCPPacket(mtcp_manager_t mtcp, struct pkt_ctx *pctx)
 	if (pctx->p.ip_len < ((iph->ihl + tcph->doff) << 2))
 		return ERROR;
 
-#if VERIFY_RX_CHECKSUM
-	if (TCPCalcChecksum((uint16_t *)pctx->p.tcph,
-						(tcph->doff << 2) + pctx->p.payloadlen,
-						iph->saddr, pctx->p.iph->daddr)) {
-		TRACE_DBG("Checksum Error: Original: 0x%04x, calculated: 0x%04x\n",
-				tcph->check, TCPCalcChecksum((uint16_t *)tcph,
-				(tcph->doff << 2) + pctx->p.payloadlen,
-				iph->saddr, iph->daddr));
-		if (pctx->forward && mtcp->num_msp)
-			ForwardIPPacket(mtcp, pctx);
-		return ERROR;
-	}
-#endif
+// #if VERIFY_RX_CHECKSUM
+// 	if (TCPCalcChecksum((uint16_t *)pctx->p.tcph,
+// 						(tcph->doff << 2) + pctx->p.payloadlen,
+// 						iph->saddr, pctx->p.iph->daddr)) {
+// 		TRACE_DBG("Checksum Error: Original: 0x%04x, calculated: 0x%04x\n",
+// 				tcph->check, TCPCalcChecksum((uint16_t *)tcph,
+// 				(tcph->doff << 2) + pctx->p.payloadlen,
+// 				iph->saddr, iph->daddr));
+// 		if (pctx->forward && mtcp->num_msp)
+// 			ForwardIPPacket(mtcp, pctx);
+// 		return ERROR;
+// 	}
+// #endif
 	events |= MOS_ON_PKT_IN;
 
 	/* Check whether a packet is belong to any stream */

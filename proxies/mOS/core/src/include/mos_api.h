@@ -130,6 +130,7 @@ struct pkt_info {
 	uint16_t      ip_len;
 	
 	/* TCP */
+	uint16_t      l4len;
 	uint64_t      offset;    /**< TCP ring buffer offset */
 	uint16_t      payloadlen;
 	uint32_t      seq;
@@ -490,6 +491,12 @@ mtcp_getlastpkt(mctx_t mctx, int sock, int side, struct pkt_ctx **pctx);
 int
 mtcp_settimer(mctx_t mctx, int id, struct timeval *timeout, callback_t cb);
 
+/**
+ * Reset the connection (send RST packets to both sides)
+ */
+int
+mtcp_reset_conn(mctx_t mctx, int sock);
+
 /** A sibling function to mtcp_settimer that returns
  * the current timestamp of the machine in microseconds.
  * This avoids the monitor application to call current
@@ -557,7 +564,7 @@ mtcp_setlastpkt(mctx_t mctx, int sock, int side, off_t offset,
 int
 mtcp_sendpkt(mctx_t mctx, int sock, const struct pkt_info *pkt);
 int
-mtcp_sendpkt_timestamp(mctx_t mctx, int sock, const struct pkt_info *pkt);
+mtcp_sendpkt_raw(mctx_t mctx, int sock, uint8_t *rawpkt, uint16_t len);
 
 /*----------------------------------------------------------------------------*/
 typedef struct session_address *session_address_t;

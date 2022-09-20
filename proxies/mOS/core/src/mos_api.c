@@ -13,6 +13,7 @@
 #include "ip_in.h"
 #include "ip_out.h"
 #include "tcp_out.h"
+#include "arp.h"
 /*----------------------------------------------------------------------------*/
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
@@ -590,57 +591,45 @@ mtcp_sendpkt(mctx_t mctx, int sock, const struct pkt_info *pkt)
 				   socket->monitor_stream->stream->rcvvar->ts_recent,
 				   socket->monitor_stream->stream->rcvvar->ts_lastack_rcvd,
 				   pkt->iph->id, pkt->in_ifidx);
-
-
 	}
 
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
 int
-mtcp_sendpkt_timestamp(mctx_t mctx, int sock, const struct pkt_info *pkt)
+mtcp_sendpkt_raw(mctx_t mctx, int sock, uint8_t *rawpkt, uint16_t len)
 {
 	mtcp_manager_t mtcp;
-	socket_map_t socket;
-	uint8_t *tcpopt;
-	uint32_t *ts;
+	uint8_t *buf;
+	uint32_t daddr;
+	int nif;
 
 	mtcp = GetMTCPManager(mctx);
-	if (!mtcp || !pkt) {
+	if (!mtcp || !rawpkt) {
 		errno = EACCES;
 		return -1;
 	}
-
 	/* check if the calling thread is in MOS context */
 	if (mtcp->ctx->thread != pthread_self()) {
 		errno = EPERM;
 		return -1;
 	}
-
-	/* check if the socket is monitor stream */
-	socket = &mtcp->msmap[sock];
-
-	if (!(pkt->iph) || !(pkt->tcph)) {
-		errno = ENODATA;
-		TRACE_INFO("mtcp_sendpkt() only supports TCP packet for now.\n");
+	if (mtcp->msmap[sock].socktype != MOS_SOCK_MONITOR_STREAM_ACTIVE)
+		return 0;
+		
+	daddr = ((struct iphdr *)((struct ethhdr *)rawpkt + 1))->daddr;
+	if ((nif = GetOutputInterface(daddr)) < 0)
+		return -1;
+	buf = mtcp->iom->get_wptr(mtcp->ctx, nif, len, 0);
+	if (!buf) {
+		printf("Failed to get available write buffer\n");
+		TRACE_DBG("Failed to get available write buffer\n");
 		return -1;
 	}
-
-	tcpopt = (uint8_t *)(pkt->tcph) + TCP_HEADER_LEN;
-	ts = (uint32_t *)(tcpopt + 4);
-	
-	if (socket->socktype == MOS_SOCK_MONITOR_STREAM_ACTIVE) {
-		SendTCPPacketStandalone(mtcp,
-				   pkt->iph->saddr, pkt->tcph->source,
-				   pkt->iph->daddr, pkt->tcph->dest,
-				   htonl(pkt->tcph->seq), htonl(pkt->tcph->ack_seq),
-				   ntohs(pkt->tcph->window),
-				   *((uint8_t *)pkt->tcph + TCP_FLAGS_OFFSET),
-				   pkt->payload, pkt->payloadlen,
-				   ntohl(ts[0]),
-				   ntohl(ts[1]),
-				   pkt->iph->id, pkt->in_ifidx);
-	}
+	memcpy(buf, GetDestinationHWaddr(daddr), ETH_ALEN);
+	memcpy(buf + ETH_ALEN, g_config.mos->netdev_table->ent[nif]->haddr, ETH_ALEN);
+	memcpy(buf + ETH_ALEN * 2, rawpkt + ETH_ALEN * 2, (len - ETH_ALEN * 2));
+	mtcp->iom->send_pkts(mtcp->ctx, nif);
 
 	return 0;
 }

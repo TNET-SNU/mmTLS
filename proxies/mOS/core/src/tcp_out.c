@@ -261,6 +261,7 @@ SendTCPPacket(struct mtcp_manager *mtcp, tcp_stream *cur_stream,
 		return ERROR;
 	}
 
+	pctx.p.l4len = optlen;
 	tcph = (struct tcphdr *)IPOutput(mtcp, cur_stream, 
 			TCP_HEADER_LEN + optlen + payloadlen, &pctx, cur_ts);
 	if (tcph == NULL) {

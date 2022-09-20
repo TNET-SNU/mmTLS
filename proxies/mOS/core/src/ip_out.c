@@ -90,7 +90,7 @@ ForwardIPPacket(mtcp_manager_t mtcp, struct pkt_ctx *pctx)
 	}
 #endif
 
- fast_tx:	
+ fast_tx:
 	iph = (struct iphdr *) EthernetOutput (mtcp, pctx, ETH_P_IP,
 			pctx->out_ifidx, haddr, pctx->p.ip_len, pctx->p.cur_ts);
 	if (iph)

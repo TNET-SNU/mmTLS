@@ -5,13 +5,11 @@
 #include <sys/queue.h>
 #include <mos_api.h>
 
-#define MAX_BUF_LEN 131072	  /* 128K */
-#define MAX_RECORD_LEN 16384  /* 16K */
-#define CLI_RECBUF_LEN 131072 /* 512K */
-#define SVR_RECBUF_LEN 16384  /* 16K */
-#define MAX_RECORD_NUM 16
-#define MAX_RAW_PKT_NUM 20		/* 10 * MTU < 16K */
-#define ETHERNET_FRAME_LEN 1514
+#define MAX_BUF_LEN 212992	  /* 128K --> recv buffer size */
+#define MAX_RECORD_LEN 16385  /* 16K */
+#define PLAIN_BUF_LEN MAX_BUF_LEN /* 128K */
+#define MAX_RAW_PKT_BUF_LEN 16385		/* 16K */
+#define MAX_RAW_PKT_NUM 10		/* 10 * MTU < 16K */
 
 #define TLS_HANDSHAKE_HEADER_LEN 4
 #define TLS_RECORD_TYPE_LEN      1
@@ -74,9 +72,10 @@ enum tlsstate
 	INITIAL_STATE,
 	CLIENT_HELLO_RECV,
 	SERVER_HELLO_RECV,
-	SERVER_CYPHER_SUITE_RECV,
-	CLIENT_CYPHER_SUITE_RECV,
+	SERVER_CIPHER_SUITE_RECV,
+	CLIENT_CIPHER_SUITE_RECV,
 	TLS_ESTABLISHED,
+	TO_BE_DESTROYED,
 }; // tls_state_type
 
 struct tls_crypto_info
@@ -87,61 +86,38 @@ struct tls_crypto_info
 	uint16_t key_mask;
 	uint8_t key[TLS_CIPHER_AES_GCM_256_KEY_SIZE];
 	uint8_t iv[TLS_CIPHER_AES_GCM_256_IV_SIZE];
-	/* union { */
-	/* 	struct tls13_crypto_info_aes_gcm_256 key_block; */
-	/* }; */
 };
-
-/* struct tls13_crypto_info_aes_gcm_256 { */
-/*     unsigned char client_key[TLS_CIPHER_AES_GCM_256_KEY_SIZE]; */
-/*     unsigned char client_iv[TLS_CIPHER_AES_GCM_256_IV_SIZE]; */
-/*     unsigned char server_key[TLS_CIPHER_AES_GCM_256_KEY_SIZE]; */
-/*     unsigned char server_iv[TLS_CIPHER_AES_GCM_256_IV_SIZE]; */
-/* }; */
-
-typedef struct tls_record
-{
-	uint8_t *tr_ciphertext;
-	uint16_t tr_cipher_len;
-} tls_record;
 
 typedef struct raw_pkt
 {
-	uint8_t raw_pkt_buf[ETHERNET_FRAME_LEN];
-	struct pkt_info raw_pkt_info;
+	uint8_t *data;
+	uint16_t len;
 } raw_pkt;
 
 typedef struct tls_context
 {
-	uint8_t tc_buf[MAX_BUF_LEN]; /* TLS record buffer */
-	uint32_t tc_buf_off;
-
 	struct tls_crypto_info tc_key_info;
 	uint16_t tc_version;
-	uint32_t tc_unparse_tcp_seq;
-	uint32_t tc_undecrypt_tcp_seq;
-	uint16_t tc_current_record_len;
-	uint64_t tc_current_tls_seq;
-	/**< starting point to parse a new record */
+	uint64_t tc_tcp_seq;
+	uint64_t decrypt_len; /* for debugging */
 
-	/* tls_record last_rec; */
-	tls_record tc_records[MAX_RECORD_NUM];
+	uint8_t tc_record[MAX_BUF_LEN]; /* TLS record buffer */
+	uint64_t tc_record_off; /* record buffer offset */
+	uint64_t tc_record_cnt; /* = tls_seq */
 
-	uint8_t *tc_plaintext;
-	uint16_t tc_plain_len;
+	uint8_t tc_plaintext[PLAIN_BUF_LEN];
+	uint64_t tc_plain_len;
 } tls_context;
 
 typedef struct conn_info
 {					  /* connection info */
 	int ci_sock;	  /* socket ID */
 	int ci_tls_state; /* TLS state */
-	int ci_to_be_destroyed;
 	uint8_t ci_client_random[TLS_1_3_CLIENT_RANDOM_LEN];
-
 	tls_context ci_tls_ctx[2];
-	
-	raw_pkt tc_raw_buf[MAX_RAW_PKT_NUM]; /* raw packet buffer */
-	int tc_raw_cnt;
+	uint8_t ci_raw_buf[MAX_RAW_PKT_BUF_LEN];
+	raw_pkt ci_raw_pkt[MAX_RAW_PKT_NUM]; /* raw packet buffer */
+	int ci_raw_cnt;
 } conn_info;
 
 struct keytable

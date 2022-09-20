@@ -175,17 +175,15 @@ st_insert(struct st_hashtable *ht, int sock, conn_info *c)
 	struct st_element *item;
 
 	assert(ht);
+	assert(sock);
 
-	if (st_search_int(ht, sock)) {
+	item = st_search_int(ht, sock);
+	if (item) {
 		/* packet retransmission or other errors */
 		ERROR_PRINT("Error: st_insert() call with duplicate socket..\n");
-		return 0;
+		return -1;
 	}
 
-	if (!sock) {
-		ERROR_PRINT("Error: wrong sock descriptor\n");
-        exit(-1);
-    }
 	idx = sock & LOWER_16BITS;
 
 	item = (struct st_element*)calloc(1, sizeof(struct st_element));

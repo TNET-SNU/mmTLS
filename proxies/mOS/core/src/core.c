@@ -1443,13 +1443,13 @@ mtcp_create_context(int cpu)
 			rte_eal_remote_launch(MTCPDPDKRunThread, mctx, cpu);
 	} else 
 #endif /* !ENABLE_DPDK */
-		{
-			if (pthread_create(&g_thread[cpu], 
-					   NULL, MTCPRunThread, (void *)mctx) != 0) {
-				TRACE_ERROR("pthread_create of mtcp thread failed!\n");
-				return NULL;
-			}
+	{
+		if (pthread_create(&g_thread[cpu], 
+					NULL, MTCPRunThread, (void *)mctx) != 0) {
+			TRACE_ERROR("pthread_create of mtcp thread failed!\n");
+			return NULL;
 		}
+	}
 
 	sem_wait(&g_init_sem[cpu]);
 	sem_destroy(&g_init_sem[cpu]);
@@ -1740,7 +1740,6 @@ mtcp_init(const char *config_file)
 
 	LoadConfigurationLowerHalf();
 
-	//PrintConfiguration();
 
 	for (i = 0; i < g_config.mos->netdev_table->num; i++) {
 		ap[i] = CreateAddressPool(g_config.mos->netdev_table->ent[i]->ip_addr, 1);
@@ -1751,9 +1750,6 @@ mtcp_init(const char *config_file)
 		}
         }
 	
-	//PrintInterfaceInfo();
-	//PrintRoutingTable();
-	//PrintARPTable();
 	InitARPTable();
 
 	if (signal(SIGUSR1, HandleSignal) == SIG_ERR) {

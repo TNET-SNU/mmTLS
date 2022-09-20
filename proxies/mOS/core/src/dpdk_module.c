@@ -33,9 +33,10 @@
 #define MAX_RX_QUEUE_PER_LCORE		MAX_CPUS
 #define MAX_TX_QUEUE_PER_PORT		MAX_CPUS
 
-#define MBUF_SIZE 			(2048 + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM)
-#define NB_MBUF				8192
-#define MEMPOOL_CACHE_SIZE		256
+#define MBUF_DATA_SIZE		10000
+#define MBUF_SIZE 			(MBUF_DATA_SIZE + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM)
+#define NB_MBUF				20000
+#define MEMPOOL_CACHE_SIZE		512
 //#define RX_IDLE_ENABLE			1
 #define RX_IDLE_TIMEOUT			1	/* in micro-seconds */
 #define RX_IDLE_THRESH			64
@@ -59,13 +60,13 @@
 #define TX_HTHRESH			0  /**< Default values of TX host threshold reg. */
 #define TX_WTHRESH			0  /**< Default values of TX write-back threshold reg. */
 
-#define MAX_PKT_BURST			/*32*/64/*128*//*32*/
+#define MAX_PKT_BURST			/*32*/64
 
 /*
  * Configurable number of RX/TX ring descriptors
  */
-#define RTE_TEST_RX_DESC_DEFAULT	128
-#define RTE_TEST_TX_DESC_DEFAULT	512
+#define RTE_TEST_RX_DESC_DEFAULT	1024
+#define RTE_TEST_TX_DESC_DEFAULT	1024
 
 static uint16_t nb_rxd = RTE_TEST_RX_DESC_DEFAULT;
 static uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT;
@@ -102,7 +103,12 @@ static struct rte_eth_conf port_conf = {
 		.jumbo_frame    = 	0, /**< Jumbo Frame Support disabled */
 		.hw_strip_crc   = 	1, /**< CRC stripped by hardware */
 #else
-		.offloads	=	DEV_RX_OFFLOAD_CHECKSUM,
+		.offloads	=	(
+							DEV_RX_OFFLOAD_CHECKSUM |
+							DEV_RX_OFFLOAD_TCP_LRO |
+							0
+						),
+		.max_lro_pkt_size =   MBUF_DATA_SIZE,
 #endif
 	},
 	.rx_adv_conf = {
@@ -117,7 +123,8 @@ static struct rte_eth_conf port_conf = {
 #if RTE_VERSION >= RTE_VERSION_NUM(18, 2, 0, 0)
 		.offloads	=	DEV_TX_OFFLOAD_IPV4_CKSUM |
 					DEV_TX_OFFLOAD_UDP_CKSUM |
-					DEV_TX_OFFLOAD_TCP_CKSUM
+					DEV_TX_OFFLOAD_TCP_CKSUM |
+                    DEV_TX_OFFLOAD_TCP_TSO
 #endif
 	},
 };
@@ -250,22 +257,23 @@ dpdk_send_pkts(struct mtcp_thread_context *ctxt, int nif)
 		pkts = dpc->wmbufs[nif].m_table;
 
 		/* in order to operate tls_middlebox */
-//#ifdef NETSTAT
-//		mtcp->nstat.tx_packets[nif] += cnt;
-//#ifdef ENABLE_STATS_IOCTL
-//		if (likely(dpc->fd) >= 0) {
-//			ss.tx_pkts = mtcp->nstat.tx_packets[nif];
-//			ss.tx_bytes = mtcp->nstat.tx_bytes[nif];
-//			ss.rx_pkts = mtcp->nstat.rx_packets[nif];
-//			ss.rx_bytes = mtcp->nstat.rx_bytes[nif];
-//			ss.qid = ctxt->cpu;
-//			ss.dev = nif;
-//			ioctl(dpc->fd, 0, &ss);
-//		}
-//#endif /* !ENABLE_STATS_IOCTL */
-//#endif
+#ifdef NETSTAT
+		mtcp->nstat.tx_packets[nif] += cnt;
+#ifdef ENABLE_STATS_IOCTL
+		if (likely(dpc->fd) >= 0) {
+			ss.tx_pkts = mtcp->nstat.tx_packets[nif];
+			ss.tx_bytes = mtcp->nstat.tx_bytes[nif];
+			ss.rx_pkts = mtcp->nstat.rx_packets[nif];
+			ss.rx_bytes = mtcp->nstat.rx_bytes[nif];
+			ss.qid = ctxt->cpu;
+			ss.dev = nif;
+			ioctl(dpc->fd, 0, &ss);
+		}
+#endif /* !ENABLE_STATS_IOCTL */
+#else
 		UNUSED(ss); 
 		UNUSED(mtcp);
+#endif
 		do {
 			/* tx cnt # of packets */
 			ret = rte_eth_tx_burst(nif, qid, 
@@ -294,24 +302,39 @@ dpdk_send_pkts(struct mtcp_thread_context *ctxt, int nif)
 }
 /*----------------------------------------------------------------------------*/
 uint8_t *
-dpdk_get_wptr(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize)
+dpdk_get_wptr(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, uint16_t l4len)
 {
 	struct dpdk_private_context *dpc;
 	mtcp_manager_t mtcp;
 	struct rte_mbuf *m;
 	uint8_t *ptr;
 	int len_of_mbuf;
+	int send_cnt;
 
 	dpc = (struct dpdk_private_context *) ctxt->io_private_context;
 	mtcp = ctxt->mtcp_manager;
 	
 	/* sanity check */
-	if (unlikely(dpc->wmbufs[nif].len == MAX_PKT_BURST))
-		return NULL;
-
+	if (unlikely(dpc->wmbufs[nif].len == MAX_PKT_BURST)) {
+		// return NULL;
+		printf("burst pkt exceeded!\n");
+		while(1) {
+			send_cnt = dpdk_send_pkts(ctxt, nif);
+			if (likely(send_cnt))
+				break;
+		}
+		dpc->wmbufs[nif].len = 0;
+		dpc->wmbufs[nif].m_table[0] =
+			rte_pktmbuf_alloc(pktmbuf_pool[cpu_qid_map[nif][ctxt->cpu]]);
+		if (unlikely(dpc->wmbufs[nif].m_table[0] == NULL)) {
+			fprintf(stderr, "[CPU %d] Failed to allocate wmbuf_relay on port %d\n",
+						cpu_qid_map[nif][ctxt->cpu], nif);
+			exit(EXIT_FAILURE);
+			return NULL;
+		}
+	}
 	len_of_mbuf = dpc->wmbufs[nif].len;
 	m = dpc->wmbufs[nif].m_table[len_of_mbuf];
-	
 	/* retrieve the right write offset */
 #if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
 	ptr = (void *)rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
@@ -321,6 +344,84 @@ dpdk_get_wptr(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize)
 	m->pkt_len = m->data_len = pktsize;
 	m->nb_segs = 1;
 	m->next = NULL;
+
+#ifdef NETSTAT
+	mtcp->nstat.tx_bytes[nif] += pktsize + ETHER_OVR;
+#endif
+	
+	/* increment the len_of_mbuf var */
+	dpc->wmbufs[nif].len = len_of_mbuf + 1;
+	
+	return (uint8_t *)ptr;
+}
+/*----------------------------------------------------------------------------*/
+uint8_t *
+dpdk_get_wptr_tso(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, uint16_t l4len)
+{
+	struct dpdk_private_context *dpc;
+	mtcp_manager_t mtcp;
+	struct rte_mbuf *m;
+	uint8_t *ptr;
+	int len_of_mbuf;
+	int send_cnt;
+
+	dpc = (struct dpdk_private_context *) ctxt->io_private_context;
+	mtcp = ctxt->mtcp_manager;
+	
+	/* sanity check */
+	if (unlikely(dpc->wmbufs[nif].len == MAX_PKT_BURST)) {
+		// return NULL;
+		printf("burst pkt exceeded!\n");
+		while(1) {
+			send_cnt = dpdk_send_pkts(ctxt, nif);
+			if (likely(send_cnt))
+				break;
+		}
+		dpc->wmbufs[nif].len = 0;
+		dpc->wmbufs[nif].m_table[0] =
+			rte_pktmbuf_alloc(pktmbuf_pool[cpu_qid_map[nif][ctxt->cpu]]);
+		if (unlikely(dpc->wmbufs[nif].m_table[0] == NULL)) {
+			fprintf(stderr, "[CPU %d] Failed to allocate wmbuf_relay on port %d\n",
+						cpu_qid_map[nif][ctxt->cpu], nif);
+			exit(EXIT_FAILURE);
+			return NULL;
+		}
+	}
+	len_of_mbuf = dpc->wmbufs[nif].len;
+	m = dpc->wmbufs[nif].m_table[len_of_mbuf];
+	/* retrieve the right write offset */
+#if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
+	ptr = (void *)rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
+#else
+	ptr = (void *)rte_pktmbuf_mtod(m, struct ether_hdr *);
+#endif
+	m->pkt_len = m->data_len = pktsize;
+	m->nb_segs = 1;
+	m->next = NULL;
+
+	if (l4len) {
+		/* enable TSO */
+		m->l2_len = ETHERNET_HEADER_LEN;
+		m->l3_len = IP_HEADER_LEN;
+		m->l4_len = l4len;
+		m->tso_segsz = RTE_ETHER_MTU - (m->l3_len + m->l4_len);
+
+#if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
+		m->ol_flags = RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM;
+		if (pktsize > RTE_ETHER_MTU + ETHERNET_HEADER_LEN) {
+			m->ol_flags |= RTE_MBUF_F_TX_TCP_SEG;
+		} else {
+			m->ol_flags |= RTE_MBUF_F_TX_TCP_CKSUM;
+		}
+#else   
+		m->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM;
+		if (pktsize > RTE_ETHER_MTU + ETHERNET_HEADER_LEN) {
+			m->ol_flags |= PKT_TX_TCP_SEG;
+		} else {
+			m->ol_flags |= PKT_TX_TCP_CKSUM;
+		}
+#endif
+	}
 
 #ifdef NETSTAT
 	mtcp->nstat.tx_bytes[nif] += pktsize + ETHER_OVR;
@@ -402,6 +503,7 @@ dpdk_recv_pkts(struct mtcp_thread_context *ctxt, int ifidx)
 #endif
 	dpc->rmbufs[ifidx].len = ret;
 	
+	// if (ret > 0) printf("\nrecv_cnt: %d\n", ret);
 	return ret;
 }
 /*----------------------------------------------------------------------------*/
@@ -420,12 +522,14 @@ dpdk_get_rptr(struct mtcp_thread_context *ctxt, int ifidx, int index, uint16_t *
 	m->udata64 = 1;
 	/* don't enable pre-fetching... performance goes down */
 	//rte_prefetch0(rte_pktmbuf_mtod(m, void *));
-	*len = m->pkt_len;
 	pktbuf = rte_pktmbuf_mtod(m, uint8_t *);
+	*len = (*(pktbuf + ETH_HLEN + 2) << 8) + *(pktbuf + ETH_HLEN + 3) + ETH_HLEN;
 
 	/* enqueue the pkt ptr in mbuf */
 	dpc->rmbufs[ifidx].m_table[index] = m;
 
+	// fprintf(stdout, "ethlen: %u\n",
+	// 	(*(pktbuf + ETH_HLEN + 2) << 8) + *(pktbuf + ETH_HLEN + 3));
 	return pktbuf;
 }
 /*----------------------------------------------------------------------------*/
@@ -506,7 +610,7 @@ check_all_ports_link_status(uint8_t port_num, uint32_t port_mask)
 	uint8_t portid, count, all_ports_up, print_flag = 0;
 	struct rte_eth_link link;
 
-	printf("\nChecking link status");
+	printf("\nChecking link status\n");
 	fflush(stdout);
 	for (count = 0; count <= MAX_CHECK_TIME; count++) {
 		all_ports_up = 1;
@@ -547,7 +651,7 @@ check_all_ports_link_status(uint8_t port_num, uint32_t port_mask)
 		/* set the print_flag if all ports up or timeout */
 		if (all_ports_up == 1 || count == (MAX_CHECK_TIME - 1)) {
 			print_flag = 1;
-			printf("done\n");
+			printf("done\n\n");
 		}
 	}
 }
@@ -576,7 +680,7 @@ dpdk_dev_ioctl(struct mtcp_thread_context *ctx, int nif, int cmd, void *argp)
 	switch (cmd) {
 	case PKT_TX_IP_CSUM:
 		m = dpc->wmbufs[nif].m_table[len_of_mbuf - 1];
-		m->ol_flags = PKT_TX_IP_CKSUM | PKT_TX_IPV4;
+		m->ol_flags |= PKT_TX_IP_CKSUM | PKT_TX_IPV4;
 #if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
 		m->l2_len = sizeof(struct rte_ether_hdr);
 #else
@@ -824,9 +928,9 @@ dpdk_load_module_lower_half(void)
 					ports_eth_addr[portid].addr_bytes[4],
 					ports_eth_addr[portid].addr_bytes[5]);
 #endif
-			/* only check for link status if the thread is master */
-			check_all_ports_link_status(g_config.mos->netdev_table->num, 0xFFFFFFFF);
 		}
+		/* only check for link status if the thread is master */
+		check_all_ports_link_status(g_config.mos->netdev_table->num, 0xFFFFFFFF);
 	} else { /* g_config.mos->multiprocess && !g_config.mos->multiprocess_is_master */
 		for (rxlcore_id = 0; rxlcore_id < g_config.mos->num_cores; rxlcore_id++) {
 			char name[20];
@@ -852,7 +956,8 @@ io_module_func dpdk_module_func = {
 	.link_devices		   = NULL,
 	.release_pkt		   = NULL,
 	.send_pkts		   = dpdk_send_pkts,
-	.get_wptr   		   = dpdk_get_wptr,
+	// .get_wptr   		   = dpdk_get_wptr,
+	.get_wptr   		   = dpdk_get_wptr_tso,
 	.recv_pkts		   = dpdk_recv_pkts,
 	.get_rptr	   	   = dpdk_get_rptr,
 	.get_nif		   = dpdk_get_nif,
