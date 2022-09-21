@@ -27,7 +27,7 @@
 #include "include/tls.h"
 #include "include/thash.h"
 #include "../util/include/rss.h"
-#include <rte_mbuf.h>
+#include "../core/src/include/memory_mgt.h"
 
 /* Maximum CPU cores */
 #define MAX_CORES 16
@@ -61,16 +61,16 @@
 #define UINT64_LEQ(a, b) ((int64_t)((a) - (b)) <= 0)
 #define UINT64_GT(a, b) ((int64_t)((a) - (b)) > 0)
 #define UINT64_GEQ(a, b) ((int64_t)((a) - (b)) >= 0)
-
-#define CORRECTNESS_CHECK_MODE 0
-#define MBUF_OFF 256
-#define USE_MBUF 1
 /*----------------------------------------------------------------------------*/
 /* Core */
 int g_max_cores;		  /* Number of CPU cores to be used */
 mctx_t g_mctx[MAX_CORES]; /* mOS context */
-#if USE_MBUF
-static struct rte_mempool *g_mem_pool[MAX_CORES] = {NULL};
+#define USE_MEMPOOL 1
+#if USE_MEMPOOL
+mem_pool_t g_ci_pool[MAX_CORES] = {NULL};
+mem_pool_t g_rawpkt_pool[MAX_CORES] = {NULL};
+mem_pool_t g_record_pool[MAX_CORES] = {NULL};
+mem_pool_t g_plaintext_pool[MAX_CORES] = {NULL};
 #endif
 static FILE *g_fp;
 /*----------------------------------------------------------------------------*/
@@ -141,14 +141,13 @@ has_key(tls_context *ctx)
 static int
 consume_plaintext(uint32_t len, uint8_t *text)
 {
-#if CORRECTNESS_CHECK_MODE
 	int i = 0;
+#if CORRECTNESS_CHECK
 	for (i = 0; i < len; i++)
 		fprintf(g_fp, "%02X", text[i]);
-	return i;
 #else
-	return len;
 #endif
+	return i;
 }
 /*----------------------------------------------------------------------------*/
 static inline void
@@ -159,14 +158,22 @@ remove_conn_info(mctx_t mctx, conn_info *c, int code)
 		ERROR_PRINT("Error: No session with given client random\n");
 	if (!st_remove(g_st[mctx->cpu], c->ci_sock))
 		ERROR_PRINT("Error: No session with given sock\n");
-	fprintf(stderr, "Destroy with code %d \nCORE: %d\nCLIENT: %lu B\nSERVER: %lu B\nRecord#: %lu\n%d\n",
+	fprintf(stdout, "Destroy with code %d \nCORE: %d\nCLIENT: %lu B\nSERVER: %lu B\nRecord#: %lu\n%d\n",
 		code, mctx->cpu,
 		c->ci_tls_ctx[MOS_SIDE_CLI].decrypt_len,
 		c->ci_tls_ctx[MOS_SIDE_SVR].decrypt_len,
 		c->ci_tls_ctx[MOS_SIDE_CLI].tc_record_cnt + 
 		c->ci_tls_ctx[MOS_SIDE_SVR].tc_record_cnt, ++i);
-#if USE_MBUF
-	rte_pktmbuf_free((struct rte_mbuf *)((uint8_t *)c - MBUF_OFF));
+#if USE_MEMPOOL
+	MPFreeChunk(g_ci_pool[mctx->cpu], c);
+	MPFreeChunk(g_record_pool[mctx->cpu],
+				c->ci_tls_ctx[MOS_SIDE_CLI].tc_record);
+	MPFreeChunk(g_record_pool[mctx->cpu],
+				c->ci_tls_ctx[MOS_SIDE_SVR].tc_record);
+	MPFreeChunk(g_plaintext_pool[mctx->cpu],
+				c->ci_tls_ctx[MOS_SIDE_CLI].tc_plaintext);
+	MPFreeChunk(g_plaintext_pool[mctx->cpu],
+				c->ci_tls_ctx[MOS_SIDE_SVR].tc_plaintext);
 #else
 	free(c);
 #endif
@@ -281,10 +288,12 @@ static int
 decrypt_tls_record(mctx_t mctx, tls_context *ctx, uint8_t *data, uint16_t record_len)
 {
 	struct tls_crypto_info *key_info = &ctx->tc_key_info;
-	int len, consume;
+	int len;
 	uint8_t iv[TLS_CIPHER_AES_GCM_256_IV_SIZE];
 
 	/* decrypt all well-recieved records */
+	if (!ctx->tc_plaintext)
+		ctx->tc_plaintext = MPAllocateChunk(g_rawpkt_pool[mctx->cpu]);
 	update_iv(key_info->iv, iv, ctx->tc_record_cnt);
 	len = decrypt_ciphertext(mctx, data, record_len,
 							ctx->tc_plaintext + ctx->tc_plain_len,
@@ -297,12 +306,10 @@ decrypt_tls_record(mctx_t mctx, tls_context *ctx, uint8_t *data, uint16_t record
 	ctx->tc_record_cnt++;
 	ctx->decrypt_len += len;
 	
-	consume = consume_plaintext(len, ctx->tc_plaintext + ctx->tc_plain_len);
-	if (consume != len)
-		fprintf(stderr, "Consumption late\n");
+	consume_plaintext(len, ctx->tc_plaintext + ctx->tc_plain_len);
 	ctx->tc_plain_len += len;
 	if (ctx->tc_plain_len + MAX_RECORD_LEN > PLAIN_BUF_LEN)
-		ctx->tc_plain_len = 0; /* reuse plain text buffer */
+		ctx->tc_plain_len = 0;
 
 	return len;
 }
@@ -506,7 +513,7 @@ copy_lastpkt(mctx_t mctx, int sock, int side, conn_info *c)
 	raw_pkt *rp = c->ci_raw_pkt + c->ci_raw_cnt;
 	/* ToDo: Replace to mempool */
 	if (!rp->data)
-		rp->data = c->ci_raw_buf;
+		rp->data = MPAllocateChunk(g_rawpkt_pool[mctx->cpu]);
 	memcpy(rp->data, pctx->p.ethh, pctx->p.eth_len);
 	rp->len = pctx->p.eth_len;
 	(rp + 1)->data = rp->data + rp->len;
@@ -530,6 +537,7 @@ send_stalled_pkts(mctx_t mctx, conn_info *c)
 	fprintf(stderr, "[%s] core: %d, sock: %u\nsent %d stalled pkts!\n",
 			__FUNCTION__, mctx->cpu, c->ci_sock, c->tc_raw_cnt);
 #endif
+	MPFreeChunk(g_rawpkt_pool[mctx->cpu], c->ci_raw_pkt->data);
 	c->ci_raw_cnt = 0;
 #endif
 }
@@ -541,14 +549,15 @@ cb_creation(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 	socklen_t addrslen = sizeof(struct sockaddr) * 2;
 	struct sockaddr addrs[2];
 	conn_info *c;
-#if USE_MBUF
-	c = rte_pktmbuf_mtod(rte_pktmbuf_alloc(g_mem_pool[mctx->cpu]), conn_info *);
+#if USE_MEMPOOL
+	c = (conn_info *)MPAllocateChunk(g_ci_pool[mctx->cpu]);
+	memset(c, 0, sizeof(conn_info));
 #else
 	c = calloc(1, sizeof(conn_info));
 #endif
 	if (!c)
 	{
-		ERROR_PRINT("Error: [%s]calloc failed\n", __FUNCTION__);
+		ERROR_PRINT("Error: [%s] conn info alloc failed\n", __FUNCTION__);
 		exit(-1);
 	}
 
@@ -599,7 +608,8 @@ cb_new_data(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 		mtcp_setlastpkt(mctx, sock, side, 0, NULL, 0, MOS_DROP);
 		return;
 	}
-
+	if (!ctx->tc_record)
+		ctx->tc_record = MPAllocateChunk(g_record_pool[mctx->cpu]);
 PEEK:
 	len = mtcp_peek(mctx, sock, side, (char *)ctx->tc_record + ctx->tc_record_off,
 					MAX_BUF_LEN - ctx->tc_record_off);
@@ -875,7 +885,7 @@ int main(int argc, char **argv)
 	/* char tls_middlebox_file[1024] = "config/tls_middlebox.conf"; */
 	int num_cpus;
 	int opt, rc;
-	// struct rte_mempool *mp;
+	// int master_core = 0;
 
 	/* get the total # of cpu cores */
 	num_cpus = GetNumCPUs();
@@ -908,7 +918,9 @@ int main(int argc, char **argv)
 			return 0;
 		}
 	}
-	
+
+	g_max_cores = num_cpus;
+
 	/* parse mos configuration file */
 	ret = mtcp_init(fname);
 	if (ret)
@@ -917,33 +929,32 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	g_max_cores = num_cpus;
-
 	/* set the core limit */
 	mtcp_getconf(&mcfg);
 	mcfg.num_cores = g_max_cores;
 	mtcp_setconf(&mcfg);
-
+	
 	/* create hash table */
 	for (i = 0; i < g_max_cores; i++)
 	{
 		g_ct[i] = ct_create();
 		g_st[i] = st_create();
-#if USE_MBUF
-		g_mem_pool[i] = rte_mempool_create(NULL,
-							mcfg.max_concurrency,
-							sizeof(conn_info), 0, 0,
-							rte_pktmbuf_pool_init, NULL,
-							rte_pktmbuf_init, NULL,
-							rte_lcore_to_socket_id(i), 0);
-		if (g_mem_pool[i] == NULL)
-			rte_exit(EXIT_FAILURE, "Cannot init mbuf pool\n");
+#if USE_MEMPOOL
+		g_ci_pool[i] = MPCreate(sizeof(conn_info),
+						sizeof(conn_info) * mcfg.max_concurrency, 0);
+		g_rawpkt_pool[i] = MPCreate(MAX_RAW_PKT_BUF_LEN,
+							MAX_RAW_PKT_BUF_LEN * mcfg.max_concurrency, 0);
+		/* server side receive buffer is supposed to be much smaller */
+		g_record_pool[i] = MPCreate(MAX_BUF_LEN,
+							(MAX_BUF_LEN + MAX_RECORD_LEN) * mcfg.max_concurrency, 0);
+		g_plaintext_pool[i] = MPCreate(PLAIN_BUF_LEN,
+								(MAX_BUF_LEN + MAX_RECORD_LEN) * mcfg.max_concurrency, 0);
 #endif
 	}
 	g_kt = (struct keytable *)calloc(NUM_BINS, sizeof(struct keytable));
 	if (!g_kt)
 	{
-		ERROR_PRINT("Error: calloc() failed\n");
+		ERROR_PRINT("Error: key table alloc failed\n");
 		exit(-1);
 	}
 
@@ -963,7 +974,7 @@ int main(int argc, char **argv)
 		ERROR_PRINT("Error: open() failed");
 		exit(-1);
 	}
-	
+
 	/* Register signal handler */
 	mtcp_register_signal(SIGINT, sigint_handler);
 
@@ -993,17 +1004,20 @@ int main(int argc, char **argv)
 	{
 		ct_destroy(g_ct[i]);
 		st_destroy(g_st[i]);
+#if USE_MEMPOOL
+		MPDestroy(g_ci_pool[i]);
+		MPDestroy(g_rawpkt_pool[i]);
+		MPDestroy(g_record_pool[i]);
+		MPDestroy(g_plaintext_pool[i]);
+#endif
 	}
 
 	/* free allocated memories */
+	free(g_kt);
 	for (i = 0; i < g_max_cores; i++)
 	{
-#if USE_MBUF
-		rte_mempool_free(g_mem_pool[i]);
-#endif
 		EVP_CIPHER_CTX_free(g_evp_ctx[i]);
 	}
-	free(g_kt);
 
 	return EXIT_SUCCESS;
 }

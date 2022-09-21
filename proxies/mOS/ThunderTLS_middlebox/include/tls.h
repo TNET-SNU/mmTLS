@@ -8,7 +8,7 @@
 #define MAX_BUF_LEN 212992	  /* 128K --> recv buffer size */
 #define MAX_RECORD_LEN 16385  /* 16K */
 #define PLAIN_BUF_LEN MAX_BUF_LEN /* 128K */
-#define MAX_RAW_PKT_BUF_LEN 16385		/* 16K */
+#define MAX_RAW_PKT_BUF_LEN 16384		/* 16K */
 #define MAX_RAW_PKT_NUM 10		/* 10 * MTU < 16K */
 
 #define TLS_HANDSHAKE_HEADER_LEN 4
@@ -101,11 +101,11 @@ typedef struct tls_context
 	uint64_t tc_tcp_seq;
 	uint64_t decrypt_len; /* for debugging */
 
-	uint8_t tc_record[MAX_BUF_LEN]; /* TLS record buffer */
+	uint8_t *tc_record; /* TLS record buffer */
 	uint64_t tc_record_off; /* record buffer offset */
 	uint64_t tc_record_cnt; /* = tls_seq */
 
-	uint8_t tc_plaintext[PLAIN_BUF_LEN];
+	uint8_t *tc_plaintext;
 	uint64_t tc_plain_len;
 } tls_context;
 
@@ -115,7 +115,7 @@ typedef struct conn_info
 	int ci_tls_state; /* TLS state */
 	uint8_t ci_client_random[TLS_1_3_CLIENT_RANDOM_LEN];
 	tls_context ci_tls_ctx[2];
-	uint8_t ci_raw_buf[MAX_RAW_PKT_BUF_LEN];
+	uint8_t *ci_raw_buf;
 	raw_pkt ci_raw_pkt[MAX_RAW_PKT_NUM]; /* raw packet buffer */
 	int ci_raw_cnt;
 } conn_info;

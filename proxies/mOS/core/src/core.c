@@ -1691,7 +1691,6 @@ mtcp_setconf(const struct mtcp_conf *conf)
 	g_config.mos->tcp_timeout = conf->tcp_timeout;
 
 	TRACE_CONFIG("Configuration updated by mtcp_setconf().\n");
-	//PrintConfiguration();
 
 	return 0;
 }
