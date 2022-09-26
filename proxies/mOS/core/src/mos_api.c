@@ -602,6 +602,9 @@ mtcp_sendpkt_raw(mctx_t mctx, int sock, uint8_t *rawpkt, uint16_t len)
 	mtcp_manager_t mtcp;
 	uint8_t *buf;
 	uint32_t daddr;
+	struct ethhdr *ethh;
+	struct iphdr *iph;
+	struct tcphdr *tcph;
 	int nif;
 
 	mtcp = GetMTCPManager(mctx);
@@ -616,11 +619,14 @@ mtcp_sendpkt_raw(mctx_t mctx, int sock, uint8_t *rawpkt, uint16_t len)
 	}
 	if (mtcp->msmap[sock].socktype != MOS_SOCK_MONITOR_STREAM_ACTIVE)
 		return 0;
-		
-	daddr = ((struct iphdr *)((struct ethhdr *)rawpkt + 1))->daddr;
+	
+	ethh = (struct ethhdr *)rawpkt;
+	iph = (struct iphdr *)(ethh + 1);
+	daddr = iph->daddr;
 	if ((nif = GetOutputInterface(daddr)) < 0)
 		return -1;
-	buf = mtcp->iom->get_wptr(mtcp->ctx, nif, len, 0);
+	tcph = (struct tcphdr *)(iph + 1);
+	buf = mtcp->iom->get_wptr(mtcp->ctx, nif, len, tcph->doff << 2);
 	if (!buf) {
 		printf("Failed to get available write buffer\n");
 		TRACE_DBG("Failed to get available write buffer\n");

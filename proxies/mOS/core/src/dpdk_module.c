@@ -33,7 +33,13 @@
 #define MAX_RX_QUEUE_PER_LCORE		MAX_CPUS
 #define MAX_TX_QUEUE_PER_PORT		MAX_CPUS
 
+#define LEADER_FOLLOWER_ISOLATION 0
+#define USE_LRO				1
+#if USE_LRO
 #define MBUF_DATA_SIZE		10000
+#else
+#define MBUF_DATA_SIZE		RTE_ETHER_MAX_LEN
+#endif
 #define MBUF_SIZE 			(MBUF_DATA_SIZE + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM)
 #define NB_MBUF				20000
 #define MEMPOOL_CACHE_SIZE		512
@@ -105,10 +111,14 @@ static struct rte_eth_conf port_conf = {
 #else
 		.offloads	=	(
 							DEV_RX_OFFLOAD_CHECKSUM |
+#if USE_LRO
 							DEV_RX_OFFLOAD_TCP_LRO |
+#endif
 							0
 						),
+#if USE_LRO
 		.max_lro_pkt_size =   MBUF_DATA_SIZE,
+#endif
 #endif
 	},
 	.rx_adv_conf = {
@@ -317,7 +327,7 @@ dpdk_get_wptr(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, uint1
 	/* sanity check */
 	if (unlikely(dpc->wmbufs[nif].len == MAX_PKT_BURST)) {
 		// return NULL;
-		printf("burst pkt exceeded!\n");
+		fprintf(stdout, "burst pkt exceeded!\n");
 		while(1) {
 			send_cnt = dpdk_send_pkts(ctxt, nif);
 			if (likely(send_cnt))
@@ -371,7 +381,7 @@ dpdk_get_wptr_tso(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, u
 	/* sanity check */
 	if (unlikely(dpc->wmbufs[nif].len == MAX_PKT_BURST)) {
 		// return NULL;
-		printf("burst pkt exceeded!\n");
+		fprintf(stdout, "burst pkt exceeded!\n");
 		while(1) {
 			send_cnt = dpdk_send_pkts(ctxt, nif);
 			if (likely(send_cnt))
@@ -399,29 +409,27 @@ dpdk_get_wptr_tso(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, u
 	m->nb_segs = 1;
 	m->next = NULL;
 
-	if (l4len) {
-		/* enable TSO */
-		m->l2_len = ETHERNET_HEADER_LEN;
-		m->l3_len = IP_HEADER_LEN;
-		m->l4_len = l4len;
-		m->tso_segsz = RTE_ETHER_MTU - (m->l3_len + m->l4_len);
+	/* enable TSO */
+	m->l2_len = ETHERNET_HEADER_LEN;
+	m->l3_len = IP_HEADER_LEN;
+	m->l4_len = l4len;
+	m->tso_segsz = RTE_ETHER_MTU - (m->l3_len + m->l4_len);
 
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
-		m->ol_flags = RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM;
-		if (pktsize > RTE_ETHER_MTU + ETHERNET_HEADER_LEN) {
-			m->ol_flags |= RTE_MBUF_F_TX_TCP_SEG;
-		} else {
-			m->ol_flags |= RTE_MBUF_F_TX_TCP_CKSUM;
-		}
-#else   
-		m->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM;
-		if (pktsize > RTE_ETHER_MTU + ETHERNET_HEADER_LEN) {
-			m->ol_flags |= PKT_TX_TCP_SEG;
-		} else {
-			m->ol_flags |= PKT_TX_TCP_CKSUM;
-		}
-#endif
+	m->ol_flags = RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM;
+	if (pktsize > RTE_ETHER_MTU + ETHERNET_HEADER_LEN) {
+		m->ol_flags |= RTE_MBUF_F_TX_TCP_SEG;
+	} else {
+		m->ol_flags |= RTE_MBUF_F_TX_TCP_CKSUM;
 	}
+#else   
+	m->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM;
+	if (pktsize > RTE_ETHER_MTU + ETHERNET_HEADER_LEN) {
+		m->ol_flags |= PKT_TX_TCP_SEG;
+	} else {
+		m->ol_flags |= PKT_TX_TCP_CKSUM;
+	}
+#endif
 
 #ifdef NETSTAT
 	mtcp->nstat.tx_bytes[nif] += pktsize + ETHER_OVR;
@@ -712,6 +720,117 @@ dpdk_dev_ioctl(struct mtcp_thread_context *ctx, int nif, int cmd, void *argp)
 	return -1;
 }
 /*----------------------------------------------------------------------------*/
+#if LEADER_FOLLOWER_ISOLATION
+void
+udp_flow_configure(uint16_t portid, uint16_t udp_q)
+{
+	struct rte_flow_attr attr = {
+		.group = 0,
+		.priority = 1,
+    	.ingress = 1,
+	};
+	static const struct rte_flow_item_ipv4 ipv4_mask = {
+    	.hdr.next_proto_id = 0xff,
+	};
+	struct rte_flow_item_ipv4 ipv4_udp = {
+    	.hdr.next_proto_id = 0x11,
+	};
+	struct rte_flow_item patterns[2] = {
+		{
+			.type = RTE_FLOW_ITEM_TYPE_IPV4,
+			.spec = &ipv4_udp,
+			.mask = &ipv4_mask,
+		},
+	};
+    struct rte_flow_action_queue action;
+	struct rte_flow_action actions[] = {
+    	{ .type = RTE_FLOW_ACTION_TYPE_VOID },
+    	{ .type = RTE_FLOW_ACTION_TYPE_END  },
+	};
+	struct rte_flow_error err;
+	action.index = udp_q;
+	actions[0] = (struct rte_flow_action) {
+		.type = RTE_FLOW_ACTION_TYPE_QUEUE,
+		.conf = &action,
+	};
+
+	if (!rte_flow_create(portid, &attr, patterns, actions, &err))
+    	rte_exit(EXIT_FAILURE,
+        	"udp flow create failed: %s\n error type %u %s\n",
+        	rte_strerror(rte_errno), err.type, err.message);
+}
+#endif
+/*----------------------------------------------------------------------------*/
+#if LEADER_FOLLOWER_ISOLATION
+void
+rss_flow_configure(uint16_t portid, uint16_t firstq, uint16_t numq)
+{
+#if RTE_VERSION >= RTE_VERSION_NUM(20, 0, 0, 0)
+    static const uint8_t key[] = {
+         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
+         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
+         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
+         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
+         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05
+    };
+#else
+	static const uint8_t key[] = {
+		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
+		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
+		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
+		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
+		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
+		0x05, 0x05
+	};
+#endif
+	uint16_t rss_queues[MAX_CPUS];
+	struct rte_flow_attr attr = {
+		.group = 0,
+		.priority = 2,
+    	.ingress = 1,
+	};
+	static const struct rte_flow_item_ipv4 ipv4_mask = {
+    	.hdr.next_proto_id = 0xff,
+	};
+	struct rte_flow_item_ipv4 ipv4_tcp = {
+    	.hdr.next_proto_id = 0x06,
+	};
+	struct rte_flow_item patterns[2] = {
+		{
+			.type = RTE_FLOW_ITEM_TYPE_IPV4,
+			.spec = &ipv4_tcp,
+			.mask = &ipv4_mask,
+		},
+	};
+    struct rte_flow_action_rss action = {
+		.types = ETH_RSS_TCP | ETH_RSS_UDP | ETH_RSS_IP,
+		.key_len = sizeof(key),
+		.queue_num = numq,
+		.key = key,
+		.queue = rss_queues,
+	};
+	struct rte_flow_action actions[] = {
+    	{ .type = RTE_FLOW_ACTION_TYPE_VOID },
+    	{ .type = RTE_FLOW_ACTION_TYPE_END  },
+	};
+	struct rte_flow_error err;
+	
+	for (uint16_t i = 0; i < numq; i++)
+		rss_queues[i] = firstq + i;
+
+	/* Do RSS over N queues using the default RSS key */
+	actions[0] = (struct rte_flow_action) {
+		.type = RTE_FLOW_ACTION_TYPE_RSS,
+		.conf = &action,
+	};
+
+	if (!rte_flow_create(portid, &attr, patterns, actions, &err))
+    	rte_exit(EXIT_FAILURE,
+        	"rss flow create failed: %s\n error type %u %s\n",
+        	rte_strerror(rte_errno), err.type, err.message);
+}
+#endif
+/*----------------------------------------------------------------------------*/
 void
 dpdk_load_module_upper_half(void)
 {
@@ -828,7 +947,7 @@ dpdk_load_module_lower_half(void)
 				rte_exit(EXIT_FAILURE, "Cannot init mbuf pool\n");	
 		}
 
-		/* Initialise each port */
+		/* Initialize each port */
 		for (portid = 0; portid < g_config.mos->netdev_table->num; portid++) {
 			int num_queue = 0, eth_idx, i, queue_id;
 			for (eth_idx = 0; eth_idx < g_config.mos->netdev_table->num; eth_idx++)
@@ -902,6 +1021,13 @@ dpdk_load_module_lower_half(void)
 
 			printf("done: \n");
 			rte_eth_promiscuous_enable(portid);
+#if LEADER_FOLLOWER_ISOLATION
+			/* steer udp packets to leader core (core id: 0)*/
+			if (portid == 0)
+				udp_flow_configure(portid, 0);
+			/* rss tcp packets to follower cores */
+			rss_flow_configure(portid, 1, rte_lcore_count() - 1);
+#endif
 
 			/* retrieve current flow control settings per port */
 			memset(&fc_conf, 0, sizeof(fc_conf));

@@ -5,8 +5,12 @@
 #include <sys/queue.h>
 #include <mos_api.h>
 
-#define MAX_BUF_LEN 212992	  /* 128K --> recv buffer size */
-#define MAX_RECORD_LEN 16385  /* 16K */
+// #define MAX_BUF_LEN 2097152	  /* recv buffer size */
+// #define MAX_BUF_LEN 212992	  /* recv buffer size */
+#define MAX_BUF_LEN 131072	  /* 128K */ // this one is better
+#define MAX_RECORD_LEN 16385  /* 16K + 1 */
+#define CLI_BUF_LEN MAX_BUF_LEN
+#define SVR_BUF_LEN MAX_RECORD_LEN
 #define PLAIN_BUF_LEN MAX_BUF_LEN /* 128K */
 #define MAX_RAW_PKT_BUF_LEN 16384		/* 16K */
 #define MAX_RAW_PKT_NUM 10		/* 10 * MTU < 16K */
@@ -88,6 +92,20 @@ struct tls_crypto_info
 	uint8_t iv[TLS_CIPHER_AES_GCM_256_IV_SIZE];
 };
 
+// ToDo: migrate to this mempool pair
+typedef struct mempool_pair
+{
+	uint8_t cli_pool[CLI_BUF_LEN];
+	uint8_t svr_pool[SVR_BUF_LEN];
+} mempool_pair;
+
+typedef struct tls_buffer
+{
+	uint8_t *buf;
+	uint32_t head;
+	uint32_t tail;
+} tls_buffer;
+
 typedef struct raw_pkt
 {
 	uint8_t *data;
@@ -98,15 +116,11 @@ typedef struct tls_context
 {
 	struct tls_crypto_info tc_key_info;
 	uint16_t tc_version;
-	uint64_t tc_tcp_seq;
+	uint64_t tc_record_cnt; /* = tls_seq */
 	uint64_t decrypt_len; /* for debugging */
 
-	uint8_t *tc_record; /* TLS record buffer */
-	uint64_t tc_record_off; /* record buffer offset */
-	uint64_t tc_record_cnt; /* = tls_seq */
-
-	uint8_t *tc_plaintext;
-	uint64_t tc_plain_len;
+	tls_buffer tc_cipher;
+	tls_buffer tc_plain;
 } tls_context;
 
 typedef struct conn_info
