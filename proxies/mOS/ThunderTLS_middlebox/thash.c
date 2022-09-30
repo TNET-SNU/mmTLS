@@ -221,9 +221,8 @@ st_search(struct st_hashtable *ht, int sock)
 {
 	struct st_element* item = st_search_int(ht, sock);
 
-	if (!item) {
+	if (!item)
 		return NULL;
-	}
 
 	return item->st_ci;
 }

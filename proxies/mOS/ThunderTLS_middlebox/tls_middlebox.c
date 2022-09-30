@@ -19,10 +19,8 @@
 #include <sys/queue.h>
 #include <errno.h>
 #include <endian.h>
-
-#include <openssl/evp.h>
-
 #include <mos_api.h>
+#include <openssl/evp.h>
 #include "cpu.h"
 #include "include/tls.h"
 #include "include/thash.h"
@@ -32,8 +30,7 @@
 /* Maximum CPU cores */
 #define MAX_CORES 16
 #define LEADER_CORE	0
-/* Number of TCP flags to monitor */
-#define NUM_FLAG 6
+
 /* Default path to mOS configuration file */
 #define MOS_CONFIG_FILE "config/mos.conf"
 
@@ -42,35 +39,31 @@
 #define TCP_HEADER_LEN 20
 #define TLS_HEADER_LEN 5
 
-#define MAX_LINE_LEN 1280
-
-#define AGENT_SRC_IP 0x0a015a0b // "10.1.90.11"
-#define AGENT_DST_IP 0x0a015a0a // "10.1.90.10"
-#define AGENT_PORT 6666
+#define AGENT_PORT "6666"
 
 #define VERBOSE_TCP 0
 #define VERBOSE_TLS 0
 #define VERBOSE_KEY 0
 #define VERBOSE_STALL 0
 #define VERBOSE_DEBUG 0
+#define DESTROY_CHECK 0
 
-#define UINT32_LT(a, b) ((int32_t)((a) - (b)) < 0)
-#define UINT32_LEQ(a, b) ((int32_t)((a) - (b)) <= 0)
-#define UINT32_GT(a, b) ((int32_t)((a) - (b)) > 0)
-#define UINT32_GEQ(a, b) ((int32_t)((a) - (b)) >= 0)
-#define UINT64_LT(a, b) ((int64_t)((a) - (b)) < 0)
-#define UINT64_LEQ(a, b) ((int64_t)((a) - (b)) <= 0)
-#define UINT64_GT(a, b) ((int64_t)((a) - (b)) > 0)
-#define UINT64_GEQ(a, b) ((int64_t)((a) - (b)) >= 0)
+/* Mode */
+#define IPS 1
+#define IDS (!IPS)
 /*----------------------------------------------------------------------------*/
 /* Core */
 int g_max_cores;		  /* Number of CPU cores to be used */
 mctx_t g_mctx[MAX_CORES]; /* mOS context */
 mem_pool_t g_ci_pool[MAX_CORES] = {NULL};
 mem_pool_t g_rawpkt_pool[MAX_CORES] = {NULL};
-mem_pool_t g_cipher_pool[MAX_CORES] = {NULL};
-mem_pool_t g_plain_pool[MAX_CORES] = {NULL};
+mem_pool_t g_cli_cipher_pool[MAX_CORES] = {NULL};
+mem_pool_t g_cli_plain_pool[MAX_CORES] = {NULL};
+mem_pool_t g_svr_cipher_pool[MAX_CORES] = {NULL};
+mem_pool_t g_svr_plain_pool[MAX_CORES] = {NULL};
+#if CORRECTNESS_CHECK
 static FILE *g_fp;
+#endif
 /*----------------------------------------------------------------------------*/
 /* Hash table of TLS connections */
 struct ct_hashtable *g_ct[MAX_CORES]; /* client random based */
@@ -79,12 +72,10 @@ struct st_hashtable *g_st[MAX_CORES]; /* socket based */
 /* Multi-core support */
 struct keytable *g_kt; /* circular queue of <client random, key> pare */
 int l_tail[MAX_CORES] = {0, };
-int g_tail = 0;
+volatile int g_tail = 0;
 /*----------------------------------------------------------------------------*/
 /* Key log agent */
-int g_ip = AGENT_DST_IP;
-int g_port = AGENT_PORT;
-// static pthread_t g_thread;
+char *g_port = AGENT_PORT;
 /* OpenSSL Cipher context for decryption */
 EVP_CIPHER_CTX *g_evp_ctx[MAX_CORES];
 /*----------------------------------------------------------------------------*/
@@ -95,14 +86,14 @@ sigint_handler(int signum)
 	/* Terminate the program if any interrupt happens */
 	for (int i = 0; i < g_max_cores; i++)
 		mtcp_destroy_context(g_mctx[i]);
-	exit(0);
+	exit(EXIT_SUCCESS);
 }
 /*----------------------------------------------------------------------------*/
 /* Dump bytestream in hexademical form */
 static inline void
 hexdump(char *title, uint8_t *buf, size_t len)
 {
-#if VERBOSE_TCP | VERBOSE_TLS | VERBOSE_KEY | VERBOSE_STALL | VERBOSE_DEBUG
+#if VERBOSE_TCP | VERBOSE_TLS | VERBOSE_KEY | VERBOSE_DEBUG
 	if (title)
 		fprintf(stderr, "%s\n", title);
 	for (size_t i = 0; i < len; i++)
@@ -129,9 +120,9 @@ print_text(uint8_t *aad, uint8_t *tag, uint8_t *cipher, uint8_t *plain,
 }
 /*----------------------------------------------------------------------------*/
 static inline bool
-has_key(tls_context *ctx)
+has_key(conn_info *c)
 {
-	return (ctx->tc_key_info.key_mask & 0x0f) == 0x0f;
+	return (c->ci_tls_ctx[MOS_SIDE_CLI].tc_key_info.key_mask & 0x0f) == 0x0f;
 }
 /*----------------------------------------------------------------------------*/
 static inline int
@@ -149,32 +140,44 @@ consume_plaintext(uint32_t len, uint8_t *text)
 static inline void
 remove_conn_info(mctx_t mctx, conn_info *c, int code)
 {
-	// static int i = 0;
 	if (!ct_remove(g_ct[mctx->cpu], c->ci_client_random))
 		ERROR_PRINT("Error: No session with given client random\n");
 	if (!st_remove(g_st[mctx->cpu], c->ci_sock))
 		ERROR_PRINT("Error: No session with given sock\n");
-	// fprintf(stdout, "Destroy with code %d \nCORE: %d\nCLIENT: %lu B\nSERVER: %lu B\nRecord#: %lu\n%d\n",
-	// 	code, mctx->cpu,
-	// 	c->ci_tls_ctx[MOS_SIDE_CLI].decrypt_len,
-	// 	c->ci_tls_ctx[MOS_SIDE_SVR].decrypt_len,
-	// 	c->ci_tls_ctx[MOS_SIDE_CLI].tc_record_cnt + 
-	// 	c->ci_tls_ctx[MOS_SIDE_SVR].tc_record_cnt, ++i);
+	static int i = 0;
+	fprintf(stdout, "Destroy with code %d\nCORE: %d\n"
+					"CLIENT: %lu B\nSERVER: %lu B\nRecord#: %lu\n%d\n",
+			code, mctx->cpu,
+			c->ci_tls_ctx[MOS_SIDE_CLI].decrypt_len,
+			c->ci_tls_ctx[MOS_SIDE_SVR].decrypt_len,
+			c->ci_tls_ctx[MOS_SIDE_CLI].tc_record_cnt + 
+			c->ci_tls_ctx[MOS_SIDE_SVR].tc_record_cnt, ++i);
 
-	MPFreeChunk(g_cipher_pool[mctx->cpu],
+	MPFreeChunk(g_cli_cipher_pool[mctx->cpu],
 				c->ci_tls_ctx[MOS_SIDE_CLI].tc_cipher.buf);
-	MPFreeChunk(g_cipher_pool[mctx->cpu],
+	MPFreeChunk(g_svr_cipher_pool[mctx->cpu],
 				c->ci_tls_ctx[MOS_SIDE_SVR].tc_cipher.buf);
-	MPFreeChunk(g_plain_pool[mctx->cpu],
+	MPFreeChunk(g_cli_plain_pool[mctx->cpu],
 				c->ci_tls_ctx[MOS_SIDE_CLI].tc_plain.buf);
-	MPFreeChunk(g_plain_pool[mctx->cpu],
+	MPFreeChunk(g_svr_plain_pool[mctx->cpu],
 				c->ci_tls_ctx[MOS_SIDE_SVR].tc_plain.buf);
 	MPFreeChunk(g_ci_pool[mctx->cpu], c);
 }
 /*----------------------------------------------------------------------------*/
+static inline void
+handle_malicious(mctx_t mctx, conn_info *c, const char *msg, int ercode)
+{
+	ERROR_PRINT("Malicious! code: %d in %s\n", ercode, msg);
+	if (mtcp_reset_conn(mctx, c->ci_sock) < 0) {
+		ERROR_PRINT("Reset failed\n");
+		exit(EXIT_FAILURE);
+	}
+	remove_conn_info(mctx, c, 3);
+}
+/*----------------------------------------------------------------------------*/
 /* Updates IV by XOR'ing it by # of records that have been alrady decrypted */
 /* Return updated IV */
-static void
+static inline void
 update_iv(uint8_t iv[TLS_CIPHER_AES_GCM_256_IV_SIZE],
     	  uint8_t updated_iv[TLS_CIPHER_AES_GCM_256_IV_SIZE],
     	  uint64_t record_count)
@@ -190,14 +193,11 @@ update_iv(uint8_t iv[TLS_CIPHER_AES_GCM_256_IV_SIZE],
 /* Decrypt single TLS record with given key_info */
 /* Return length of decrypted data, -1 of error */
 static inline int
-decrypt_ciphertext(mctx_t mctx, uint8_t *data, uint16_t cipher_len,
-					uint8_t *plain, uint8_t *key, uint8_t *iv)
+decrypt_ciphertext(EVP_CIPHER_CTX *ctx, uint8_t *data, uint8_t *plain, 
+				   uint8_t *key, uint8_t *iv, uint16_t cipher_len)
 {
 	uint8_t *aad, *tag, *cipher;
 	int len = 0, outlen = 0;
-	EVP_CIPHER_CTX *ctx = g_evp_ctx[mctx->cpu];
-
-	assert(*data == APPLICATION_DATA);
 
 	/* aad generate, aad is tls header in TLS1.3 */
 	aad = data;
@@ -209,35 +209,35 @@ decrypt_ciphertext(mctx_t mctx, uint8_t *data, uint16_t cipher_len,
 	cipher = data + TLS_HEADER_LEN;
 	if (!EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL)) {
 		ERROR_PRINT("Error: Init algorithm failed\n");
-		exit(-1);
+		return -5;
 	}
 	if (!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN,
 							 TLS_CIPHER_AES_GCM_256_IV_SIZE, NULL)) {
 		ERROR_PRINT("Error: SET_IVLEN failed\n");
-		exit(-1);
+		return -6;
 	}
 	if (!EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv)) {
 		ERROR_PRINT("Error: Set KEY/IV faield\n");
-		exit(-1);
+		return -7;
 	}
 	if (!EVP_DecryptUpdate(ctx, NULL, &len, aad,
 						   TLS_CIPHER_AES_GCM_256_AAD_SIZE)) {
 		ERROR_PRINT("Error: Set AAD failed\n");
-		exit(-1);
+		return -8;
 	}
 	if (!EVP_DecryptUpdate(ctx, plain, &len, cipher, cipher_len)) {
 		ERROR_PRINT("Error: Decrypt failed\n");
-		exit(-1);
+		return -9;
 	}
 	outlen += len;
 	if (!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG,
 							 TLS_CIPHER_AES_GCM_256_TAG_SIZE, tag)) {
 		ERROR_PRINT("Error: Set expected TAG failed\n");
-		exit(-1);
+		return -10;
 	}
 	if (EVP_DecryptFinal_ex(ctx, plain + len, &len) <= 0) {
 		fprintf(stderr, "Error: DecryptFinal failed\n");
-		exit(-1);
+		return -11;
 	}
 	outlen += len;
 
@@ -249,63 +249,25 @@ decrypt_ciphertext(mctx_t mctx, uint8_t *data, uint16_t cipher_len,
 	return outlen;
 }
 /*----------------------------------------------------------------------------*/
-/* Decrypt parsed TLS client records */
-/* Return decrypted bytes, -1 of error */
-static int
-decrypt_tls_record(mctx_t mctx, tls_context *ctx, uint16_t record_len)
-{
-	struct tls_crypto_info *key_info = &ctx->tc_key_info;
-	int len;
-	uint8_t iv[TLS_CIPHER_AES_GCM_256_IV_SIZE];
-	tls_buffer *plain = &ctx->tc_plain;
-	uint32_t *tail;
-
-	/* decrypt all well-recieved records */
-	if (!plain->buf)
-		// plain->buf = ctx->tc_cipher.buf; // for test whether plain buf cipher buf can be same
-		if (!(plain->buf = MPAllocateChunk(g_plain_pool[mctx->cpu]))) {
-			ERROR_PRINT("Error: [%s] plaintext pool alloc failed\n", __FUNCTION__);
-			exit(-1);
-		}
-	tail = &plain->tail;
-	update_iv(key_info->iv, iv, ctx->tc_record_cnt);
-	len = decrypt_ciphertext(mctx, ctx->tc_cipher.buf + ctx->tc_cipher.head,
-							record_len, plain->buf + *tail, key_info->key, iv);
-	ctx->tc_record_cnt++;
-	ctx->decrypt_len += len;
-	
-	// consume_plaintext(len, plain->buf + *tail);
-	*tail += len;
-	if (*tail + MAX_RECORD_LEN > PLAIN_BUF_LEN)
-		*tail = 0;
-
-	return len;
-}
-/*----------------------------------------------------------------------------*/
 /* Parse payload to get TLS session key data into key_info */
 /* Return length of parsed data, -1 of error */
 static int
-parse_tls_key(uint8_t *data, struct tls_crypto_info *client, struct tls_crypto_info *server)
+parse_tls_key(uint8_t *data, tls_crypto_info *client, tls_crypto_info *server)
 {
 	uint16_t cipher_suite, key_mask;
 	uint8_t *ptr;
 	int key_len, iv_len;
 
 	assert(client && server);
-
 	ptr = data;
 	cipher_suite = ntohs(*(uint16_t *)ptr);
-	// client->cipher_type = cipher_suite;
-	// server->cipher_type = cipher_suite;
 	key_len = TLS_CIPHER_AES_GCM_256_KEY_SIZE;
 	iv_len = TLS_CIPHER_AES_GCM_256_IV_SIZE;
 	ptr += sizeof(cipher_suite);
-
 	key_mask = ntohs(*((uint16_t *)ptr));
 	client->key_mask |= key_mask;
 	server->key_mask |= key_mask;
 	ptr += sizeof(key_mask);
-
 	if (key_mask & CLI_KEY_MASK) {
 		memcpy(client->key, ptr, key_len);
 		ptr += key_len;
@@ -332,10 +294,45 @@ parse_tls_key(uint8_t *data, struct tls_crypto_info *client, struct tls_crypto_i
 	return ptr - data;
 }
 /*----------------------------------------------------------------------------*/
-/* Parse TCP payload to assemble single TLS record sending to server */
-/* Return byte of parsed record, 0 if no complete record */
+/* Parse TCP payload to assemble single TLS record sending to server
+ * Return byte of parsed record, 0 if no complete record
+ */
+static inline int
+parse_tls_record(tls_buffer *cipher, uint8_t *record_type, uint8_t **payload)
+{
+	uint8_t *ptr;
+	int record_len;
 
-/*
+	/* Parse header of new record */
+	if (cipher->head + TLS_HEADER_LEN > cipher->tail)
+		return 0; // TLS header is incomplete
+	ptr = cipher->buf + cipher->head;
+	*record_type = *ptr;
+	record_len = htons(*(uint16_t *)(ptr + 3));
+	*payload = ptr + TLS_HEADER_LEN;
+	if (cipher->head + record_len + TLS_HEADER_LEN > cipher->tail)
+		return 0; // TLS record is incomplete
+
+#if VERBOSE_TLS
+	fprintf(stderr, "[%s] Parse new record to follow session!\n",
+			__FUNCTION__);
+	fprintf(stderr, "Record type %x, length %u (TCP %u ~ %u), "
+					"cipher len %u\n",
+			*record_type, record_len, *head,
+			*head + record_len + TLS_HEADER_LEN,
+			record_len);
+	hexdump("Dump of ciphertext of the record:", ptr, record_len);
+#endif /* VERBOSE_TLS */
+
+	return record_len;
+}
+/*----------------------------------------------------------------------------*/
+/* Update version and state in connection information
+ * Return
+ * 0 if no need decrypt,
+ * 1 if need decrypt,
+ * -1 if suspected as malicious
+ *
  * !Notice!
  *
  * side == MOS_SIDE_CLI means
@@ -344,279 +341,295 @@ parse_tls_key(uint8_t *data, struct tls_crypto_info *client, struct tls_crypto_i
  * server side recv buffer, whose contents are from client
  *
  */
-
-static uint16_t
-parse_tls_record(mctx_t mctx, conn_info *c, int side, bool *decrypt)
+static inline int
+update_conn_info(mctx_t mctx, conn_info *c, int side,
+				 uint8_t record_type, uint8_t *payload)
 {
-	uint8_t *ptr;
-	uint8_t record_type;
-	uint16_t version;
-	uint16_t record_len;
-	tls_context *ctx;
-	uint32_t *head, *tail;
-	int *state;
-
-	ctx = &c->ci_tls_ctx[side];
-	head = &ctx->tc_cipher.head;
-	tail = &ctx->tc_cipher.tail;
-	state = &c->ci_tls_state;
-	if ((*state == TLS_ESTABLISHED) && !has_key(ctx))
-		return 0; // Established but no key
-
-	/* Parse header of new record */
-	if (*head + TLS_HEADER_LEN > *tail)
-		return 0; // TLS header is incomplete
-	ptr = ctx->tc_cipher.buf + *head;
-	record_type = *ptr;
-	ptr += sizeof(uint8_t);
-
-	version = htons(*(uint16_t *)ptr);
-	ptr += sizeof(uint16_t);
-
-	record_len = htons(*(uint16_t *)ptr);
-	ptr += sizeof(uint16_t);
-
-	/* Store TLS record info if complete */
-	if (*head + record_len + TLS_HEADER_LEN > *tail)
-		return 0; // TLS record is incomplete
-
-	/* Update context */
-	if (ctx->tc_version < version)
-		ctx->tc_version = version;
-
-#if VERBOSE_TLS
-	fprintf(stderr, "[%s] Parse new record to follow session!\n",
-			__FUNCTION__);
-	fprintf(stderr, "Record type %x, length %u (TCP %u ~ %u), "
-					"cipher len %u\n",
-			record_type, record_len, start_seq,
-			start_seq + record_len + TLS_HEADER_LEN,
-			record_len);
-	if (record_len)
-	{
-		hexdump("Dump of ciphertext of the record:", ptr, record_len);
-	}
-#endif /* VERBOSE_TLS */
-
-	switch (record_type)
-	{
+	int *state = &c->ci_tls_state;
+	switch (record_type) {
 	case CHANGE_CIPHER_SPEC:
 		if ((side == MOS_SIDE_CLI) &&
 			(*state == SERVER_HELLO_RECV))
 			*state = SERVER_CIPHER_SUITE_RECV;
 		else if ((side == MOS_SIDE_SVR) &&
-				 (*state == SERVER_CIPHER_SUITE_RECV))
+				(*state == SERVER_CIPHER_SUITE_RECV))
 			*state = CLIENT_CIPHER_SUITE_RECV;
 		else
-			goto MALICIOUS;
+			return -1;
 		break;
 	case ALERT:
-		break; // we do not handle alert record yet
+		/* we do not handle alert record yet */
+		break;
 	case HANDSHAKE:
-		if ((*ptr == CLIENT_HS) && (*state == INITIAL_STATE))
-		{
+		if ((*payload == CLIENT_HS) && (*state == INITIAL_STATE)) {
 			*state = CLIENT_HELLO_RECV;
-			ptr += TLS_HANDSHAKE_HEADER_LEN;
-			ptr += sizeof(uint16_t); // Client Version (0x0303)
-			memcpy(c->ci_client_random, ptr, TLS_1_3_CLIENT_RANDOM_LEN);
-			if (ct_insert(g_ct[mctx->cpu], c->ci_client_random, c) < 0)
-			{
+			payload += TLS_HANDSHAKE_HEADER_LEN;
+			/* Client Version (0x0303) */
+			payload += sizeof(uint16_t);
+			memcpy(c->ci_client_random, payload, TLS_1_3_CLIENT_RANDOM_LEN);
+			if (ct_insert(g_ct[mctx->cpu], c->ci_client_random, c) < 0) {
 				ERROR_PRINT("Error: ct_insert() failed\n");
-				exit(-1); // replace to destroy
+				exit(EXIT_FAILURE);
 			}
 		}
-		else if ((*ptr == SERVER_HS) && (*state == CLIENT_HELLO_RECV))
+		else if ((*payload == SERVER_HS) && (*state == CLIENT_HELLO_RECV))
 			*state = SERVER_HELLO_RECV;
 		else
-			goto MALICIOUS;
+			return -2;
 		break;
 	case APPLICATION_DATA:
 		if ((*state == SERVER_CIPHER_SUITE_RECV) && (side == MOS_SIDE_CLI))
-			; // record sent by server, seems to be certificate
+			; /* record sent by server, seems to be certificate */
 		else if ((*state == CLIENT_CIPHER_SUITE_RECV) &&
-				 (side == MOS_SIDE_SVR) &&
-				 (record_len == HS_FINISHED_RECORD_LEN))
+				(side == MOS_SIDE_SVR))
 			*state = TLS_ESTABLISHED;
-		else if (*state == TLS_ESTABLISHED) {
-			*decrypt = 1;
-			return record_len;
-		}
+		else if (*state >= TLS_ESTABLISHED)
+			return 1;
 		else
-			goto MALICIOUS;
+			return -3;
 		break;
 	default:
-		goto MALICIOUS;
+		return -4;
 	}
-	*decrypt = 0;
-	return record_len;
-
-MALICIOUS:
-	ERROR_PRINT("Suspected as malicious\n");
-	if (mtcp_reset_conn(mctx, c->ci_sock) < 0) {
-		ERROR_PRINT("Reset failed\n");
-		exit(-1);
-	}
-	remove_conn_info(mctx, c, 3);
-
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
-static inline void
+/* 1. Check whether peeked record is complete
+ * 2. Parse the complete record
+ * 3. Update connection info (e.g., state, client random)
+ * 4. Decrypt if needed
+ * 5. Move buffer head right by parsed bytes
+ * 6. Return decrypted bytes, or -1 if error
+ */
+static int
+process_data(mctx_t mctx, conn_info *c, int side,
+			 tls_buffer *cipher, tls_buffer *plain)
+{
+	tls_context *ctx = &c->ci_tls_ctx[side];
+	int parse_len; /* TLS header not included */
+	uint8_t record_type;
+	uint8_t *payload;
+	int decrypt;
+	int decrypt_len;
+	int total = 0;
+	uint8_t iv[TLS_CIPHER_AES_GCM_256_IV_SIZE];
+
+	/* decrypt complete records */
+	while ((parse_len = parse_tls_record(cipher, &record_type, &payload)) > 0) {
+		decrypt = update_conn_info(mctx, c, side, record_type, payload);
+		if (decrypt < 0) {
+			handle_malicious(mctx, c, "state update", decrypt);
+			return -1;
+		}
+		if (decrypt > 0) {
+			update_iv(ctx->tc_key_info.iv, iv, ctx->tc_record_cnt++);
+			decrypt_len = decrypt_ciphertext(g_evp_ctx[mctx->cpu],
+											 cipher->buf + cipher->head,
+											 plain->buf + plain->tail,
+											 ctx->tc_key_info.key, iv,
+											 parse_len);
+			if (decrypt_len < 0) {
+				handle_malicious(mctx, c, "decrypt", decrypt_len);
+				return -1;
+			}
+			// consume_plaintext(decrypt_len, plain->buf + plain->tail);
+			plain->tail += decrypt_len;
+			if (plain->tail + MAX_RECORD_LEN > MAX_BUF_LEN)
+				plain->tail = 0;
+			total += decrypt_len;
+		}
+		/* move to next record */
+		cipher->head += TLS_HEADER_LEN + parse_len;
+	}
+	return total;
+}
+/*----------------------------------------------------------------------------*/
+/* Allocate new chunk from raw packet mempool for raw packet buffer
+ * Copy the last raw packet to raw packet buffer
+ */
+static inline int
 copy_lastpkt(mctx_t mctx, int sock, int side, conn_info *c)
 {
-#if 1
+	raw_pkt *rp = c->ci_raw_pkt + c->ci_raw_cnt;
+	if (!rp->data)
+		if (!(rp->data = MPAllocateChunk(g_rawpkt_pool[mctx->cpu]))) {
+			ERROR_PRINT("Error: [%s] rawpkt pool alloc failed\n", __FUNCTION__);
+			exit(EXIT_FAILURE);
+		}
 #ifdef MTCP_CB_GETCURPKT_CREATE_COPY
-	if (mtcp_getlastpkt(mctx, sock, side, p) < 0)
+	struct pkt_info p;
+	if (mtcp_getlastpkt(mctx, sock, side, &p) < 0)
 	{
-		fprintf(stderr, "[%s] Failed to get packet context\n", __FUNCTION__);
+		fprintf(stderr, "[%s] Failed to get packet info\n", __FUNCTION__);
 		exit(EXIT_FAILURE);
 	}
+	memcpy(rp->data, p.ethh, p.eth_len);
+	rp->len = p.eth_len;
 #else
 	struct pkt_ctx *pctx;
 	if (mtcp_getlastpkt(mctx, sock, side, &pctx) < 0)
 	{
 		fprintf(stderr, "[%s] Failed to get packet context\n", __FUNCTION__);
-		return;
+		exit(EXIT_FAILURE);
 	}
-#endif
-	raw_pkt *rp = c->ci_raw_pkt + c->ci_raw_cnt;
-	if (!rp->data)
-		if (!(rp->data = MPAllocateChunk(g_rawpkt_pool[mctx->cpu]))) {
-			ERROR_PRINT("Error: [%s] rawpkt pool alloc failed\n", __FUNCTION__);
-			exit(-1);
-		}
 	memcpy(rp->data, pctx->p.ethh, pctx->p.eth_len);
 	rp->len = pctx->p.eth_len;
-	if (++c->ci_raw_cnt == MAX_RAW_PKT_NUM) {
-		fprintf(stderr, "No received key on time\n");
-		return;
+	c->ci_raw_len += rp->len;
+	c->ci_raw_cnt++;
+#endif
+	if ((c->ci_raw_cnt == MAX_RAW_PKT_NUM) ||
+		(c->ci_raw_len > MAX_RAW_PKT_BUF_LEN)) {
+		MPFreeChunk(g_rawpkt_pool[mctx->cpu], rp->data);
+		c->ci_raw_cnt = c->ci_raw_len = 0;
+		return -1;
 	}
 	(rp + 1)->data = rp->data + rp->len;
-#endif
+	return 0;
 }
 /*----------------------------------------------------------------------------*/
+/* Send copied raw packets
+ * Use new API, mtcp_sendpkt_raw()
+ * After send, free mempool
+ */
 static inline void
 send_stalled_pkts(mctx_t mctx, conn_info *c)
 {
-#if 1
-	raw_pkt *rp;
-	for (int i = 0; i < c->ci_raw_cnt; i++)
-	{
-		rp = c->ci_raw_pkt + i;
-		if (mtcp_sendpkt_raw(mctx, c->ci_sock, rp->data, rp->len) < 0)
-			continue;
+	raw_pkt *rp = c->ci_raw_pkt;
+	if (!c->ci_raw_cnt)
+		return;
+	while (rp < c->ci_raw_pkt + c->ci_raw_cnt) {
+		if (mtcp_sendpkt_raw(mctx, c->ci_sock, rp->data, rp->len) < 0) {
+			ERROR_PRINT("Failed to send stalled packets\n");
+			break;
+		}
+		rp++;
 	}
 #if VERBOSE_STALL
-	fprintf(stderr, "\n--------------------------------------------------\n");
-	fprintf(stderr, "[%s] core: %d, sock: %u\nsent %d stalled pkts!\n",
-			__FUNCTION__, mctx->cpu, c->ci_sock, c->tc_raw_cnt);
+	fprintf(stderr,
+			"\n--------------------------------------------------\n"
+			"[%s] core: %d, sock: %u\nsent %d stalled pkts!\n",
+			__FUNCTION__, mctx->cpu, c->ci_sock, c->ci_raw_cnt);
 #endif
 	MPFreeChunk(g_rawpkt_pool[mctx->cpu], c->ci_raw_pkt->data);
-	c->ci_raw_cnt = 0;
-#endif
+	c->ci_raw_cnt = c->ci_raw_len = 0;
 }
 /*----------------------------------------------------------------------------*/
 /* Create connection structure for new connection */
 static void
-cb_creation(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
+cb_create(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 {
+#if DEBUG_SOCKET
 	socklen_t addrslen = sizeof(struct sockaddr) * 2;
 	struct sockaddr addrs[2];
+#endif
 	conn_info *c = (conn_info *)MPAllocateChunk(g_ci_pool[mctx->cpu]);
 	if (!c) {
 		ERROR_PRINT("Error: [%s] conn info pool alloc failed\n", __FUNCTION__);
-		exit(-1);
+		exit(EXIT_FAILURE);
 	}
-	memset(c, 0, sizeof(conn_info)); /* !Notice! MPAlloc needs memset */
+	/* MPAlloc needs memset */
+	memset(c, 0, sizeof(conn_info));
 	/* Fill values of the connection structure */
 	c->ci_sock = sock;
+#if DEBUG_SOCKET
 	if (mtcp_getpeername(mctx, sock, addrs, &addrslen,
-						 MOS_SIDE_BOTH) < 0)
-	{
+						 MOS_SIDE_BOTH) < 0) {
 		perror("mtcp_getpeername");
 		/* it's better to stop here and do debugging */
 		exit(EXIT_FAILURE);
 	}
+#endif
 	/* Insert the structure to the queue */
-	if (st_insert(g_st[mctx->cpu], c->ci_sock, c) < 0)
-	{
+	if (st_insert(g_st[mctx->cpu], sock, c) < 0) {
 		ERROR_PRINT("Error: st_insert() call with duplicate socket..\n");
+		exit(EXIT_FAILURE);
 	}
 }
 /*----------------------------------------------------------------------------*/
-/* Destroy connection structure */
+/* Destroy connection structure 
+ * If some ciphers are pending as undecrypted, postpone destroy
+ */
 static void
 cb_destroy(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 {
 	conn_info *c;
 	if (!(c = st_search(g_st[mctx->cpu], sock)))
-		return; // replace to drop
+		return;
 	if (c->ci_tls_state < TLS_ESTABLISHED) {
-		ERROR_PRINT("Suspected as malicious\n");
-		if (mtcp_reset_conn(mctx, c->ci_sock) < 0) {
-			ERROR_PRINT("Reset failed\n");
-			exit(-1);
-		}
-		remove_conn_info(mctx, c, 3);
+		handle_malicious(mctx, c, "early fin", -12);
 		return;
 	}
-	if (!has_key(c->ci_tls_ctx) || !has_key(c->ci_tls_ctx + 1)) {
+	if (!has_key(c)) {
 		c->ci_tls_state = TO_BE_DESTROYED;
 		return;
 	}
 	remove_conn_info(mctx, c, 0);
 }
 /*----------------------------------------------------------------------------*/
-/* Update connection's TCP state of each side */
+/* Called when received new packet from monitoring stream socket */
 static void
 cb_new_data(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 {
-	int len;
 	conn_info *c;
-	tls_context *ctx;
-	tls_buffer *cipher;
-	uint32_t *head, *tail;
-	uint8_t *buf;
-	bool decrypt = 0;
-	uint16_t record_len;
+	tls_buffer *cipher, *plain;
+	int len;
+	
+	/* data callback is only for follower cores */
+	assert((g_max_cores == 1) || (mctx->cpu != LEADER_CORE));
 
 	if (!(c = st_search(g_st[mctx->cpu], sock)))
-		return; // replace to drop
-	
-	ctx = &c->ci_tls_ctx[side];
-	if ((c->ci_tls_state == TLS_ESTABLISHED) && !has_key(ctx))
-	{
-		copy_lastpkt(mctx, sock, side, c);
-		mtcp_setlastpkt(mctx, sock, side, 0, NULL, 0, MOS_DROP);
 		return;
-	}
-	cipher = &ctx->tc_cipher;
-	if (!cipher->buf)
-		if (!(cipher->buf = MPAllocateChunk(g_cipher_pool[mctx->cpu]))) {
+	/* allocate mempool if needed */
+	cipher = &c->ci_tls_ctx[side].tc_cipher;
+	if (!cipher->buf) {
+		if (!(cipher->buf = MPAllocateChunk((side == MOS_SIDE_CLI)?
+				g_cli_cipher_pool[mctx->cpu]:g_svr_cipher_pool[mctx->cpu]))) {
 			ERROR_PRINT("Error: [%s] record pool alloc failed\n", __FUNCTION__);
-			exit(-1);
+			exit(EXIT_FAILURE);
 		}
-	buf = cipher->buf;
-	head = &cipher->head;
-	tail = &cipher->tail;
-PEEK:
-	if ((len = mtcp_peek(mctx, sock, side,
-						(char *)buf + *tail,
-						MAX_BUF_LEN - *tail)) <= 0)
-		return;
-	printf("data cb core: %d\n", mctx->cpu);
-	*tail += len;
-	/* Reassemble TLS record */
-	while ((record_len = parse_tls_record(mctx, c, side, &decrypt))) {
-		if (decrypt)
-			decrypt_tls_record(mctx, ctx, record_len);
-		*head += TLS_HEADER_LEN + record_len;
 	}
-	/* if buffer is full, move buffer to left by tc_tcp_seq */
-	if (*tail == MAX_BUF_LEN) {
-		memcpy(buf, buf + *head, MAX_BUF_LEN - *head);
-		*tail -= *head;
-		*head = 0;
+	plain = &c->ci_tls_ctx[side].tc_plain;
+	if (!plain->buf) {
+		if (!(plain->buf = MPAllocateChunk((side == MOS_SIDE_CLI)?
+				g_cli_plain_pool[mctx->cpu]:g_svr_plain_pool[mctx->cpu]))) {
+			ERROR_PRINT("Error: [%s] plaintext pool alloc failed\n", __FUNCTION__);
+			exit(EXIT_FAILURE);
+		}
+	}
+#if IPS
+	if ((c->ci_tls_state >= TLS_ESTABLISHED) && !has_key(c))
+	{
+		if (copy_lastpkt(mctx, sock, side, c) < 0)
+			handle_malicious(mctx, c, "too late key", 0);
+		if (mtcp_setlastpkt(mctx, sock, side, 0, NULL, 0, MOS_DROP) < 0) {
+			ERROR_PRINT("Error: [%s] drop failed\n", __FUNCTION__);
+			exit(EXIT_FAILURE);
+		}
+		return;
+	}
+#endif
+PEEK:
+	if ((len = mtcp_peek(mctx, sock, side, (char *)cipher->buf + cipher->tail,
+						 MAX_BUF_LEN - cipher->tail)) <= 0)
+		return;
+	cipher->tail += len;
+#if IDS
+	if ((c->ci_tls_state >= TLS_ESTABLISHED) && !has_key(c))
+	{
+        if (cipher->tail == MAX_BUF_LEN)
+			/* ToDo: allocate more pool */
+            ERROR_PRINT("Warning: Buffer over write might cause fatal error!\n");
+        return;
+	}
+#endif
+	if ((len = process_data(mctx, c, side, cipher, plain)) < 0)
+		return;
+	c->ci_tls_ctx[side].decrypt_len += len;
+	/* if buffer is full, move buffer to left by head offset and re-peek */
+	if (cipher->tail == MAX_BUF_LEN) {
+		memcpy(cipher->buf, cipher->buf + cipher->head, MAX_BUF_LEN - cipher->head);
+		cipher->tail -= cipher->head;
+		cipher->head = 0;
 		goto PEEK;
 	}
 #if VERBOSE_TCP
@@ -624,36 +637,38 @@ PEEK:
 #endif
 }
 /*----------------------------------------------------------------------------*/
-/* Update connection's TCP state of each side */
+/* Called when received new key packet from raw monitoring socket */
 static void
-cb_new_key(mctx_t mctx, int raw_sock, int side,
-					  uint64_t events, filter_arg_t *arg)
+cb_new_key(mctx_t mctx, int rsock, int side, uint64_t events, filter_arg_t *arg)
 {
-	// static int key_num = 0;
-	// printf("key cb core: %d\n", mctx->cpu);
 	conn_info *c;
 	uint8_t *payload;
+#if IDS
+	int len;
+#endif
+	/* key callback is only for leader core */
+	assert(mctx->cpu == LEADER_CORE);
 #ifdef MTCP_CB_GETCURPKT_CREATE_COPY
 	struct pkt_info p;
-	if (mtcp_getlastpkt(mctx, raw_sock, side, &p) < 0)
+	if (mtcp_getlastpkt(mctx, rsock, side, &p) < 0)
 	{
-		fprintf(stderr, "[%s] Failed to get packet context!!!\n", __FUNCTION__);
+		fprintf(stderr, "[%s] Failed to get packet info\n", __FUNCTION__);
 		exit(EXIT_FAILURE);
 	}
 	payload = (uint8_t *)(p.iph) + IP_HEADER_LEN + UDP_HEADER_LEN;
 #else
 	struct pkt_ctx *pctx;
-	if (mtcp_getlastpkt(mctx, raw_sock, side, &pctx) < 0)
+	if (mtcp_getlastpkt(mctx, rsock, side, &pctx) < 0)
 	{
-		fprintf(stderr, "[%s] Failed to get packet context!!!\n", __FUNCTION__);
+		fprintf(stderr, "[%s] Failed to get packet context\n", __FUNCTION__);
 		exit(EXIT_FAILURE);
 	}
 	payload = (uint8_t *)(pctx->p.iph) + IP_HEADER_LEN + UDP_HEADER_LEN;
 #endif
 #if VERBOSE_KEY
 	fprintf(stderr, "\n--------------------------------------------------\n");
-	fprintf(stderr, "[%s] core: %d, raw_sock: %d, side: %u\n",
-			__FUNCTION__, mctx->cpu, raw_sock, side);
+	fprintf(stderr, "[%s] core: %d, rsock: %d, side: %u\n",
+			__FUNCTION__, mctx->cpu, rsock, side);
 #endif
 
 	/*
@@ -661,21 +676,31 @@ cb_new_key(mctx_t mctx, int raw_sock, int side,
 	 * contents in recv buffer are sent by server (client)
 	 * so, save the server (client) key at client (server) context
 	 */
-	c = ct_search(g_ct[mctx->cpu], payload);
-	if (g_max_cores > 1)
-		if (c)
-		{
-			// fprintf(stdout, "key_num: %d on leader\n", ++key_num);
-			parse_tls_key(payload + TLS_1_3_CLIENT_RANDOM_LEN + 1,
-						&c->ci_tls_ctx[MOS_SIDE_SVR].tc_key_info,
-						&c->ci_tls_ctx[MOS_SIDE_CLI].tc_key_info);
-			if (c->ci_raw_cnt > 0)
-				send_stalled_pkts(mctx, c);
-			if (c->ci_tls_state == TO_BE_DESTROYED)
-				remove_conn_info(mctx, c, 1);
+	if (g_max_cores == 1) {
+		c = ct_search(g_ct[mctx->cpu], payload);
+		if (!c)
+			return; // ignore this key
+		parse_tls_key(payload + TLS_1_3_CLIENT_RANDOM_LEN + 1,
+					&c->ci_tls_ctx[MOS_SIDE_SVR].tc_key_info,
+					&c->ci_tls_ctx[MOS_SIDE_CLI].tc_key_info);
+#if IPS
+		send_stalled_pkts(mctx, c);
+#elif IDS
+		if (len = process_data(mctx, c, MOS_SIDE_CLI,
+							  &c->ci_tls_ctx[MOS_SIDE_CLI].tc_cipher,
+							  &c->ci_tls_ctx[MOS_SIDE_CLI].tc_plain) < 0)
 			return;
-		}
-
+		c->ci_tls_ctx[MOS_SIDE_CLI].decrypt_len += len;
+		if (len = process_data(mctx, c, MOS_SIDE_SVR,
+							  &c->ci_tls_ctx[MOS_SIDE_SVR].tc_cipher,
+							  &c->ci_tls_ctx[MOS_SIDE_SVR].tc_plain) < 0)
+			return;
+		c->ci_tls_ctx[MOS_SIDE_SVR].decrypt_len += len;
+		if (c->ci_tls_state == TO_BE_DESTROYED)
+			remove_conn_info(mctx, c, 1);
+#endif
+		return;
+	}
 	memcpy(g_kt[g_tail].kt_client_random, payload, TLS_1_3_CLIENT_RANDOM_LEN);
 	parse_tls_key(payload + TLS_1_3_CLIENT_RANDOM_LEN + 1,
 				&g_kt[g_tail].kt_key_info[MOS_SIDE_SVR],
@@ -683,178 +708,135 @@ cb_new_key(mctx_t mctx, int raw_sock, int side,
 	g_kt[g_tail].kt_valid = 1;
 	if (++g_tail == NUM_BINS)
 		g_tail = 0;
-	/* if old key still exists */
+	/* old key should not still exist */
 	assert(!g_kt[g_tail].kt_valid);
 }
 /*----------------------------------------------------------------------------*/
-static bool
-check_is_key(mctx_t mctx, int raw_sock, int side, uint64_t events, filter_arg_t *arg)
-{
-	struct iphdr *iph;
-	struct udphdr *udph;
-#ifdef MTCP_CB_GETCURPKT_CREATE_COPY
-	struct pkt_info p;
-	if (mtcp_getlastpkt(mctx, raw_sock, side, &p) < 0)
-	{
-		fprintf(stderr, "[%s] Failed to get packet context\n", __FUNCTION__);
-		exit(EXIT_FAILURE);
-	}
-	iph = p.iph;
-#else
-	struct pkt_ctx *pctx;
-	if (mtcp_getlastpkt(mctx, raw_sock, side, &pctx) < 0)
-	{
-		fprintf(stderr, "[%s] Failed to get packet context\n", __FUNCTION__);
-		exit(EXIT_FAILURE);
-	}
-	iph = pctx->p.iph;
-#endif
-	udph = (struct udphdr *)(iph + 1);
-#if VERBOSE_KEY
-	fprintf(stderr, "\n--------------------------------------------------\n");
-	fprintf(stderr, "[%s] core: %d, raw_sock: %d, side: %u\n",
-			__FUNCTION__, mctx->cpu, raw_sock, side);
-#endif
-	return (iph->protocol == IPPROTO_UDP) && (ntohs(udph->dest) == g_port) &&
-#ifdef MTCP_CB_GETCURPKT_CREATE_COPY
-		   (p.ip_len > IP_HEADER_LEN);
-#else
-		   (pctx->p.ip_len > IP_HEADER_LEN);
-#endif
-}
-/*----------------------------------------------------------------------------*/
+/* Follower cores try to get new keys for their own TLS streams
+ * This functions is registered as a thread function pointer
+ * Registered by new API, mtcp_register_thread_callback()
+ */
 static void
-find_key_and_decrypt(mctx_t mctx)
+find_key_and_process(mctx_t mctx)
 {
-	// static int key_num = 0;
 	conn_info *c;
-	struct keytable *walk;
-
-	while (l_tail[mctx->cpu] != g_tail) {
-		walk = g_kt + l_tail[mctx->cpu];
+	int *tail = l_tail + mctx->cpu;
+	struct keytable *walk = g_kt + *tail;
+#if IDS
+	int len;
+#endif
+	assert(mctx->cpu != LEADER_CORE);
+	while (*tail != g_tail) {
 		if (walk->kt_valid) {
-			c = ct_search(g_ct[mctx->cpu], walk->kt_client_random);
-			if (c) {
+			if ((c = ct_search(g_ct[mctx->cpu], walk->kt_client_random))) {
 				walk->kt_valid = 0;
-				// fprintf(stdout, "key_num: %don follower\n", ++key_num);
 				/* copy keys to local hashtable */
 				c->ci_tls_ctx[MOS_SIDE_CLI].tc_key_info = walk->kt_key_info[MOS_SIDE_CLI];
 				c->ci_tls_ctx[MOS_SIDE_SVR].tc_key_info = walk->kt_key_info[MOS_SIDE_SVR];
-				if (c->ci_raw_cnt > 0)
-					send_stalled_pkts(mctx, c);
-				if (c->ci_tls_state == TO_BE_DESTROYED)
+#if IPS
+				send_stalled_pkts(mctx, c);
+#elif IDS
+				if (len = process_data(mctx, c, MOS_SIDE_CLI,
+									&c->ci_tls_ctx[MOS_SIDE_CLI].tc_cipher,
+									&c->ci_tls_ctx[MOS_SIDE_CLI].tc_plain) < 0)
+					return;
+				c->ci_tls_ctx[MOS_SIDE_CLI].decrypt_len += len;
+				if (len = process_data(mctx, c, MOS_SIDE_SVR,
+									&c->ci_tls_ctx[MOS_SIDE_SVR].tc_cipher,
+									&c->ci_tls_ctx[MOS_SIDE_SVR].tc_plain) < 0)
+					return;
+				c->ci_tls_ctx[MOS_SIDE_SVR].decrypt_len += len;
+				if (c->ci_tls_state == TO_BE_DESTROYED) {
 					remove_conn_info(mctx, c, 1);
+					return;
+				}
+#endif
 #if VERBOSE_KEY
 				fprintf(stderr, "[%s] core: %d tail: %d local_tail: %d\n",
-						__FUNCTION__, mctx->cpu, g_tail, l_tail[mctx->cpu]);
+						__FUNCTION__, mctx->cpu, g_tail, *tail);
 #endif
 			}
 		}
-		if (++l_tail[mctx->cpu] == NUM_BINS)
-			l_tail[mctx->cpu] = 0;
+		walk++;
+		if (++*tail == NUM_BINS) {
+			*tail = 0;
+			walk = g_kt;
+		}
 	}
 }
 /*----------------------------------------------------------------------------*/
 static void
-register_sessionkey_callback(mctx_t mctx, int msock)
+register_key_callback(mctx_t mctx, int rsock)
 {
-	event_t ude_from_ctrl;
-	ude_from_ctrl = mtcp_define_event(MOS_ON_PKT_IN, check_is_key, NULL);
-	if (ude_from_ctrl == MOS_NULL_EVENT)
-	{
-		fprintf(stderr, "mtcp_define_event() failed!");
+	union monitor_filter ft = {0};
+	ft.raw_pkt_filter = "ip proto 17 and port " AGENT_PORT;
+	/* Only leader core should receive key */
+	if (mctx->cpu == LEADER_CORE) {
+		if (mtcp_bind_monitor_filter(mctx, rsock, &ft) < 0) {
+			fprintf(stderr, "Failed to bind ft to the listening socket!\n");
+			exit(EXIT_FAILURE);
+		}
+		if (mtcp_register_callback(mctx, rsock, MOS_ON_PKT_IN,
+								MOS_NULL, cb_new_key)) {
+			fprintf(stderr, "Failed to register cb_new_key()\n");
+			exit(EXIT_FAILURE);
+		}
+		return;
+	}
+	/* For workers, make a per-thread callback to poll shared key table */
+	if (mtcp_register_thread_callback(mctx, find_key_and_process)) {
+		fprintf(stderr, "Failed to register find_key_and_process()\n");
 		exit(EXIT_FAILURE);
 	}
-	if (mtcp_register_callback(mctx, msock, ude_from_ctrl,
-							MOS_NULL, cb_new_key))
-	{
-		fprintf(stderr, "Failed to register cb_new_key()\n");
-		exit(EXIT_FAILURE);
-	}
+	/* to test simple forwarding */
+	(void)cb_new_key;
+	(void)find_key_and_process;
 }
 /*----------------------------------------------------------------------------*/
 static void
 register_data_callback(mctx_t mctx, int msock)
 {
 	if (mtcp_register_callback(mctx, msock, MOS_ON_CONN_START,
-							   MOS_HK_SND, cb_creation))
-	{
-		fprintf(stderr, "Failed to register cb_creation()\n");
-		exit(-1); /* no point in proceeding if callback registration fails */
+							   MOS_HK_RCV, cb_create)) {
+		fprintf(stderr, "Failed to register cb_create()\n");
+		exit(EXIT_FAILURE);
 	}
 	if (mtcp_register_callback(mctx, msock, MOS_ON_CONN_END,
-							   MOS_HK_SND, cb_destroy))
-	{
+							   MOS_HK_RCV, cb_destroy)) {
 		fprintf(stderr, "Failed to register cb_destroy()\n");
-		exit(-1); /* no point in proceeding if callback registration fails */
+		exit(EXIT_FAILURE);
 	}
 	if (mtcp_register_callback(mctx, msock, MOS_ON_PKT_IN,
-							   MOS_HK_RCV, cb_new_data))
-	{
+							   MOS_HK_RCV, cb_new_data)) {
 		fprintf(stderr, "Failed to register cb_new_data()\n");
-		exit(-1); /* no point in proceeding if callback registration fails */
+		exit(EXIT_FAILURE);
 	}
+	/* to test simple forwarding */
+	(void)cb_create;
+	(void)cb_destroy;
+	(void)cb_new_data;
 }
 /*----------------------------------------------------------------------------*/
 /* Register required callbacks */
 static void
 register_callbacks(mctx_t mctx)
 {
-	int sock_key, msock_stream;
-	// struct sockaddr_in addr;
-	// socklen_t addrlen = sizeof(struct sockaddr);
-
+	int msock_raw, msock_stream;
+	
 	/* Make a raw packet monitoring socket */
-	if ((sock_key = mtcp_socket(mctx, AF_INET,
-								 MOS_SOCK_MONITOR_RAW, 0)) < 0)
-	{
+	if ((msock_raw = mtcp_socket(mctx, AF_INET,
+								 MOS_SOCK_MONITOR_RAW, 0)) < 0) {
 		fprintf(stderr, "Failed to create monitor listening socket!\n");
-		exit(-1); /* no point in proceeding if we don't have a listening socket */
+		exit(EXIT_FAILURE);
 	}
-	
-	// if ((sock_key = mtcp_socket(mctx, AF_INET,
-	// 							 MOS_SOCK_STREAM_LISTEN, 0)) < 0)
-	// {
-	// 	fprintf(stderr, "Failed to create monitor listening socket!\n");
-	// 	exit(-1); /* no point in proceeding if we don't have a listening socket */
-	// }
-	
-    // memset(&addr, 0, addrlen);
-    // addr.sin_family = AF_INET;
-    // addr.sin_addr.s_addr = htonl(g_ip);
-    // addr.sin_port = htons(g_port);
-	// if (mtcp_bind(mctx, sock_key, (struct sockaddr *)&addr, addrlen) < 0) {
-	// 	fprintf(stderr, "Failed to bind\n");
-	// }
-	// if (mtcp_listen(mctx, sock_key, 10) < 0) {
-	// 	fprintf(stderr, "Failed to listen\n");
-	// }
-	// if (mtcp_accept(mctx, sock_key, (struct sockaddr *)&addr, &addrlen) < 0) {
-	// 	fprintf(stderr, "Failed to accept\n");
-	// }
-	/* Register UDE for session key from client */
-	union monitor_filter ft = {0};
-	ft.raw_pkt_filter = "ip proto 17";
-	if (mtcp_bind_monitor_filter(mctx, sock_key, &ft) < 0)
-	{
-		fprintf(stderr, "Failed to bind ft to the listening socket!\n");
-		exit(-1);
-	}
-	if (mctx->cpu == LEADER_CORE)
-		register_sessionkey_callback(mctx, sock_key);
-	else /* For workers, make a per-thread callback to poll shared key table */
-		if (mtcp_register_thread_callback(mctx, find_key_and_decrypt))
-		{
-			fprintf(stderr, "Failed to register find_key_and_decrypt()\n");
-			exit(EXIT_FAILURE);
-		}
+	/* Register raw packet callback for key delivery */
+	register_key_callback(mctx, msock_raw);
 
 	/* Make a stream data monitoring socket */
 	if ((msock_stream = mtcp_socket(mctx, AF_INET,
-									MOS_SOCK_MONITOR_STREAM, 0)) < 0)
-	{
+									MOS_SOCK_MONITOR_STREAM, 0)) < 0) {
 		fprintf(stderr, "Failed to create monitor listening socket!\n");
-		exit(-1); /* no point in proceeding if we don't have a listening socket */
+		exit(EXIT_FAILURE);
 	}
 	/* Register stream data callback for TCP connections */
 	register_data_callback(mctx, msock_stream);
@@ -869,24 +851,19 @@ init_monitor(mctx_t mctx)
 /*----------------------------------------------------------------------------*/
 int main(int argc, char **argv)
 {
-	int ret, i;
+	int i;
 	char *fname = MOS_CONFIG_FILE; /* path to the default mos config file */
 	struct mtcp_conf mcfg;
-	/* char tls_middlebox_file[1024] = "config/tls_middlebox.conf"; */
 	int num_cpus;
 	int opt, rc;
-	// int master_core = 0;
 
 	/* get the total # of cpu cores */
 	num_cpus = GetNumCPUs();
 
 	while ((opt = getopt(argc, argv, "c:f:")) != -1)
-	{
-		switch (opt)
-		{
+		switch (opt) {
 		case 'c':
-			if ((rc = atoi(optarg)) > num_cpus)
-			{
+			if ((rc = atoi(optarg)) > num_cpus) {
 				fprintf(stderr, "Failed to set core number "
 								"(request %u, but only %u available)\n",
 						rc, num_cpus);
@@ -898,7 +875,7 @@ int main(int argc, char **argv)
 			fname = optarg;
 			break;
 		case 'p':
-			g_port = atoi(optarg);
+			strcpy(g_port, optarg);
 			break;
 		default:
 			printf("Usage: %s [-c num of cores] "
@@ -907,14 +884,11 @@ int main(int argc, char **argv)
 				   argv[0]);
 			return 0;
 		}
-	}
 
 	g_max_cores = num_cpus;
 
 	/* parse mos configuration file */
-	ret = mtcp_init(fname);
-	if (ret)
-	{
+	if (mtcp_init(fname)) {
 		fprintf(stderr, "Failed to initialize mtcp.\n");
 		exit(EXIT_FAILURE);
 	}
@@ -923,70 +897,68 @@ int main(int argc, char **argv)
 	mtcp_getconf(&mcfg);
 	mcfg.num_cores = g_max_cores;
 	mtcp_setconf(&mcfg);
-	
-	/* create hash table */
-	for (i = 0; i < g_max_cores; i++)
-	{
-		g_ct[i] = ct_create();
-		g_st[i] = st_create();
-		if (!(g_ci_pool[i] = MPCreate(sizeof(conn_info),
-						sizeof(conn_info) * mcfg.max_concurrency, 0))) {
-			ERROR_PRINT("Error: [%s] conn info pool create failed\n", __FUNCTION__);
-			exit(-1);
-		}
-		if (!(g_rawpkt_pool[i] = MPCreate(MAX_RAW_PKT_BUF_LEN,
-							MAX_RAW_PKT_BUF_LEN * mcfg.max_concurrency, 0))) {
-			ERROR_PRINT("Error: [%s] rawpkt pool create failed\n", __FUNCTION__);
-			exit(-1);
-		}
-		/* server side receive buffer is supposed to be much smaller */
-		/* ToDo: make server side smaller */
-		if (!(g_cipher_pool[i] = MPCreate(MAX_BUF_LEN,
-							MAX_BUF_LEN * mcfg.max_concurrency, 0))) {
-			ERROR_PRINT("Error: [%s] record pool create failed\n", __FUNCTION__);
-			exit(-1);
-		}
-		if (!(g_plain_pool[i] = MPCreate(PLAIN_BUF_LEN,
-							MAX_BUF_LEN * mcfg.max_concurrency, 0))) {
-			ERROR_PRINT("Error: [%s] plaintext pool create failed\n", __FUNCTION__);
-			exit(-1);
-		}
-	}
-	g_kt = (struct keytable *)calloc(NUM_BINS, sizeof(struct keytable));
-	if (!g_kt)
-	{
-		ERROR_PRINT("Error: [%s] key table alloc failed\n", __FUNCTION__);
-		exit(-1);
-	}
-
-	/* create CIPHER context */
-	for (i = 0; i < g_max_cores; i++)
-	{
-		g_evp_ctx[i] = EVP_CIPHER_CTX_new();
-		if (!g_evp_ctx[i])
-		{
-			ERROR_PRINT("Error: cipher ctx creation failed\n");
-			exit(-1);
-		}
-	}
-
-	/* to check correctness */
-	if ((g_fp = fopen("plaintext.txt", "a+w")) < 0) {
-		ERROR_PRINT("Error: open() failed");
-		exit(-1);
-	}
 
 	/* Register signal handler */
 	mtcp_register_signal(SIGINT, sigint_handler);
 
-	/* initialize monitor threads */
-	for (i = 0; i < g_max_cores; i++)
-	{
+#if CORRECTNESS_CHECK
+	/* to check correctness */
+	if ((g_fp = fopen("plaintext.txt", "a+w")) < 0) {
+		ERROR_PRINT("Error: open() failed");
+		exit(EXIT_FAILURE);
+	}
+#endif
+	
+	/* create global key table */
+	if (!(g_kt = (struct keytable *)calloc(NUM_BINS, sizeof(struct keytable)))) {
+		ERROR_PRINT("Error: [%s] key table alloc failed\n", __FUNCTION__);
+		exit(EXIT_FAILURE);
+	}
+	for (i = 0; i < g_max_cores; i++) {
+		/* create hash table */
+		g_ct[i] = ct_create();
+		g_st[i] = st_create();
+		/* create CIPHER context */
+		if (!(g_evp_ctx[i] = EVP_CIPHER_CTX_new())) {
+			ERROR_PRINT("Error: cipher ctx creation failed\n");
+			exit(EXIT_FAILURE);
+		}
+		/* create mem pools */
+		if (!(g_ci_pool[i] = MPCreate(sizeof(conn_info),
+						sizeof(conn_info) * mcfg.max_concurrency, 0))) {
+			ERROR_PRINT("Error: [%s] conn info pool create failed\n", __FUNCTION__);
+			exit(EXIT_FAILURE);
+		}
+		if (!(g_rawpkt_pool[i] = MPCreate(MAX_RAW_PKT_BUF_LEN,
+							MAX_RAW_PKT_BUF_LEN * mcfg.max_concurrency, 0))) {
+			ERROR_PRINT("Error: [%s] rawpkt pool create failed\n", __FUNCTION__);
+			exit(EXIT_FAILURE);
+		}
+		if (!(g_cli_cipher_pool[i] = MPCreate(MAX_BUF_LEN,
+							MAX_BUF_LEN * mcfg.max_concurrency, 0))) {
+			ERROR_PRINT("Error: [%s] cli ciphertext pool create failed\n", __FUNCTION__);
+			exit(EXIT_FAILURE);
+		}
+		if (!(g_cli_plain_pool[i] = MPCreate(MAX_BUF_LEN,
+							MAX_BUF_LEN * mcfg.max_concurrency, 0))) {
+			ERROR_PRINT("Error: [%s] cli plaintext pool create failed\n", __FUNCTION__);
+			exit(EXIT_FAILURE);
+		}
+		/* server side receive buffer is supposed to be much smaller */
+		if (!(g_svr_cipher_pool[i] = MPCreate(MAX_BUF_LEN_SVR,
+							MAX_BUF_LEN_SVR * mcfg.max_concurrency, 0))) {
+			ERROR_PRINT("Error: [%s] svr ciphertext pool create failed\n", __FUNCTION__);
+			exit(EXIT_FAILURE);
+		}
+		if (!(g_svr_plain_pool[i] = MPCreate(MAX_BUF_LEN_SVR,
+							MAX_BUF_LEN_SVR * mcfg.max_concurrency, 0))) {
+			ERROR_PRINT("Error: [%s] svr plaintext pool create failed\n", __FUNCTION__);
+			exit(EXIT_FAILURE);
+		}
 		/* Run mOS for each CPU core */
-		if (!(g_mctx[i] = mtcp_create_context(i)))
-		{
+		if (!(g_mctx[i] = mtcp_create_context(i))) {
 			fprintf(stderr, "Failed to craete mtcp context.\n");
-			return -1;
+			exit(EXIT_FAILURE);
 		}
 
 		/* init monitor */
@@ -994,27 +966,25 @@ int main(int argc, char **argv)
 	}
 
 	/* wait until all threads finish */
-	for (i = 0; i < g_max_cores; i++)
-	{
+	for (i = 0; i < g_max_cores; i++) {
 		mtcp_app_join(g_mctx[i]);
 		fprintf(stderr, "Message test thread %d joined.\n", i);
 	}
 
 	mtcp_destroy();
-	for (i = 0; i < g_max_cores; i++)
-	{
+	/* free global key table */
+	free(g_kt);
+	for (i = 0; i < g_max_cores; i++) {
+		/* free hash tables */
 		ct_destroy(g_ct[i]);
 		st_destroy(g_st[i]);
+		/* free allocated memories */
 		MPDestroy(g_ci_pool[i]);
 		MPDestroy(g_rawpkt_pool[i]);
-		MPDestroy(g_cipher_pool[i]);
-		MPDestroy(g_plain_pool[i]);
-	}
-
-	/* free allocated memories */
-	free(g_kt);
-	for (i = 0; i < g_max_cores; i++)
-	{
+		MPDestroy(g_cli_cipher_pool[i]);
+		MPDestroy(g_cli_plain_pool[i]);
+		MPDestroy(g_svr_cipher_pool[i]);
+		MPDestroy(g_svr_plain_pool[i]);
 		EVP_CIPHER_CTX_free(g_evp_ctx[i]);
 	}
 

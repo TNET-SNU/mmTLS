@@ -33,7 +33,9 @@
 #define MAX_RX_QUEUE_PER_LCORE		MAX_CPUS
 #define MAX_TX_QUEUE_PER_PORT		MAX_CPUS
 
-#define LEADER_FOLLOWER_ISOLATION 0
+#define LEADER_CORE_NUM		0
+#define FIRST_FOLLOWER_CORE	(LEADER_CORE_NUM + 1)
+#define LEADER_ISOLATION	1
 #define USE_LRO				1
 #if USE_LRO
 #define MBUF_DATA_SIZE		10000
@@ -720,10 +722,12 @@ dpdk_dev_ioctl(struct mtcp_thread_context *ctx, int nif, int cmd, void *argp)
 	return -1;
 }
 /*----------------------------------------------------------------------------*/
-#if LEADER_FOLLOWER_ISOLATION
+#if LEADER_ISOLATION
 void
 udp_flow_configure(uint16_t portid, uint16_t udp_q)
 {
+	printf("[port %u] Configuring UDP flow to queue %u\n",
+		   (unsigned) portid, (unsigned)udp_q);
 	struct rte_flow_attr attr = {
 		.group = 0,
 		.priority = 1,
@@ -733,7 +737,7 @@ udp_flow_configure(uint16_t portid, uint16_t udp_q)
     	.hdr.next_proto_id = 0xff,
 	};
 	struct rte_flow_item_ipv4 ipv4_udp = {
-    	.hdr.next_proto_id = 0x11,
+    	.hdr.next_proto_id = IPPROTO_UDP,
 	};
 	struct rte_flow_item patterns[2] = {
 		{
@@ -759,12 +763,12 @@ udp_flow_configure(uint16_t portid, uint16_t udp_q)
         	"udp flow create failed: %s\n error type %u %s\n",
         	rte_strerror(rte_errno), err.type, err.message);
 }
-#endif
 /*----------------------------------------------------------------------------*/
-#if LEADER_FOLLOWER_ISOLATION
 void
 rss_flow_configure(uint16_t portid, uint16_t firstq, uint16_t numq)
 {
+	printf("[port %u] Configuring TCP flow RSS among queue %u ~ %u\n",
+		   (unsigned) portid, (unsigned)firstq, (unsigned)(firstq + numq - 1));
 #if RTE_VERSION >= RTE_VERSION_NUM(20, 0, 0, 0)
     static const uint8_t key[] = {
          0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
@@ -793,7 +797,7 @@ rss_flow_configure(uint16_t portid, uint16_t firstq, uint16_t numq)
     	.hdr.next_proto_id = 0xff,
 	};
 	struct rte_flow_item_ipv4 ipv4_tcp = {
-    	.hdr.next_proto_id = 0x06,
+    	.hdr.next_proto_id = IPPROTO_TCP,
 	};
 	struct rte_flow_item patterns[2] = {
 		{
@@ -970,7 +974,7 @@ dpdk_load_module_lower_half(void)
 			num_queues = num_queue;
 			
 			/* init port */
-			printf("Initializing port %u... ", (unsigned) portid);
+			printf("[port %u] Initializing port... ", (unsigned) portid);
 			fflush(stdout);
 			ret = rte_eth_dev_configure(portid, num_queue, num_queue,
 										&port_conf);
@@ -1021,12 +1025,13 @@ dpdk_load_module_lower_half(void)
 
 			printf("done: \n");
 			rte_eth_promiscuous_enable(portid);
-#if LEADER_FOLLOWER_ISOLATION
-			/* steer udp packets to leader core (core id: 0)*/
-			if (portid == 0)
-				udp_flow_configure(portid, 0);
-			/* rss tcp packets to follower cores */
-			rss_flow_configure(portid, 1, rte_lcore_count() - 1);
+#if LEADER_ISOLATION
+			if (g_config.mos->num_cores > 1) {
+				/* steer udp packets to leader core (core id: 0)*/
+				udp_flow_configure(portid, LEADER_CORE_NUM);
+				/* rss tcp packets to follower cores */
+				rss_flow_configure(portid, FIRST_FOLLOWER_CORE, g_config.mos->num_cores - 1);
+			}
 #endif
 
 			/* retrieve current flow control settings per port */

@@ -624,12 +624,11 @@ mtcp_sendpkt_raw(mctx_t mctx, int sock, uint8_t *rawpkt, uint16_t len)
 	iph = (struct iphdr *)(ethh + 1);
 	daddr = iph->daddr;
 	if ((nif = GetOutputInterface(daddr)) < 0)
-		return -1;
+		return 0;
 	tcph = (struct tcphdr *)(iph + 1);
 	buf = mtcp->iom->get_wptr(mtcp->ctx, nif, len, tcph->doff << 2);
 	if (!buf) {
-		printf("Failed to get available write buffer\n");
-		TRACE_DBG("Failed to get available write buffer\n");
+		fprintf(stderr, "Failed to get available write buffer\n");
 		return -1;
 	}
 	memcpy(buf, GetDestinationHWaddr(daddr), ETH_ALEN);

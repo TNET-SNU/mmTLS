@@ -5,15 +5,12 @@
 #include <sys/queue.h>
 #include <mos_api.h>
 
-// #define MAX_BUF_LEN 2097152	  /* recv buffer size */
-// #define MAX_BUF_LEN 212992	  /* recv buffer size */
-#define MAX_BUF_LEN 131072	  /* 128K */ // this one is better
-#define MAX_RECORD_LEN 16385  /* 16K + 1 */
-#define CLI_BUF_LEN MAX_BUF_LEN
-#define SVR_BUF_LEN MAX_RECORD_LEN
-#define PLAIN_BUF_LEN MAX_BUF_LEN /* 128K */
-#define MAX_RAW_PKT_BUF_LEN 16384		/* 16K */
-#define MAX_RAW_PKT_NUM 10		/* 10 * MTU < 16K */
+// #define MAX_BUF_LEN 2097152 /* for IDS */
+#define MAX_BUF_LEN 16800 /* < 16K */ // this one is better
+#define MAX_BUF_LEN_SVR 8192 /* 8K */
+#define MAX_RECORD_LEN 16385 /* 16K + 1 */
+#define MAX_RAW_PKT_BUF_LEN 8192 /* 8K */
+#define MAX_RAW_PKT_NUM 10
 
 #define TLS_HANDSHAKE_HEADER_LEN 4
 #define TLS_RECORD_TYPE_LEN      1
@@ -25,10 +22,6 @@
 #define TLS_CIPHER_AES_GCM_256_IV_SIZE 12
 #define TLS_CIPHER_AES_GCM_256_AAD_SIZE 5
 #define SHA384_HASH_LEN 48
-#define HS_FINISHED_RECORD_LEN (TLS_HANDSHAKE_HEADER_LEN  +    \
-								SHA384_HASH_LEN + 			   \
-								TLS_CIPHER_AES_GCM_256_TAG_SIZE + \
-								TLS_RECORD_TYPE_LEN) // 69
 /* #define AES_256_KEY_LEN  32 */
 /* #define AES_GCM_IV_LEN   12 */
 
@@ -82,23 +75,6 @@ enum tlsstate
 	TO_BE_DESTROYED,
 }; // tls_state_type
 
-struct tls_crypto_info
-{
-	unsigned short version;
-	unsigned short cipher_type;
-
-	uint16_t key_mask;
-	uint8_t key[TLS_CIPHER_AES_GCM_256_KEY_SIZE];
-	uint8_t iv[TLS_CIPHER_AES_GCM_256_IV_SIZE];
-};
-
-// ToDo: migrate to this mempool pair
-typedef struct mempool_pair
-{
-	uint8_t cli_pool[CLI_BUF_LEN];
-	uint8_t svr_pool[SVR_BUF_LEN];
-} mempool_pair;
-
 typedef struct tls_buffer
 {
 	uint8_t *buf;
@@ -112,13 +88,18 @@ typedef struct raw_pkt
 	uint16_t len;
 } raw_pkt;
 
+typedef struct tls_crypto_info
+{
+	uint16_t key_mask;
+	uint8_t key[TLS_CIPHER_AES_GCM_256_KEY_SIZE];
+	uint8_t iv[TLS_CIPHER_AES_GCM_256_IV_SIZE];
+} tls_crypto_info;
+
 typedef struct tls_context
 {
-	struct tls_crypto_info tc_key_info;
-	uint16_t tc_version;
+	tls_crypto_info tc_key_info;
 	uint64_t tc_record_cnt; /* = tls_seq */
 	uint64_t decrypt_len; /* for debugging */
-
 	tls_buffer tc_cipher;
 	tls_buffer tc_plain;
 } tls_context;
@@ -129,15 +110,15 @@ typedef struct conn_info
 	int ci_tls_state; /* TLS state */
 	uint8_t ci_client_random[TLS_1_3_CLIENT_RANDOM_LEN];
 	tls_context ci_tls_ctx[2];
-	uint8_t *ci_raw_buf;
 	raw_pkt ci_raw_pkt[MAX_RAW_PKT_NUM]; /* raw packet buffer */
-	int ci_raw_cnt;
+	uint32_t ci_raw_len;
+	uint8_t ci_raw_cnt;
 } conn_info;
 
 struct keytable
 { /* key pair <client_random, key> table */
 	uint8_t kt_client_random[TLS_1_3_CLIENT_RANDOM_LEN];
-	struct tls_crypto_info kt_key_info[2];
+	tls_crypto_info kt_key_info[2];
 	int kt_valid;
 };
 
