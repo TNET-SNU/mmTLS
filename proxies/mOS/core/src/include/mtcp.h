@@ -44,7 +44,7 @@
 #endif
 
 #ifndef MAX_CPUS
-#define MAX_CPUS 16
+#define MAX_CPUS 32
 #endif
 
 /*

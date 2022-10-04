@@ -6,7 +6,7 @@
 #include <mos_api.h>
 
 // #define MAX_BUF_LEN 2097152 /* for IDS */
-#define MAX_BUF_LEN 16800 /* < 16K */ // this one is better
+#define MAX_BUF_LEN 16800 /* > 16K */ // this one is better
 #define MAX_BUF_LEN_SVR 8192 /* 8K */
 #define MAX_RECORD_LEN 16385 /* 16K + 1 */
 #define MAX_RAW_PKT_BUF_LEN 8192 /* 8K */
@@ -82,11 +82,11 @@ typedef struct tls_buffer
 	uint32_t tail;
 } tls_buffer;
 
-typedef struct raw_pkt
+typedef struct pkt_vec
 {
 	uint8_t *data;
 	uint16_t len;
-} raw_pkt;
+} pkt_vec;
 
 typedef struct tls_crypto_info
 {
@@ -110,16 +110,16 @@ typedef struct conn_info
 	int ci_tls_state; /* TLS state */
 	uint8_t ci_client_random[TLS_1_3_CLIENT_RANDOM_LEN];
 	tls_context ci_tls_ctx[2];
-	raw_pkt ci_raw_pkt[MAX_RAW_PKT_NUM]; /* raw packet buffer */
+	pkt_vec ci_raw_pkt[MAX_RAW_PKT_NUM]; /* raw packet buffer */
 	uint32_t ci_raw_len;
 	uint8_t ci_raw_cnt;
 } conn_info;
 
-struct keytable
+typedef struct keytable
 { /* key pair <client_random, key> table */
 	uint8_t kt_client_random[TLS_1_3_CLIENT_RANDOM_LEN];
 	tls_crypto_info kt_key_info[2];
 	int kt_valid;
-};
+} keytable;
 
 #endif /* __TLS_H__ */

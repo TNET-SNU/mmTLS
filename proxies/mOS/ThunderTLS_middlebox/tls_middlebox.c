@@ -22,13 +22,12 @@
 #include <mos_api.h>
 #include <openssl/evp.h>
 #include "cpu.h"
-#include "include/tls.h"
 #include "include/thash.h"
 #include "../util/include/rss.h"
 #include "../core/src/include/memory_mgt.h"
 
 /* Maximum CPU cores */
-#define MAX_CORES 16
+#define MAX_CORES 32
 #define LEADER_CORE	0
 
 /* Default path to mOS configuration file */
@@ -54,8 +53,14 @@
 /*----------------------------------------------------------------------------*/
 /* Core */
 int g_max_cores;		  /* Number of CPU cores to be used */
+#define CNT_CONN 0
+#if CNT_CONN
+int g_cnt[MAX_CORES];	/* for debugging */
+#endif
 mctx_t g_mctx[MAX_CORES]; /* mOS context */
 mem_pool_t g_ci_pool[MAX_CORES] = {NULL};
+mem_pool_t g_st_element[MAX_CORES] = {NULL};
+mem_pool_t g_ct_element[MAX_CORES] = {NULL};
 mem_pool_t g_rawpkt_pool[MAX_CORES] = {NULL};
 mem_pool_t g_cli_cipher_pool[MAX_CORES] = {NULL};
 mem_pool_t g_cli_plain_pool[MAX_CORES] = {NULL};
@@ -66,11 +71,11 @@ static FILE *g_fp;
 #endif
 /*----------------------------------------------------------------------------*/
 /* Hash table of TLS connections */
-struct ct_hashtable *g_ct[MAX_CORES]; /* client random based */
-struct st_hashtable *g_st[MAX_CORES]; /* socket based */
+st_hashtable *g_st[MAX_CORES]; /* socket based */
+ct_hashtable *g_ct[MAX_CORES]; /* client random based */
 /*----------------------------------------------------------------------------*/
 /* Multi-core support */
-struct keytable *g_kt; /* circular queue of <client random, key> pare */
+keytable *g_kt; /* circular queue of <client random, key> pare */
 int l_tail[MAX_CORES] = {0, };
 volatile int g_tail = 0;
 /*----------------------------------------------------------------------------*/
@@ -140,18 +145,34 @@ consume_plaintext(uint32_t len, uint8_t *text)
 static inline void
 remove_conn_info(mctx_t mctx, conn_info *c, int code)
 {
-	if (!ct_remove(g_ct[mctx->cpu], c->ci_client_random))
+	if (!ct_remove(g_ct[mctx->cpu], c->ci_client_random, g_ct_element[mctx->cpu]))
 		ERROR_PRINT("Error: No session with given client random\n");
-	if (!st_remove(g_st[mctx->cpu], c->ci_sock))
+	if (!st_remove(g_st[mctx->cpu], c->ci_sock, g_st_element[mctx->cpu]))
 		ERROR_PRINT("Error: No session with given sock\n");
+#if CNT_CONN
+	++g_cnt[mctx->cpu];
 	static int i = 0;
-	fprintf(stdout, "Destroy with code %d\nCORE: %d\n"
-					"CLIENT: %lu B\nSERVER: %lu B\nRecord#: %lu\n%d\n",
+	fprintf(stdout,
+			"\nDestroy with code %d\n"
+			"CORE: %d\n"
+			"CLIENT: %lu B\n"
+			"SERVER: %lu B\n"
+			"Record#: %lu\n"
+			"Leader core key: %d\n"
+			"Follower core conn: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n"
+			"Total conn: %d\n",
 			code, mctx->cpu,
 			c->ci_tls_ctx[MOS_SIDE_CLI].decrypt_len,
 			c->ci_tls_ctx[MOS_SIDE_SVR].decrypt_len,
 			c->ci_tls_ctx[MOS_SIDE_CLI].tc_record_cnt + 
-			c->ci_tls_ctx[MOS_SIDE_SVR].tc_record_cnt, ++i);
+			c->ci_tls_ctx[MOS_SIDE_SVR].tc_record_cnt,
+			g_cnt[0], /* master core: num of keys */
+			g_cnt[1], g_cnt[2], g_cnt[3], g_cnt[4],
+			g_cnt[5], g_cnt[6], g_cnt[7], g_cnt[8],
+			g_cnt[9], g_cnt[10], g_cnt[11], g_cnt[12],
+			g_cnt[13], g_cnt[14], g_cnt[15], g_cnt[16],
+			++i);
+#endif
 
 	MPFreeChunk(g_cli_cipher_pool[mctx->cpu],
 				c->ci_tls_ctx[MOS_SIDE_CLI].tc_cipher.buf);
@@ -165,10 +186,10 @@ remove_conn_info(mctx_t mctx, conn_info *c, int code)
 }
 /*----------------------------------------------------------------------------*/
 static inline void
-handle_malicious(mctx_t mctx, conn_info *c, const char *msg, int ercode)
+handle_malicious(mctx_t mctx, int sock, conn_info *c, const char *msg, int ercode)
 {
-	ERROR_PRINT("Malicious! code: %d in %s\n", ercode, msg);
-	if (mtcp_reset_conn(mctx, c->ci_sock) < 0) {
+	ERROR_PRINT("Malicious! code: %d / msg: %s\n", ercode, msg);
+	if (mtcp_reset_conn(mctx, sock) < 0) {
 		ERROR_PRINT("Reset failed\n");
 		exit(EXIT_FAILURE);
 	}
@@ -367,8 +388,8 @@ update_conn_info(mctx_t mctx, conn_info *c, int side,
 			/* Client Version (0x0303) */
 			payload += sizeof(uint16_t);
 			memcpy(c->ci_client_random, payload, TLS_1_3_CLIENT_RANDOM_LEN);
-			if (ct_insert(g_ct[mctx->cpu], c->ci_client_random, c) < 0) {
-				ERROR_PRINT("Error: ct_insert() failed\n");
+			if (ct_insert(g_ct[mctx->cpu], c->ci_client_random, c, g_ct_element[mctx->cpu]) < 0) {
+				ERROR_PRINT("Error: ct_insert() call with duplicate client random..\n");
 				exit(EXIT_FAILURE);
 			}
 		}
@@ -402,7 +423,7 @@ update_conn_info(mctx_t mctx, conn_info *c, int side,
  * 6. Return decrypted bytes, or -1 if error
  */
 static int
-process_data(mctx_t mctx, conn_info *c, int side,
+process_data(mctx_t mctx, int sock, int side, conn_info *c,
 			 tls_buffer *cipher, tls_buffer *plain)
 {
 	tls_context *ctx = &c->ci_tls_ctx[side];
@@ -418,7 +439,7 @@ process_data(mctx_t mctx, conn_info *c, int side,
 	while ((parse_len = parse_tls_record(cipher, &record_type, &payload)) > 0) {
 		decrypt = update_conn_info(mctx, c, side, record_type, payload);
 		if (decrypt < 0) {
-			handle_malicious(mctx, c, "state update", decrypt);
+			handle_malicious(mctx, sock, c, "state update", decrypt);
 			return -1;
 		}
 		if (decrypt > 0) {
@@ -429,7 +450,7 @@ process_data(mctx_t mctx, conn_info *c, int side,
 											 ctx->tc_key_info.key, iv,
 											 parse_len);
 			if (decrypt_len < 0) {
-				handle_malicious(mctx, c, "decrypt", decrypt_len);
+				handle_malicious(mctx, sock, c, "decrypt", decrypt_len);
 				return -1;
 			}
 			// consume_plaintext(decrypt_len, plain->buf + plain->tail);
@@ -450,7 +471,7 @@ process_data(mctx_t mctx, conn_info *c, int side,
 static inline int
 copy_lastpkt(mctx_t mctx, int sock, int side, conn_info *c)
 {
-	raw_pkt *rp = c->ci_raw_pkt + c->ci_raw_cnt;
+	pkt_vec *rp = c->ci_raw_pkt + c->ci_raw_cnt;
 	if (!rp->data)
 		if (!(rp->data = MPAllocateChunk(g_rawpkt_pool[mctx->cpu]))) {
 			ERROR_PRINT("Error: [%s] rawpkt pool alloc failed\n", __FUNCTION__);
@@ -494,7 +515,7 @@ copy_lastpkt(mctx_t mctx, int sock, int side, conn_info *c)
 static inline void
 send_stalled_pkts(mctx_t mctx, conn_info *c)
 {
-	raw_pkt *rp = c->ci_raw_pkt;
+	pkt_vec *rp = c->ci_raw_pkt;
 	if (!c->ci_raw_cnt)
 		return;
 	while (rp < c->ci_raw_pkt + c->ci_raw_cnt) {
@@ -518,12 +539,8 @@ send_stalled_pkts(mctx_t mctx, conn_info *c)
 static void
 cb_create(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 {
-#if DEBUG_SOCKET
-	socklen_t addrslen = sizeof(struct sockaddr) * 2;
-	struct sockaddr addrs[2];
-#endif
-	conn_info *c = (conn_info *)MPAllocateChunk(g_ci_pool[mctx->cpu]);
-	if (!c) {
+	conn_info *c;
+	if (!(c = (conn_info *)MPAllocateChunk(g_ci_pool[mctx->cpu]))) {
 		ERROR_PRINT("Error: [%s] conn info pool alloc failed\n", __FUNCTION__);
 		exit(EXIT_FAILURE);
 	}
@@ -532,6 +549,8 @@ cb_create(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 	/* Fill values of the connection structure */
 	c->ci_sock = sock;
 #if DEBUG_SOCKET
+	socklen_t addrslen = sizeof(struct sockaddr) * 2;
+	struct sockaddr addrs[2];
 	if (mtcp_getpeername(mctx, sock, addrs, &addrslen,
 						 MOS_SIDE_BOTH) < 0) {
 		perror("mtcp_getpeername");
@@ -540,9 +559,11 @@ cb_create(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 	}
 #endif
 	/* Insert the structure to the queue */
-	if (st_insert(g_st[mctx->cpu], sock, c) < 0) {
-		ERROR_PRINT("Error: st_insert() call with duplicate socket..\n");
-		exit(EXIT_FAILURE);
+	if (st_insert(g_st[mctx->cpu], sock, c, g_st_element[mctx->cpu]) < 0) {
+		ERROR_PRINT("Error: [core %d] st_insert() call"
+					"with duplicate socket..\n", mctx->cpu);
+		MPFreeChunk(g_ci_pool[mctx->cpu], c);
+		return;
 	}
 }
 /*----------------------------------------------------------------------------*/
@@ -556,7 +577,7 @@ cb_destroy(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 	if (!(c = st_search(g_st[mctx->cpu], sock)))
 		return;
 	if (c->ci_tls_state < TLS_ESTABLISHED) {
-		handle_malicious(mctx, c, "early fin", -12);
+		handle_malicious(mctx, sock, c, "early fin", -12);
 		return;
 	}
 	if (!has_key(c)) {
@@ -600,7 +621,7 @@ cb_new_data(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 	if ((c->ci_tls_state >= TLS_ESTABLISHED) && !has_key(c))
 	{
 		if (copy_lastpkt(mctx, sock, side, c) < 0)
-			handle_malicious(mctx, c, "too late key", 0);
+			handle_malicious(mctx, sock, c, "too late key", 0);
 		if (mtcp_setlastpkt(mctx, sock, side, 0, NULL, 0, MOS_DROP) < 0) {
 			ERROR_PRINT("Error: [%s] drop failed\n", __FUNCTION__);
 			exit(EXIT_FAILURE);
@@ -622,7 +643,7 @@ PEEK:
         return;
 	}
 #endif
-	if ((len = process_data(mctx, c, side, cipher, plain)) < 0)
+	if ((len = process_data(mctx, sock, side, c, cipher, plain)) < 0)
 		return;
 	c->ci_tls_ctx[side].decrypt_len += len;
 	/* if buffer is full, move buffer to left by head offset and re-peek */
@@ -708,6 +729,9 @@ cb_new_key(mctx_t mctx, int rsock, int side, uint64_t events, filter_arg_t *arg)
 	g_kt[g_tail].kt_valid = 1;
 	if (++g_tail == NUM_BINS)
 		g_tail = 0;
+#if CNT_CONN
+	++g_cnt[mctx->cpu];
+#endif
 	/* old key should not still exist */
 	assert(!g_kt[g_tail].kt_valid);
 }
@@ -721,7 +745,7 @@ find_key_and_process(mctx_t mctx)
 {
 	conn_info *c;
 	int *tail = l_tail + mctx->cpu;
-	struct keytable *walk = g_kt + *tail;
+	keytable *walk = g_kt + *tail;
 #if IDS
 	int len;
 #endif
@@ -910,7 +934,7 @@ int main(int argc, char **argv)
 #endif
 	
 	/* create global key table */
-	if (!(g_kt = (struct keytable *)calloc(NUM_BINS, sizeof(struct keytable)))) {
+	if (!(g_kt = (keytable *)calloc(NUM_BINS, sizeof(keytable)))) {
 		ERROR_PRINT("Error: [%s] key table alloc failed\n", __FUNCTION__);
 		exit(EXIT_FAILURE);
 	}
@@ -924,32 +948,51 @@ int main(int argc, char **argv)
 			exit(EXIT_FAILURE);
 		}
 		/* create mem pools */
+		/* 1. conn info mempool */
 		if (!(g_ci_pool[i] = MPCreate(sizeof(conn_info),
 						sizeof(conn_info) * mcfg.max_concurrency, 0))) {
 			ERROR_PRINT("Error: [%s] conn info pool create failed\n", __FUNCTION__);
 			exit(EXIT_FAILURE);
 		}
+		/* 2. socket based hashtable element mempool */
+		if (!(g_st_element[i] = MPCreate(sizeof(st_element),
+						sizeof(st_element) * mcfg.max_concurrency, 0))) {
+			ERROR_PRINT("Error: [%s] st_element pool create failed\n", __FUNCTION__);
+			exit(EXIT_FAILURE);
+		}
+		/* 3. client random based hashtable element mempool */
+		if (!(g_ct_element[i] = MPCreate(sizeof(ct_element),
+						sizeof(ct_element) * mcfg.max_concurrency, 0))) {
+			ERROR_PRINT("Error: [%s] ct_element pool create failed\n", __FUNCTION__);
+			exit(EXIT_FAILURE);
+		}
+		/* 4. raw packet buffer mempool */
 		if (!(g_rawpkt_pool[i] = MPCreate(MAX_RAW_PKT_BUF_LEN,
 							MAX_RAW_PKT_BUF_LEN * mcfg.max_concurrency, 0))) {
 			ERROR_PRINT("Error: [%s] rawpkt pool create failed\n", __FUNCTION__);
 			exit(EXIT_FAILURE);
 		}
+		/* 5. client side cipher buffer mempool */
 		if (!(g_cli_cipher_pool[i] = MPCreate(MAX_BUF_LEN,
 							MAX_BUF_LEN * mcfg.max_concurrency, 0))) {
 			ERROR_PRINT("Error: [%s] cli ciphertext pool create failed\n", __FUNCTION__);
 			exit(EXIT_FAILURE);
 		}
+		/* 6. client side plain buffer mempool */
 		if (!(g_cli_plain_pool[i] = MPCreate(MAX_BUF_LEN,
 							MAX_BUF_LEN * mcfg.max_concurrency, 0))) {
 			ERROR_PRINT("Error: [%s] cli plaintext pool create failed\n", __FUNCTION__);
 			exit(EXIT_FAILURE);
 		}
+		/* 7. server side cipher buffer mempool */
 		/* server side receive buffer is supposed to be much smaller */
 		if (!(g_svr_cipher_pool[i] = MPCreate(MAX_BUF_LEN_SVR,
 							MAX_BUF_LEN_SVR * mcfg.max_concurrency, 0))) {
 			ERROR_PRINT("Error: [%s] svr ciphertext pool create failed\n", __FUNCTION__);
 			exit(EXIT_FAILURE);
 		}
+		/* 8. server side plain buffer mempool */
+		/* server side receive buffer is supposed to be much smaller */
 		if (!(g_svr_plain_pool[i] = MPCreate(MAX_BUF_LEN_SVR,
 							MAX_BUF_LEN_SVR * mcfg.max_concurrency, 0))) {
 			ERROR_PRINT("Error: [%s] svr plaintext pool create failed\n", __FUNCTION__);
@@ -960,7 +1003,6 @@ int main(int argc, char **argv)
 			fprintf(stderr, "Failed to craete mtcp context.\n");
 			exit(EXIT_FAILURE);
 		}
-
 		/* init monitor */
 		init_monitor(g_mctx[i]);
 	}
@@ -975,16 +1017,19 @@ int main(int argc, char **argv)
 	/* free global key table */
 	free(g_kt);
 	for (i = 0; i < g_max_cores; i++) {
-		/* free hash tables */
-		ct_destroy(g_ct[i]);
-		st_destroy(g_st[i]);
 		/* free allocated memories */
-		MPDestroy(g_ci_pool[i]);
-		MPDestroy(g_rawpkt_pool[i]);
 		MPDestroy(g_cli_cipher_pool[i]);
 		MPDestroy(g_cli_plain_pool[i]);
 		MPDestroy(g_svr_cipher_pool[i]);
 		MPDestroy(g_svr_plain_pool[i]);
+		MPDestroy(g_rawpkt_pool[i]);
+		MPDestroy(g_st_element[i]);
+		MPDestroy(g_ct_element[i]);
+		MPDestroy(g_ci_pool[i]);
+		/* free hash tables */
+		ct_destroy(g_ct[i]);
+		st_destroy(g_st[i]);
+		/* free EVP context buffer */
 		EVP_CIPHER_CTX_free(g_evp_ctx[i]);
 	}
 

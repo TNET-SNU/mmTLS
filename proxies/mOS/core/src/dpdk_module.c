@@ -753,6 +753,7 @@ udp_flow_configure(uint16_t portid, uint16_t udp_q)
 	};
 	struct rte_flow_error err;
 	action.index = udp_q;
+	printf("udp_queue: %d", udp_q);
 	actions[0] = (struct rte_flow_action) {
 		.type = RTE_FLOW_ACTION_TYPE_QUEUE,
 		.conf = &action,
@@ -819,8 +820,10 @@ rss_flow_configure(uint16_t portid, uint16_t firstq, uint16_t numq)
 	};
 	struct rte_flow_error err;
 	
-	for (uint16_t i = 0; i < numq; i++)
+	for (uint16_t i = 0; i < numq; i++) {
 		rss_queues[i] = firstq + i;
+		printf("rss_queues[%d]: %d\n", i, firstq + i);
+	}
 
 	/* Do RSS over N queues using the default RSS key */
 	actions[0] = (struct rte_flow_action) {

@@ -116,7 +116,7 @@ MPAllocateChunk(mem_pool_t mp)
 		TRACE_INFO("mp_free_chunks: %u\n", mp->mp_free_chunks); 
 		return (NULL);
 	}
-	assert(p->mc_free_chunks > 0 && p->mc_free_chunks <= p->mc_free_chunks);
+	assert((p->mc_free_chunks > 0) && (p->mc_free_chunks <= p->mc_free_chunks));
 
 	p->mc_free_chunks--;
 	mp->mp_free_chunks--;

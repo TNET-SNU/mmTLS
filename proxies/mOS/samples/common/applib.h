@@ -5,7 +5,7 @@
 #define MAX_FLOW_NUM  (1000000)
 #define MAX_EVENTS    (MAX_FLOW_NUM * 3)
 #ifndef MAX_CPUS
-#define MAX_CPUS      (16)                      // max number of CPU cores
+#define MAX_CPUS      (32)                      // max number of CPU cores
 #endif
 
 #define MAX(a, b) ((a)>(b)?(a):(b))
