@@ -7,18 +7,13 @@
 #include "include/thash.h"
 
 /* ToDo: remove client random and sock number from conn_info */
-
-static inline ct_element* ct_search_int(ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN]);
-static inline st_element* st_search_int(st_hashtable *ht, int sock);
 /*---------------------------------------------------------------------------*/
 ct_hashtable *
 ct_create(void)
 {
 	ct_hashtable *ht;
-	if (!(ht = calloc(1, sizeof(ct_hashtable)))) {
-		ERROR_PRINT("Error: [%s] calloc() failed\n", __FUNCTION__);
-		exit(EXIT_FAILURE);
-	}
+	if (!(ht = calloc(1, sizeof(ct_hashtable))))
+		return NULL;
 	/* init the tables */
 	for (int i = 0; i < NUM_BINS; i++)
 		TAILQ_INIT(&ht->ht_table[i]);
@@ -37,17 +32,8 @@ ct_insert(ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN], conn_inf
 {
 	ct_element *item;
 
-	assert(ht && crandom && c && pool);
-
-	if (ct_search_int(ht, crandom)) {
-		/* packet retransmission or other errors */
+	if (!(item = (ct_element *)MPAllocateChunk(pool)))
 		return -1;
-	}
-
-	if (!(item = (ct_element *)MPAllocateChunk(pool))) {
-		ERROR_PRINT("Error: [%s] ct_element pool alloc failed\n", __FUNCTION__);
-		exit(EXIT_FAILURE);
-	}
 	/* MPAlloc needs memset */
 	memset(item, 0, sizeof(ct_element));
 	item->ct_ci = c;
@@ -58,13 +44,12 @@ ct_insert(ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN], conn_inf
 	return 1;
 }
 /*----------------------------------------------------------------------------*/
-static ct_element * 
+static inline ct_element * 
 ct_search_int(ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN])
 {
 	ct_element *walk;
 	ct_hash_bucket_head *head = &ht->ht_table[*(unsigned short*)crandom];
 
-	assert(head);
 	TAILQ_FOREACH(walk, head, ct_link) {
 		if (memcmp(walk->ct_ci->ci_client_random, crandom, TLS_1_3_CLIENT_RANDOM_LEN) == 0) 
 			return walk;
@@ -106,10 +91,8 @@ st_create(void)
 {
 	st_hashtable *ht;
 
-	if (!(ht = calloc(1, sizeof(st_hashtable)))) {
-		ERROR_PRINT("Error: [%s] calloc() failed\n", __FUNCTION__);
-		exit(EXIT_FAILURE);
-	}
+	if (!(ht = calloc(1, sizeof(st_hashtable))))
+		return NULL;
 	/* init the tables */
 	for (int i = 0; i < NUM_BINS; i++)
 		TAILQ_INIT(&ht->ht_table[i]);
@@ -128,17 +111,8 @@ st_insert(st_hashtable *ht, int sock, conn_info *c, mem_pool_t pool)
 {
 	st_element *item;
 
-	assert(ht && sock && c && pool);
-
-	if ((item = st_search_int(ht, sock))) {
-		/* packet retransmission or other errors */
+	if (!(item = (st_element *)MPAllocateChunk(pool)))
 		return -1;
-	}
-
-	if (!(item = (st_element *)MPAllocateChunk(pool))) {
-		ERROR_PRINT("Error: [%s] st_element pool alloc failed\n", __FUNCTION__);
-		exit(EXIT_FAILURE);
-	}
 	/* MPAlloc needs memset */
 	memset(item, 0, sizeof(st_element));
 	item->st_ci = c;
@@ -149,13 +123,12 @@ st_insert(st_hashtable *ht, int sock, conn_info *c, mem_pool_t pool)
 	return 1;
 }
 /*----------------------------------------------------------------------------*/
-static st_element *
+static inline st_element *
 st_search_int(st_hashtable *ht, int sock)
 {
 	st_element *walk;
 	st_hash_bucket_head *head = &ht->ht_table[sock & LOWER_16BITS];
 
-	assert(head);
 	TAILQ_FOREACH(walk, head, st_link) {
 		if (walk->st_ci->ci_sock == sock) 
 			return walk;

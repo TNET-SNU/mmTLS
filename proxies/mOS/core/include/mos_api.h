@@ -490,6 +490,9 @@ mtcp_getlastpkt(mctx_t mctx, int sock, int side, struct pkt_ctx **pctx);
 int
 mtcp_settimer(mctx_t mctx, int id, struct timeval *timeout, callback_t cb);
 
+int
+mtcp_cb_stop(mctx_t mctx, int sock, int side);
+
 /**
  * Reset the connection (send RST packets to both sides)
  */

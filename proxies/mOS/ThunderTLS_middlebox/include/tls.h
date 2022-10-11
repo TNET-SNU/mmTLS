@@ -7,7 +7,7 @@
 
 // #define MAX_BUF_LEN 2097152 /* for IDS */
 #define MAX_BUF_LEN 16800 /* > 16K */ // this one is better
-#define MAX_BUF_LEN_SVR 8192 /* 8K */
+#define MAX_BUF_LEN_SVR 1024 /* 1K */
 #define MAX_RECORD_LEN 16385 /* 16K + 1 */
 #define MAX_RAW_PKT_BUF_LEN 8192 /* 8K */
 #define MAX_RAW_PKT_NUM 10
@@ -24,23 +24,39 @@
 #define SHA384_HASH_LEN 48
 /* #define AES_256_KEY_LEN  32 */
 /* #define AES_GCM_IV_LEN   12 */
-
 #define LOWER_8BITS (0x000000FF)
 
-#define PRINT (stderr)
-
+#define VERBOSE_INFO 1
+#define VERBOSE_WARNING 1
 #define VERBOSE_ERROR 1
 
+/* Print message coloring */
+#define PRINT (stderr)
+#define ANSI_COLOR_YELLOW "\x1b[33m"
+#define ANSI_COLOR_GREEN "\x1b[32m"
+#define ANSI_COLOR_RED "\x1b[31m"
+#define ANSI_COLOR_RESET "\x1b[0m"
+
+#if VERBOSE_INFO
+#define INFO_PRINT(fmt, args...) \
+	fprintf(stdout, ANSI_COLOR_GREEN "[Info] " fmt "\n" ANSI_COLOR_RESET, ##args)
+#else
+#define INFO_PRINT(fmt, args...) (void)0
+#endif
+#if VERBOSE_WARNING
+#define WARNING_PRINT(fmt, args...) \
+	fprintf(stdout, ANSI_COLOR_YELLOW "[Warning] " fmt "\n" ANSI_COLOR_RESET, ##args)
+#else
+#define WARNING_PRINT(fmt, args...) (void)0
+#endif
 #if VERBOSE_ERROR
-#define ERROR_PRINT(fmt, args...) fprintf(PRINT, ANSI_COLOR_GREEN "" fmt "" ANSI_COLOR_RESET, ##args)
+#define ERROR_PRINT(fmt, args...) \
+	fprintf(PRINT, ANSI_COLOR_RED "[Error] [%10s:%4d] errno: %u\n" \
+			fmt "\n" ANSI_COLOR_RESET, \
+			__FUNCTION__, __LINE__, errno, ##args);
 #else
 #define ERROR_PRINT(fmt, args...) (void)0
 #endif
-
-/* Print message coloring */
-#define ANSI_COLOR_YELLOW "\x1b[33m"
-#define ANSI_COLOR_GREEN "\x1b[32m"
-#define ANSI_COLOR_RESET "\x1b[0m"
 
 enum tlshello
 {
@@ -75,6 +91,31 @@ enum tlsstate
 	TO_BE_DESTROYED,
 }; // tls_state_type
 
+enum ercode
+{
+	CLIENT_RANDOM_DUP = -20,
+	DECRYPT_FINAL_ERR,
+	SET_EXPECTED_TAG_ERR,
+	DECRYPT_ERR,
+	SET_AAD_ERR,
+	SET_KEY_IV_ERR,
+	SET_IVLEN_ERR,
+	INIT_ALGORITHM_ERR,
+	UNKNOWN_TYPE_ERR,
+	APPLICATION_DATA_ERR,
+	HANDSHAKE_ERR,
+	CIPHER_SUITE_STATE_ERR,
+	ORPHAN_ERR,
+	EARLY_FIN,
+	MISSING_KEY = -1,
+/*------------------------------------*/
+	NORMAL = 0,
+	SYN_RETRANSMIT,
+/*------------------------------------*/
+	DO_DECRYPT = 10,
+	NO_DECRYPT,
+}; // custom error code
+
 typedef struct tls_buffer
 {
 	uint8_t *buf;
@@ -100,6 +141,7 @@ typedef struct tls_context
 	tls_crypto_info tc_key_info;
 	uint64_t tc_record_cnt; /* = tls_seq */
 	uint64_t decrypt_len; /* for debugging */
+	uint64_t peek_len; /* for debugging */
 	tls_buffer tc_cipher;
 	tls_buffer tc_plain;
 } tls_context;

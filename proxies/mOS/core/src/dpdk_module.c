@@ -33,9 +33,10 @@
 #define MAX_RX_QUEUE_PER_LCORE		MAX_CPUS
 #define MAX_TX_QUEUE_PER_PORT		MAX_CPUS
 
+#define LEADER_ISOLATION	0
+#if LEADER_ISOLATION
 #define LEADER_CORE_NUM		0
-#define FIRST_FOLLOWER_CORE	(LEADER_CORE_NUM + 1)
-#define LEADER_ISOLATION	1
+#endif
 #define USE_LRO				1
 #if USE_LRO
 #define MBUF_DATA_SIZE		10000
@@ -875,7 +876,7 @@ dpdk_load_module_upper_half(void)
 
 	/* initialize the rte env first, what a waste of implementation effort!  */
 	char *argv[] = {"", 
-	               /* "--iova-mode=va", */
+	        "--iova-mode=va",
 			"-c", 
 			cpumaskbuf, 
 			"-n", 
@@ -883,7 +884,7 @@ dpdk_load_module_upper_half(void)
 			"--proc-type=primary"
 	};
 	/* const int argc = 7; */
-	const int argc = 6;
+	const int argc = 7;
 
 	/* 
 	 * re-set getopt extern variable optind.
@@ -1033,7 +1034,7 @@ dpdk_load_module_lower_half(void)
 				/* steer udp packets to leader core (core id: 0)*/
 				udp_flow_configure(portid, LEADER_CORE_NUM);
 				/* rss tcp packets to follower cores */
-				rss_flow_configure(portid, FIRST_FOLLOWER_CORE, g_config.mos->num_cores - 1);
+				rss_flow_configure(portid, LEADER_CORE_NUM + 1, g_config.mos->num_cores - 1);
 			}
 #endif
 
