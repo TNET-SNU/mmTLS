@@ -161,6 +161,7 @@ SendTCPPacketStandalone(struct mtcp_manager *mtcp,
 		return ERROR;
 	}
 
+	pctx.p.l4len = TCP_HEADER_LEN + optlen;
 	tcph = (struct tcphdr *)IPOutputStandalone(mtcp, htons(ip_id), 
 			saddr, daddr, TCP_HEADER_LEN + optlen + payloadlen, &pctx, cur_ts);
 	if (tcph == NULL) {
@@ -261,7 +262,7 @@ SendTCPPacket(struct mtcp_manager *mtcp, tcp_stream *cur_stream,
 		return ERROR;
 	}
 
-	pctx.p.l4len = optlen;
+	pctx.p.l4len = TCP_HEADER_LEN + optlen;
 	tcph = (struct tcphdr *)IPOutput(mtcp, cur_stream, 
 			TCP_HEADER_LEN + optlen + payloadlen, &pctx, cur_ts);
 	if (tcph == NULL) {
