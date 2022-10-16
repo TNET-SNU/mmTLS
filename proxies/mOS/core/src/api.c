@@ -246,10 +246,6 @@ mtcp_getsockopt(mctx_t mctx, int sockid, int level,
 			return GetLastTimestamp(socket->monitor_stream->stream,
 						(uint32_t *)optval, 
 						optlen);
-		case MOS_TLS_SP:
-			*optlen = socket->monitor_stream->stream->tls_keyblock_len;
-			memcpy(optval, socket->monitor_stream->stream->tls_keyblock, *optlen);
-			return 0;
 		default: 
 		  TRACE_API("can't recognize the optname=%d\n", optname);
 		  assert(0);
@@ -453,16 +449,6 @@ mtcp_setsockopt(mctx_t mctx, int sockid, int level,
 			break;
 		case MOS_STOP_MON:
 			return mtcp_cb_stop(mctx, sockid, *(int *)optval);
-		case MOS_TLS_SP:
-			if (optlen > MAX_KEYBLOCK_SIZE) {
-				TRACE_API("Invalid optlen: %d > %d\n",
-						  optlen, MAX_KEYBLOCK_SIZE);
-				errno = EBADF;
-				return -1;				
-			}
-			memcpy(socket->monitor_stream->stream->tls_keyblock, optval, optlen);
-			socket->monitor_stream->stream->tls_keyblock_len = optlen;
-			return 0;
 		default: 
 			TRACE_API("invalid optname=%d\n", optname);
 			assert(0);

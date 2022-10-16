@@ -611,8 +611,8 @@ InitMosBlock(struct config *config, struct conf_block *blk)
 	conf->nb_mem_channels = 0;
 	conf->max_concurrency = 100000;
 	conf->no_ring_buffers = 0;
-	conf->rmem_size = 8192;
-	conf->wmem_size = 8192;
+	conf->rmem_size = UNITBUFSIZE;
+	conf->wmem_size = UNITBUFSIZE;
 	conf->tcp_tw_interval = SEC_TO_USEC(TCP_TIMEWAIT) / TIME_TICK;
 	conf->tcp_timeout = SEC_TO_USEC(TCP_TIMEOUT) / TIME_TICK;
 	conf->cpu_mask = 0;

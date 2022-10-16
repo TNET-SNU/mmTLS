@@ -268,8 +268,6 @@ dpdk_send_pkts(struct mtcp_thread_context *ctxt, int nif)
 #endif /* !ENABLE_STATS_IOCTL */
 		int cnt = dpc->wmbufs[nif].len;
 		pkts = dpc->wmbufs[nif].m_table;
-
-		/* in order to operate tls_middlebox */
 #ifdef NETSTAT
 		mtcp->nstat.tx_packets[nif] += cnt;
 #ifdef ENABLE_STATS_IOCTL

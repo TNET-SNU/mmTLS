@@ -130,6 +130,7 @@ struct pkt_info {
 	uint16_t      ip_len;
 	
 	/* TCP */
+	uint16_t      l4len;
 	uint64_t      offset;    /**< TCP ring buffer offset */
 	uint16_t      payloadlen;
 	uint32_t      seq;

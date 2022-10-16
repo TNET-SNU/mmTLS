@@ -634,7 +634,6 @@ mtcp_sendpkt_raw(mctx_t mctx, int sock, uint8_t *rawpkt, uint16_t len)
 	memcpy(buf, GetDestinationHWaddr(daddr), ETH_ALEN);
 	memcpy(buf + ETH_ALEN, g_config.mos->netdev_table->ent[nif]->haddr, ETH_ALEN);
 	memcpy(buf + ETH_ALEN * 2, rawpkt + ETH_ALEN * 2, (len - ETH_ALEN * 2));
-	mtcp->iom->send_pkts(mtcp->ctx, nif);
 
 	return 0;
 }
@@ -851,10 +850,33 @@ mtcp_reset_conn(mctx_t mctx, int sock)
 		errno = EINVAL;
 		return -1;
 	}
-
+	
 	/* send RST packets to the both sides */
-	SendRSTPacketStandalone(mtcp, socket->monitor_stream->stream);
-	SendRSTPacketStandalone(mtcp, socket->monitor_stream->stream->pair_stream);
+	
+// 	SendRSTPacketStandalone(mtcp, socket->monitor_stream->stream);
+// 	SendRSTPacketStandalone(mtcp, socket->monitor_stream->stream->pair_stream);
+
+#ifdef MTCP_CB_GETCURPKT_CREATE_COPY
+	struct pkt_info p;
+	if (mtcp_getlastpkt(mctx, sock, MOS_SIDE_CLI, &p) < 0)
+		exit(EXIT_FAILURE);
+#else
+	struct pkt_ctx *pctx;
+	if (mtcp_getlastpkt(mctx, sock, MOS_SIDE_CLI, &pctx) < 0)
+		exit(EXIT_FAILURE);
+#endif
+	SendTCPPacketStandalone(mtcp,
+				pctx->p.iph->saddr, pctx->p.tcph->source,
+				pctx->p.iph->daddr, pctx->p.tcph->dest,
+				ntohl(pctx->p.tcph->seq), ntohl(pctx->p.tcph->ack_seq),
+				0, TCP_FLAG_RST | TCP_FLAG_ACK,
+				NULL, 0, 0, 0, 0, -1);
+	SendTCPPacketStandalone(mtcp,
+				pctx->p.iph->daddr, pctx->p.tcph->dest,
+				pctx->p.iph->saddr, pctx->p.tcph->source,
+				ntohl(pctx->p.tcph->ack_seq), ntohl(pctx->p.tcph->seq),
+				0, TCP_FLAG_RST | TCP_FLAG_ACK,
+				NULL, 0, 0, 0, 0, -1);
 	
 	return 0;
 }

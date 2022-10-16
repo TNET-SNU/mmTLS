@@ -11,7 +11,8 @@
 /* Keep in mind about inc/dec buffer */
 /* FYI, I hate current tcp ring buffer implementation with memmove() */
 
-#define UNITBUFSIZE 1024
+#define SMALLUNITBUFSIZE /*1024*/8192
+#define UNITBUFSIZE /*131072*/262144
 #if UNITBUFSIZE < 2
 #error UNITBUFSIZE cannot be smaller than 2
 #endif
@@ -20,7 +21,7 @@
 #define BUFMGMT_FRAGS   1
 #define BUFMGMT_OFF     0
 
-#define DISABLE_DYN_RESIZE
+// #define DISABLE_DYN_RESIZE
 
 #if 0
 typedef enum {

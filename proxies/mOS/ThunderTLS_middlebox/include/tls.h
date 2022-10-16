@@ -8,6 +8,7 @@
 // #define MAX_BUF_LEN 2097152 /* for IDS */
 #define MAX_BUF_LEN 16800 /* > 16K */ // this one is better
 #define MAX_BUF_LEN_SVR 1024 /* 1K */
+// #define MAX_BUF_LEN_SVR MAX_BUF_LEN
 #define MAX_RECORD_LEN 16385 /* 16K + 1 */
 #define MAX_RAW_PKT_BUF_LEN 8192 /* 8K */
 #define MAX_RAW_PKT_NUM 10
@@ -139,7 +140,7 @@ typedef struct tls_crypto_info
 typedef struct tls_context
 {
 	tls_crypto_info tc_key_info;
-	uint64_t tc_record_cnt; /* = tls_seq */
+	uint64_t tc_tls_seq; /* = tls_seq */
 	uint64_t decrypt_len; /* for debugging */
 	uint64_t peek_len; /* for debugging */
 	tls_buffer tc_cipher;

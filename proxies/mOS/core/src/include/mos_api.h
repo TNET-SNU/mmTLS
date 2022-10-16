@@ -214,8 +214,6 @@ enum mos_socket_opts {
 	MOS_SEQ_REMAP		= 0x0b, /* supressed (not used) */
 	MOS_FRAG_CLIBUF   	= 0x0d, /* supressed (not used) */
 	MOS_FRAG_SVRBUF   	= 0x0e, /* supressed (not used) */
-
-	MOS_TLS_SP          = 0xf1,	/* Store/get TLS key */
 };
 
 /**

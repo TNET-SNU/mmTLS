@@ -1116,8 +1116,8 @@ InitializeMTCPManager(struct mtcp_thread_context* ctx)
 	}
 
 	if (!(mtcp->bufseg_pool = MPCreate(sizeof(tcpbufseg_t),
-			sizeof(tcpbufseg_t) * g_config.mos->max_concurrency *
-			((g_config.mos->rmem_size - 1) / UNITBUFSIZE + 1), 0))) {
+			sizeof(tcpbufseg_t) * g_config.mos->max_concurrency / 2 *
+			((g_config.mos->rmem_size - 1) / UNITBUFSIZE + 2), 0))) {
 		TRACE_ERROR("Failed to allocate ev_table pool\n");
 		exit(0);
 	}
