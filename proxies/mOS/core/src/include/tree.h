@@ -1,4 +1,5 @@
-#pragma once
+#ifndef __MOS_TREE_H_
+#define __MOS_TREE_H_
 
 #include <assert.h>
 
@@ -165,3 +166,4 @@ union { \
 #define TREE_OLDER(ent, field)     ((ent)->field.tn_older)
 #define TREE_PARENT(ent, field)    ((ent)->field.tn_parent)
 
+#endif /* __MOS_TREE_H_ */

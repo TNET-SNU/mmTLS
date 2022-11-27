@@ -602,6 +602,7 @@ mtcp_sendpkt_raw(mctx_t mctx, int sock, uint8_t *rawpkt, uint16_t len)
 	mtcp_manager_t mtcp;
 	uint8_t *buf;
 	uint32_t daddr;
+	uint8_t *dmac;
 	struct ethhdr *ethh;
 	struct iphdr *iph;
 	struct tcphdr *tcph;
@@ -623,6 +624,8 @@ mtcp_sendpkt_raw(mctx_t mctx, int sock, uint8_t *rawpkt, uint16_t len)
 	ethh = (struct ethhdr *)rawpkt;
 	iph = (struct iphdr *)(ethh + 1);
 	daddr = iph->daddr;
+	if (!(dmac = GetDestinationHWaddr(daddr)))
+		return 0;
 	if ((nif = GetOutputInterface(daddr)) < 0)
 		return 0;
 	tcph = (struct tcphdr *)(iph + 1);
@@ -631,7 +634,7 @@ mtcp_sendpkt_raw(mctx_t mctx, int sock, uint8_t *rawpkt, uint16_t len)
 		fprintf(stderr, "Failed to get available write buffer\n");
 		return -1;
 	}
-	memcpy(buf, GetDestinationHWaddr(daddr), ETH_ALEN);
+	memcpy(buf, dmac, ETH_ALEN);
 	memcpy(buf + ETH_ALEN, g_config.mos->netdev_table->ent[nif]->haddr, ETH_ALEN);
 	memcpy(buf + ETH_ALEN * 2, rawpkt + ETH_ALEN * 2, (len - ETH_ALEN * 2));
 

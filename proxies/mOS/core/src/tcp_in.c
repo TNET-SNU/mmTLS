@@ -585,7 +585,10 @@ ProcessTCPPayload(mtcp_manager_t mtcp, tcp_stream *cur_stream,
 
 	/* allocate receive buffer if not exist */
 	if (!rcvvar->rcvbuf) {
-		rcvvar->rcvbuf = tcprb_new(mtcp->bufseg_pool, g_config.mos->rmem_size, cur_stream->buffer_mgmt);
+		if (cur_stream->side == MOS_SIDE_CLI)
+			rcvvar->rcvbuf = tcprb_new(mtcp->bufseg_pool, g_config.mos->rmem_size, cur_stream->buffer_mgmt);
+		else if (cur_stream->side == MOS_SIDE_SVR)
+			rcvvar->rcvbuf = tcprb_new(mtcp->bufseg_pool, UNITBUFSIZE, cur_stream->buffer_mgmt);
 		if (!rcvvar->rcvbuf) {
 			TRACE_ERROR("Stream %d: Failed to allocate receive buffer.\n", 
 				    cur_stream->id);

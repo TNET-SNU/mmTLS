@@ -37,8 +37,7 @@ SBManagerCreate(size_t chunk_size, uint8_t disable_rings, uint32_t concurrency)
 	sbm->chunk_size = chunk_size;
 	sbm->cnum = concurrency;
 	sbm->mp = (mem_pool_t)MPCreate(chunk_size, 
-				       (uint64_t)chunk_size * (!disable_rings * concurrency), 
-				       0);
+				    (uint64_t)chunk_size * (!disable_rings * concurrency), 0);
 	if (!sbm->mp) {
 		TRACE_ERROR("Failed to create mem pool for sb.\n");
 		free(sbm);

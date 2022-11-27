@@ -282,60 +282,90 @@ buf_try_resize(tcprb_t *rb, int len, loff_t data, int datalen)
 	return 0;
 }
 /*--------------------------------------------------------------------------*/
-/* buf_read() and buf_write() are highly symmetic, so use macro for function
- * definition to ease code maintenance. */
-
 /* TODO: We do not have tailing anymore. simplify these functions */
+static inline void
+buf_read(tcprb_t *rb, uint8_t *buf, int len, loff_t off)
+{
+	tcpbufseg_t *bufseg = NULL;
+	assert(rb);
 
-#define MEMCPY_FOR_read(a, b, len) memcpy(a, b, len)
-#define MEMCPY_FOR_write(a, b, len) memcpy(b, a, len)
+	boff_t from = loff2boff(rb, off);
+	boff_t to = loff2boff(rb, off + len);
+	tcpbufseg_t *bufseg_from = buf_getbuf(rb, from);
+	tcpbufseg_t *bufseg_to = buf_getbuf(rb, to);
 
-#define FUNCDEF_BUF_RW(rw) \
-static inline void \
-buf_##rw(tcprb_t *rb, uint8_t *buf, int len, loff_t off) \
-{ \
-	tcpbufseg_t *bufseg = NULL; \
- \
-	assert(rb); \
- \
-	boff_t from = loff2boff(rb, off); \
-	boff_t to = loff2boff(rb, off + len); \
-	tcpbufseg_t *bufseg_from = buf_getbuf(rb, from); \
-	tcpbufseg_t *bufseg_to = buf_getbuf(rb, to); \
- \
-	if (from > to) { \
-		off = UNITBUFSIZE - (from % UNITBUFSIZE); \
-		MEMCPY_FOR_##rw(&buf[0], &bufseg_from->buf[from % UNITBUFSIZE], off); \
-		for (bufseg = buf_next(rb, bufseg_from); \
-			 bufseg && (bufseg != bufseg_to); \
-			 bufseg = buf_next(rb, bufseg)) { \
-			MEMCPY_FOR_##rw(&buf[off], &bufseg->buf[0], UNITBUFSIZE); \
-			off += UNITBUFSIZE; \
-		} \
-		for (bufseg = buf_first(rb); \
-			 bufseg && (bufseg != bufseg_to); \
-			 bufseg = buf_next(rb, bufseg)) { \
-			MEMCPY_FOR_##rw(&buf[off], &bufseg->buf[0], UNITBUFSIZE); \
-			off += UNITBUFSIZE; \
-		} \
-		MEMCPY_FOR_##rw(&buf[off], &bufseg_to->buf[0], to % UNITBUFSIZE); \
-	} else if (bufseg_from == bufseg_to) { \
-		MEMCPY_FOR_##rw(&buf[0], &bufseg_from->buf[from % UNITBUFSIZE], len); \
-	} else { \
-		off = UNITBUFSIZE - (from % UNITBUFSIZE); \
-		MEMCPY_FOR_##rw(&buf[0], &bufseg_from->buf[from % UNITBUFSIZE], off); \
-		for (bufseg = buf_next(rb, bufseg_from); \
-			 bufseg && (bufseg != bufseg_to); \
-			 bufseg = buf_next(rb, bufseg)) { \
-			MEMCPY_FOR_##rw(&buf[off], &bufseg->buf[0], UNITBUFSIZE); \
-			off += UNITBUFSIZE; \
-		} \
-		MEMCPY_FOR_##rw(&buf[off], &bufseg_to->buf[0], to % UNITBUFSIZE); \
-	} \
+	if (from > to) {
+		off = UNITBUFSIZE - (from % UNITBUFSIZE);
+		memcpy(&buf[0], &bufseg_from->buf[from % UNITBUFSIZE], off);
+		for (bufseg = buf_next(rb, bufseg_from);
+			 bufseg && (bufseg != bufseg_to);
+			 bufseg = buf_next(rb, bufseg)) {
+			memcpy(&buf[off], &bufseg->buf[0], UNITBUFSIZE);
+			off += UNITBUFSIZE;
+		}
+		for (bufseg = buf_first(rb);
+			 bufseg && (bufseg != bufseg_to);
+			 bufseg = buf_next(rb, bufseg)) {
+			memcpy(&buf[off], &bufseg->buf[0], UNITBUFSIZE);
+			off += UNITBUFSIZE;
+		}
+		memcpy(&buf[off], &bufseg_to->buf[0], to % UNITBUFSIZE);
+	} else if (bufseg_from == bufseg_to) {
+		memcpy(&buf[0], &bufseg_from->buf[from % UNITBUFSIZE], len);
+	} else {
+		off = UNITBUFSIZE - (from % UNITBUFSIZE);
+		memcpy(&buf[0], &bufseg_from->buf[from % UNITBUFSIZE], off);
+		for (bufseg = buf_next(rb, bufseg_from);
+			 bufseg && (bufseg != bufseg_to);
+			 bufseg = buf_next(rb, bufseg)) {
+			memcpy(&buf[off], &bufseg->buf[0], UNITBUFSIZE);
+			off += UNITBUFSIZE;
+		}
+		memcpy(&buf[off], &bufseg_to->buf[0], to % UNITBUFSIZE);
+	}
 }
+/*--------------------------------------------------------------------------*/
+static inline void
+buf_write(tcprb_t *rb, uint8_t *buf, int len, loff_t off)
+{
+	tcpbufseg_t *bufseg = NULL;
+	assert(rb);
 
-FUNCDEF_BUF_RW(read)
-FUNCDEF_BUF_RW(write)
+	boff_t from = loff2boff(rb, off);
+	boff_t to = loff2boff(rb, off + len);
+	tcpbufseg_t *bufseg_from = buf_getbuf(rb, from);
+	tcpbufseg_t *bufseg_to = buf_getbuf(rb, to);
+
+	if (from > to) {
+		off = UNITBUFSIZE - (from % UNITBUFSIZE);
+		memcpy(&bufseg_from->buf[from % UNITBUFSIZE], &buf[0], off);
+		for (bufseg = buf_next(rb, bufseg_from);
+			 bufseg && (bufseg != bufseg_to);
+			 bufseg = buf_next(rb, bufseg)) {
+			memcpy(&bufseg->buf[0], &buf[off], UNITBUFSIZE);
+			off += UNITBUFSIZE;
+		}
+		for (bufseg = buf_first(rb);
+			 bufseg && (bufseg != bufseg_to);
+			 bufseg = buf_next(rb, bufseg)) {
+			memcpy(&bufseg->buf[0], &buf[off], UNITBUFSIZE);
+			off += UNITBUFSIZE;
+		}
+		memcpy(&bufseg_to->buf[0], &buf[off], to % UNITBUFSIZE);
+	} else if (bufseg_from == bufseg_to) {
+		memcpy(&bufseg_from->buf[from % UNITBUFSIZE], &buf[0], len);
+	} else {
+		off = UNITBUFSIZE - (from % UNITBUFSIZE);
+		memcpy(&bufseg_from->buf[from % UNITBUFSIZE], &buf[0], off);
+		for (bufseg = buf_next(rb, bufseg_from);
+			 bufseg && (bufseg != bufseg_to);
+			 bufseg = buf_next(rb, bufseg)) {
+			memcpy(&bufseg->buf[0], &buf[off], UNITBUFSIZE);
+			off += UNITBUFSIZE;
+		}
+		memcpy(&bufseg_to->buf[0], &buf[off], to % UNITBUFSIZE);
+	}
+}
 /* -------------------------------------------------------------------------- */
 /* Public */
 /* -------------------------------------------------------------------------- */

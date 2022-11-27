@@ -1,0 +1,26 @@
+{
+    "files.associations": {
+        "*.bess": "python",
+        "*.proto": "c",
+        "*.cc": "cpp",
+        "time.h": "c",
+        "server.h": "c",
+        "engine.h": "c",
+        "socket.h": "c",
+        "in.h": "c",
+        "ip.h": "c",
+        "libc-compat.h": "c",
+        "if.h": "c",
+        "features.h": "c",
+        "ether.h": "c",
+        "if_ether.h": "c",
+        "ethernet.h": "c",
+        "udp.h": "c",
+        "ioctl.h": "c",
+        "inet.h": "c",
+        "if_packet.h": "c",
+        "sched.h": "c",
+        "ifaddrs.h": "c",
+        "ssl.h": "c"
+    }
+}

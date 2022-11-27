@@ -4,13 +4,12 @@
 #include <stdint.h>
 #include <sys/queue.h>
 #include <mos_api.h>
+#include <time.h>
 
 // #define MAX_BUF_LEN 2097152 /* for IDS */
 #define MAX_BUF_LEN 16800 /* > 16K */ // this one is better
 #define MAX_BUF_LEN_SVR 1024 /* 1K */
-// #define MAX_BUF_LEN_SVR MAX_BUF_LEN
 #define MAX_RECORD_LEN 16385 /* 16K + 1 */
-#define MAX_RAW_PKT_BUF_LEN 8192 /* 8K */
 #define MAX_RAW_PKT_NUM 10
 
 #define TLS_HANDSHAKE_HEADER_LEN 4
@@ -23,6 +22,7 @@
 #define TLS_CIPHER_AES_GCM_256_IV_SIZE 12
 #define TLS_CIPHER_AES_GCM_256_AAD_SIZE 5
 #define SHA384_HASH_LEN 48
+#define TLS_HS_FINISHED_DONE_LEN 69
 /* #define AES_256_KEY_LEN  32 */
 /* #define AES_GCM_IV_LEN   12 */
 #define LOWER_8BITS (0x000000FF)
@@ -73,50 +73,34 @@ enum tlsrecord
 	APPLICATION_DATA = 0x17,
 }; // tls_record_type
 
-enum keymask
-{
-	CLI_KEY_MASK = 0x01,
-	SRV_KEY_MASK = 0x02,
-	CLI_IV_MASK = 0x04,
-	SRV_IV_MASK = 0x08,
-}; // tls_session_key_info_mask
-
 enum tlsstate
 {
 	INITIAL_STATE,
-	CLIENT_HELLO_RECV,
-	SERVER_HELLO_RECV,
-	SERVER_CIPHER_SUITE_RECV,
-	CLIENT_CIPHER_SUITE_RECV,
 	TLS_ESTABLISHED,
 	TO_BE_DESTROYED,
 }; // tls_state_type
 
 enum ercode
 {
-	CLIENT_RANDOM_DUP = -20,
-	DECRYPT_FINAL_ERR,
+	DECRYPT_FINAL_ERR = -20,
 	SET_EXPECTED_TAG_ERR,
 	DECRYPT_ERR,
 	SET_AAD_ERR,
 	SET_KEY_IV_ERR,
-	SET_IVLEN_ERR,
-	INIT_ALGORITHM_ERR,
-	UNKNOWN_TYPE_ERR,
-	APPLICATION_DATA_ERR,
-	HANDSHAKE_ERR,
-	CIPHER_SUITE_STATE_ERR,
+	SET_IV_LEN_ERR,
+	SET_CIPHER_ERR,
 	ORPHAN_ERR,
 	EARLY_FIN,
 	MISSING_KEY = -1,
 /*------------------------------------*/
-	NORMAL = 0,
-	SYN_RETRANSMIT,
-/*------------------------------------*/
-	DO_DECRYPT = 10,
-	NO_DECRYPT,
+	NO_KEY = 0,
 }; // custom error code
 
+enum need_decrypt
+{
+	NO_DECRYPT = 0,
+	DO_DECRYPT,
+};
 typedef struct tls_buffer
 {
 	uint8_t *buf;
@@ -132,7 +116,6 @@ typedef struct pkt_vec
 
 typedef struct tls_crypto_info
 {
-	uint16_t key_mask;
 	uint8_t key[TLS_CIPHER_AES_GCM_256_KEY_SIZE];
 	uint8_t iv[TLS_CIPHER_AES_GCM_256_IV_SIZE];
 } tls_crypto_info;
@@ -151,11 +134,15 @@ typedef struct conn_info
 {					  /* connection info */
 	int ci_sock;	  /* socket ID */
 	int ci_tls_state; /* TLS state */
+	int ci_has_key;
 	uint8_t ci_client_random[TLS_1_3_CLIENT_RANDOM_LEN];
 	tls_context ci_tls_ctx[2];
 	pkt_vec ci_raw_pkt[MAX_RAW_PKT_NUM]; /* raw packet buffer */
 	uint32_t ci_raw_len;
 	uint8_t ci_raw_cnt;
+	clock_t ci_clock_est;
+	clock_t ci_clock_key;
+	clock_t ci_key_delay;
 } conn_info;
 
 typedef struct keytable

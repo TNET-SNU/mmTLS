@@ -40,16 +40,19 @@
 #define USE_LRO				1
 #if USE_LRO
 #define MBUF_DATA_SIZE		10000
+#define NB_MBUF				20000
 #else
 #define MBUF_DATA_SIZE		RTE_ETHER_MAX_LEN
+#define NB_MBUF				100000
 #endif
 #define MBUF_SIZE 			(MBUF_DATA_SIZE + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM)
-#define NB_MBUF				20000
 #define MEMPOOL_CACHE_SIZE		512
 //#define RX_IDLE_ENABLE			1
 #define RX_IDLE_TIMEOUT			1	/* in micro-seconds */
 #define RX_IDLE_THRESH			64
 
+#define USE_CUSTOM_THRESH	0
+#if USE_CUSTOM_THRESH
 /*
  * RX and TX Prefetch, Host, and Write-back threshold values should be
  * carefully set for optimal performance. Consult the network
@@ -68,14 +71,15 @@
 #define TX_PTHRESH 			36 /**< Default values of TX prefetch threshold reg. */
 #define TX_HTHRESH			0  /**< Default values of TX host threshold reg. */
 #define TX_WTHRESH			0  /**< Default values of TX write-back threshold reg. */
+#endif
 
-#define MAX_PKT_BURST			/*32*/64
+#define MAX_PKT_BURST			64
 
 /*
  * Configurable number of RX/TX ring descriptors
  */
-#define RTE_TEST_RX_DESC_DEFAULT	1024
-#define RTE_TEST_TX_DESC_DEFAULT	1024
+#define RTE_TEST_RX_DESC_DEFAULT	4096
+#define RTE_TEST_TX_DESC_DEFAULT	4096
 
 static uint16_t nb_rxd = RTE_TEST_RX_DESC_DEFAULT;
 static uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT;
@@ -142,6 +146,7 @@ static struct rte_eth_conf port_conf = {
 	},
 };
 
+#if USE_CUSTOM_THRESH
 static const struct rte_eth_rxconf rx_conf = {
 	.rx_thresh = {
 		.pthresh = 		RX_PTHRESH, /* RX prefetch threshold reg */
@@ -167,6 +172,7 @@ static const struct rte_eth_txconf tx_conf = {
 	.txq_flags = 			0x0,
 #endif
 };
+#endif
 
 struct mbuf_table {
 	unsigned len; /* length of queued packets */
@@ -452,6 +458,26 @@ dpdk_set_wptr(struct mtcp_thread_context *ctxt, int out_nif, int in_nif, int ind
 	dpc = (struct dpdk_private_context *) ctxt->io_private_context;
 	mtcp = ctxt->mtcp_manager;
 	
+	/* sanity check */
+	// int send_cnt;
+	// if (unlikely(dpc->wmbufs[out_nif].len == MAX_PKT_BURST)) {
+	// 	// return;
+	// 	fprintf(stdout, "burst pkt exceeded!\n");
+	// 	while(1) {
+	// 		send_cnt = dpdk_send_pkts(ctxt, out_nif);
+	// 		if (likely(send_cnt))
+	// 			break;
+	// 	}
+	// 	dpc->wmbufs[out_nif].len = 0;
+	// 	dpc->wmbufs[out_nif].m_table[0] =
+	// 		rte_pktmbuf_alloc(pktmbuf_pool[cpu_qid_map[out_nif][ctxt->cpu]]);
+	// 	if (unlikely(dpc->wmbufs[out_nif].m_table[0] == NULL)) {
+	// 		fprintf(stderr, "[CPU %d] Failed to allocate wmbuf_relay on port %d\n",
+	// 					cpu_qid_map[out_nif][ctxt->cpu], out_nif);
+	// 		exit(EXIT_FAILURE);
+	// 		return;
+	// 	}
+	// }
 	/* sanity check */
 	if (unlikely(dpc->wmbufs[out_nif].len == MAX_PKT_BURST))
 		return;
@@ -913,12 +939,17 @@ dpdk_load_module_lower_half(void)
 	/* setting the rss key */
 #if RTE_VERSION >= RTE_VERSION_NUM(20, 0, 0, 0)
     static const uint8_t key[] = {
-         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05
+        0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
+		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
+		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
+		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05
     };
+	// static const uint8_t key[] = {
+    //     0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
+    //     0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
+    //     0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
+    //     0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
+    // };
 #else
 	static const uint8_t key[] = {
 		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
@@ -995,7 +1026,11 @@ dpdk_load_module_lower_half(void)
 				if (!(g_config.mos->netdev_table->ent[eth_idx]->cpu_mask & (1L << rxlcore_id)))
 					continue;
 				ret = rte_eth_rx_queue_setup(portid, queue_id, nb_rxd,
+#if USE_CUSTOM_THRESH
 						rte_eth_dev_socket_id(portid), &rx_conf,
+#else
+						rte_eth_dev_socket_id(portid), &dev_info[portid].default_rxconf,
+#endif
 						pktmbuf_pool[rxlcore_id]);
 				if (ret < 0)
 					rte_exit(EXIT_FAILURE, "rte_eth_rx_queue_setup:"
@@ -1012,7 +1047,11 @@ dpdk_load_module_lower_half(void)
 				if (!(g_config.mos->netdev_table->ent[eth_idx]->cpu_mask & (1L << rxlcore_id)))
 					continue;
 				ret = rte_eth_tx_queue_setup(portid, queue_id++, nb_txd,
+#if USE_CUSTOM_THRESH
 						rte_eth_dev_socket_id(portid), &tx_conf);
+#else
+						rte_eth_dev_socket_id(portid), &dev_info[portid].default_txconf);
+#endif
 				if (ret < 0)
 					rte_exit(EXIT_FAILURE, "rte_eth_tx_queue_setup:"
 										   "err=%d, port=%u, queueid: %d\n",

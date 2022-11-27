@@ -1,5 +1,5 @@
-#ifndef __TCP_STREAM_QUEUE_
-#define __TCP_STREAM_QUEUE_
+#ifndef __TCP_STREAM_QUEUE_H_
+#define __TCP_STREAM_QUEUE_H_
 
 #include <stdint.h>
 
@@ -75,4 +75,4 @@ int
 StreamQueueIsEmpty(stream_queue_t sq);
 /*---------------------------------------------------------------------------*/
 
-#endif /* __TCP_STREAM_QUEUE_ */
+#endif /* __TCP_STREAM_QUEUE_H_ */

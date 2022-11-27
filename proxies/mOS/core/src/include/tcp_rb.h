@@ -1,4 +1,5 @@
-#pragma once
+#ifndef __TCP_RB_H_
+#define __TCP_RB_H_
 
 #include <stdio.h>
 #include <stdint.h>
@@ -11,7 +12,6 @@
 /* Keep in mind about inc/dec buffer */
 /* FYI, I hate current tcp ring buffer implementation with memmove() */
 
-#define SMALLUNITBUFSIZE /*1024*/8192
 #define UNITBUFSIZE /*131072*/262144
 #if UNITBUFSIZE < 2
 #error UNITBUFSIZE cannot be smaller than 2
@@ -123,3 +123,5 @@ tcp_rb_overlapchk(mtcp_manager_t mtcp, struct pkt_ctx *pctx,
 
 extern inline int
 tcprb_setpolicy(tcprb_t *rb, uint8_t policy);
+
+#endif /* __TCP_RB_H_ */
