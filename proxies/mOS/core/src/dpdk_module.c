@@ -37,13 +37,14 @@
 #if LEADER_ISOLATION
 #define LEADER_CORE_NUM		0
 #endif
+#define KEY_MAPPING			1
 #define USE_LRO				1
 #if USE_LRO
 #define MBUF_DATA_SIZE		10000
-#define NB_MBUF				20000
+#define NB_MBUF				100000
 #else
 #define MBUF_DATA_SIZE		RTE_ETHER_MAX_LEN
-#define NB_MBUF				100000
+#define NB_MBUF				10000
 #endif
 #define MBUF_SIZE 			(MBUF_DATA_SIZE + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM)
 #define MEMPOOL_CACHE_SIZE		512
@@ -52,7 +53,6 @@
 #define RX_IDLE_THRESH			64
 
 #define USE_CUSTOM_THRESH	0
-#if USE_CUSTOM_THRESH
 /*
  * RX and TX Prefetch, Host, and Write-back threshold values should be
  * carefully set for optimal performance. Consult the network
@@ -71,7 +71,6 @@
 #define TX_PTHRESH 			36 /**< Default values of TX prefetch threshold reg. */
 #define TX_HTHRESH			0  /**< Default values of TX host threshold reg. */
 #define TX_WTHRESH			0  /**< Default values of TX write-back threshold reg. */
-#endif
 
 #define MAX_PKT_BURST			64
 
@@ -85,8 +84,30 @@ static uint16_t nb_rxd = RTE_TEST_RX_DESC_DEFAULT;
 static uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT;
 /*----------------------------------------------------------------------------*/
 /* packet memory pools for storing packet bufs */
+#if KEY_MAPPING
+static struct rte_mempool *pktmbuf_pool[MAX_CPUS * 2] = {NULL};
+#else
 static struct rte_mempool *pktmbuf_pool[MAX_CPUS] = {NULL};
+#endif
 static uint8_t cpu_qid_map[RTE_MAX_ETHPORTS][MAX_CPUS] = {{0}};
+
+#if RTE_VERSION >= RTE_VERSION_NUM(20, 0, 0, 0)
+static const uint8_t g_key[] = {
+    0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
+    0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
+    0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
+    0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
+};
+#else
+static const uint8_t g_key[] = {
+	0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
+	0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
+	0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
+	0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
+	0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
+	0x6D, 0x5A
+};
+#endif
 
 //#define DEBUG				1
 #ifdef DEBUG
@@ -117,11 +138,10 @@ static struct rte_eth_conf port_conf = {
 		.hw_strip_crc   = 	1, /**< CRC stripped by hardware */
 #else
 		.offloads	=	(
-							DEV_RX_OFFLOAD_CHECKSUM |
+							DEV_RX_OFFLOAD_CHECKSUM
 #if USE_LRO
-							DEV_RX_OFFLOAD_TCP_LRO |
+							| DEV_RX_OFFLOAD_TCP_LRO
 #endif
-							0
 						),
 #if USE_LRO
 		.max_lro_pkt_size =   MBUF_DATA_SIZE,
@@ -130,15 +150,15 @@ static struct rte_eth_conf port_conf = {
 	},
 	.rx_adv_conf = {
 		.rss_conf = {
-			.rss_key = 	NULL,
-			.rss_hf = 	ETH_RSS_TCP | ETH_RSS_UDP |
+			.rss_key = NULL,
+			.rss_hf = ETH_RSS_TCP | ETH_RSS_UDP |
 					ETH_RSS_IP | ETH_RSS_L2_PAYLOAD
 		},
 	},
 	.txmode = {
-		.mq_mode = 		ETH_MQ_TX_NONE,
+		.mq_mode = ETH_MQ_TX_NONE,
 #if RTE_VERSION >= RTE_VERSION_NUM(18, 2, 0, 0)
-		.offloads	=	DEV_TX_OFFLOAD_IPV4_CKSUM |
+		.offloads = DEV_TX_OFFLOAD_IPV4_CKSUM |
 					DEV_TX_OFFLOAD_UDP_CKSUM |
 					DEV_TX_OFFLOAD_TCP_CKSUM |
                     DEV_TX_OFFLOAD_TCP_TSO
@@ -146,7 +166,6 @@ static struct rte_eth_conf port_conf = {
 	},
 };
 
-#if USE_CUSTOM_THRESH
 static const struct rte_eth_rxconf rx_conf = {
 	.rx_thresh = {
 		.pthresh = 		RX_PTHRESH, /* RX prefetch threshold reg */
@@ -172,18 +191,25 @@ static const struct rte_eth_txconf tx_conf = {
 	.txq_flags = 			0x0,
 #endif
 };
-#endif
 
 struct mbuf_table {
 	unsigned len; /* length of queued packets */
+#if KEY_MAPPING
+	struct rte_mbuf *m_table[MAX_PKT_BURST * 2];
+#else
 	struct rte_mbuf *m_table[MAX_PKT_BURST];
+#endif
 };
 
 struct dpdk_private_context {
 	struct mbuf_table rmbufs[RTE_MAX_ETHPORTS];
 	struct mbuf_table wmbufs[RTE_MAX_ETHPORTS];
 	struct rte_mempool *pktmbuf_pool;
+#if KEY_MAPPING
+	struct rte_mbuf *pkts_burst[MAX_PKT_BURST * 2];
+#else
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
+#endif
 #ifdef RX_IDLE_ENABLE
 	uint8_t rx_idle;
 #endif
@@ -205,6 +231,60 @@ struct stats_struct {
 	uint8_t dev;
 };
 #endif /* !ENABLE_STATS_IOCTL */
+/*----------------------------------------------------------------------------*/
+static inline void
+print_xstats(int port_id)
+{
+    int ret, len, i;
+
+    struct rte_eth_xstat *xstats;
+    struct rte_eth_xstat_name *xstats_names;
+    static const char *stats_border = "_______";
+
+    printf("PORT STATISTICS:\n================\n");
+    len = rte_eth_xstats_get(port_id, NULL, 0);
+    if (len < 0)
+        rte_exit(EXIT_FAILURE,
+                "rte_eth_xstats_get(%u) failed: %d", port_id,
+                len);
+
+    xstats = calloc(len, sizeof(*xstats));
+    if (xstats == NULL)
+        rte_exit(EXIT_FAILURE,
+                "Failed to calloc memory for xstats");
+
+    ret = rte_eth_xstats_get(port_id, xstats, len);
+    if (ret < 0 || ret > len) {
+        free(xstats);
+        rte_exit(EXIT_FAILURE,
+                "rte_eth_xstats_get(%u) len%i failed: %d",
+                port_id, len, ret);
+    }
+
+    xstats_names = calloc(len, sizeof(*xstats_names));
+    if (xstats_names == NULL) {
+        free(xstats);
+        rte_exit(EXIT_FAILURE,
+                "Failed to calloc memory for xstats_names");
+    }
+
+    ret = rte_eth_xstats_get_names(port_id, xstats_names, len);
+    if (ret < 0 || ret > len) {
+        free(xstats);
+        free(xstats_names);
+        rte_exit(EXIT_FAILURE,
+                "rte_eth_xstats_get_names(%u) len%i failed: %d",
+                port_id, len, ret);
+    }
+
+    for (i = 0; i < len; i++) {
+        if (xstats[i].value > 0)
+			printf("Port %u: %s %s:\t\t%"PRIu64"\n",
+				port_id, stats_border,
+				xstats_names[i].name,
+				xstats[i].value);
+    }
+}
 /*----------------------------------------------------------------------------*/
 void
 dpdk_init_handle(struct mtcp_thread_context *ctxt)
@@ -326,30 +406,13 @@ dpdk_get_wptr(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, uint1
 	struct rte_mbuf *m;
 	uint8_t *ptr;
 	int len_of_mbuf;
-	int send_cnt;
 
 	dpc = (struct dpdk_private_context *) ctxt->io_private_context;
 	mtcp = ctxt->mtcp_manager;
 	
 	/* sanity check */
-	if (unlikely(dpc->wmbufs[nif].len == MAX_PKT_BURST)) {
-		// return NULL;
-		fprintf(stdout, "burst pkt exceeded!\n");
-		while(1) {
-			send_cnt = dpdk_send_pkts(ctxt, nif);
-			if (likely(send_cnt))
-				break;
-		}
-		dpc->wmbufs[nif].len = 0;
-		dpc->wmbufs[nif].m_table[0] =
-			rte_pktmbuf_alloc(pktmbuf_pool[cpu_qid_map[nif][ctxt->cpu]]);
-		if (unlikely(dpc->wmbufs[nif].m_table[0] == NULL)) {
-			fprintf(stderr, "[CPU %d] Failed to allocate wmbuf_relay on port %d\n",
-						cpu_qid_map[nif][ctxt->cpu], nif);
-			exit(EXIT_FAILURE);
-			return NULL;
-		}
-	}
+	if (unlikely(dpc->wmbufs[nif].len == MAX_PKT_BURST))
+		return NULL;
 	len_of_mbuf = dpc->wmbufs[nif].len;
 	m = dpc->wmbufs[nif].m_table[len_of_mbuf];
 	/* retrieve the right write offset */
@@ -388,20 +451,11 @@ dpdk_get_wptr_tso(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, u
 	/* sanity check */
 	if (unlikely(dpc->wmbufs[nif].len == MAX_PKT_BURST)) {
 		// return NULL;
-		fprintf(stdout, "burst pkt exceeded!\n");
+		// fprintf(stdout, "burst pkt exceeded!\n");
 		while(1) {
 			send_cnt = dpdk_send_pkts(ctxt, nif);
 			if (likely(send_cnt))
 				break;
-		}
-		dpc->wmbufs[nif].len = 0;
-		dpc->wmbufs[nif].m_table[0] =
-			rte_pktmbuf_alloc(pktmbuf_pool[cpu_qid_map[nif][ctxt->cpu]]);
-		if (unlikely(dpc->wmbufs[nif].m_table[0] == NULL)) {
-			fprintf(stderr, "[CPU %d] Failed to allocate wmbuf_relay on port %d\n",
-						cpu_qid_map[nif][ctxt->cpu], nif);
-			exit(EXIT_FAILURE);
-			return NULL;
 		}
 	}
 	len_of_mbuf = dpc->wmbufs[nif].len;
@@ -459,26 +513,6 @@ dpdk_set_wptr(struct mtcp_thread_context *ctxt, int out_nif, int in_nif, int ind
 	mtcp = ctxt->mtcp_manager;
 	
 	/* sanity check */
-	// int send_cnt;
-	// if (unlikely(dpc->wmbufs[out_nif].len == MAX_PKT_BURST)) {
-	// 	// return;
-	// 	fprintf(stdout, "burst pkt exceeded!\n");
-	// 	while(1) {
-	// 		send_cnt = dpdk_send_pkts(ctxt, out_nif);
-	// 		if (likely(send_cnt))
-	// 			break;
-	// 	}
-	// 	dpc->wmbufs[out_nif].len = 0;
-	// 	dpc->wmbufs[out_nif].m_table[0] =
-	// 		rte_pktmbuf_alloc(pktmbuf_pool[cpu_qid_map[out_nif][ctxt->cpu]]);
-	// 	if (unlikely(dpc->wmbufs[out_nif].m_table[0] == NULL)) {
-	// 		fprintf(stderr, "[CPU %d] Failed to allocate wmbuf_relay on port %d\n",
-	// 					cpu_qid_map[out_nif][ctxt->cpu], out_nif);
-	// 		exit(EXIT_FAILURE);
-	// 		return;
-	// 	}
-	// }
-	/* sanity check */
 	if (unlikely(dpc->wmbufs[out_nif].len == MAX_PKT_BURST))
 		return;
 
@@ -504,12 +538,11 @@ free_pkts(struct rte_mbuf **mtable, unsigned len)
 	int i;
 	
 	/* free the freaking packets */
-	for (i = 0; i < len; i++) {
+	for (i = 0; i < len; i++)
 		if (mtable[i]->udata64 == 1) {
 			rte_pktmbuf_free_seg(mtable[i]);
 			RTE_MBUF_PREFETCH_TO_FREE(mtable[i+1]);
 		}
-	}
 }
 /*----------------------------------------------------------------------------*/
 int32_t
@@ -531,14 +564,21 @@ dpdk_recv_pkts(struct mtcp_thread_context *ctxt, int ifidx)
 		dpc->rmbufs[ifidx].len = 0;
 	}
 	
+	/* rx from data mbuf */
 	ret = rte_eth_rx_burst((uint8_t)ifidx, qid,
-			       dpc->pkts_burst, MAX_PKT_BURST);
+							dpc->pkts_burst, MAX_PKT_BURST);
+#if KEY_MAPPING
+	/* rx from key mbuf */
+	int ret_key = (ifidx == 0) ?
+		rte_eth_rx_burst((uint8_t)ifidx, qid + g_config.mos->num_cores,
+			    		dpc->pkts_burst + ret, 2 * MAX_PKT_BURST - ret) : 0;
+	ret += ret_key;
+#endif
 #ifdef RX_IDLE_ENABLE
 	dpc->rx_idle = (likely(ret != 0)) ? 0 : dpc->rx_idle + 1;
 #endif
 	dpc->rmbufs[ifidx].len = ret;
-	
-	// if (ret > 0) printf("\nrecv_cnt: %d\n", ret);
+
 	return ret;
 }
 /*----------------------------------------------------------------------------*/
@@ -558,13 +598,11 @@ dpdk_get_rptr(struct mtcp_thread_context *ctxt, int ifidx, int index, uint16_t *
 	/* don't enable pre-fetching... performance goes down */
 	//rte_prefetch0(rte_pktmbuf_mtod(m, void *));
 	pktbuf = rte_pktmbuf_mtod(m, uint8_t *);
-	*len = (*(pktbuf + ETH_HLEN + 2) << 8) + *(pktbuf + ETH_HLEN + 3) + ETH_HLEN;
+	*len = ETH_HLEN + htons(*(uint16_t *)(pktbuf + ETH_HLEN + 2));
 
 	/* enqueue the pkt ptr in mbuf */
 	dpc->rmbufs[ifidx].m_table[index] = m;
 
-	// fprintf(stdout, "ethlen: %u\n",
-	// 	(*(pktbuf + ETH_HLEN + 2) << 8) + *(pktbuf + ETH_HLEN + 3));
 	return pktbuf;
 }
 /*----------------------------------------------------------------------------*/
@@ -749,25 +787,80 @@ dpdk_dev_ioctl(struct mtcp_thread_context *ctx, int nif, int cmd, void *argp)
 /*----------------------------------------------------------------------------*/
 #if LEADER_ISOLATION
 void
-udp_flow_configure(uint16_t portid, uint16_t udp_q)
+data_flow_configure(uint16_t portid, uint16_t numq)
 {
-	printf("[port %u] Configuring UDP flow to queue %u\n",
-		   (unsigned) portid, (unsigned)udp_q);
+	printf("[port %u] Configuring TCP flow RSS among queues\n",
+		   (unsigned) portid);
+	uint16_t rss_queues[MAX_CPUS];
+	struct rte_flow_attr attr = {
+		.group = 0,
+		.priority = 2,
+    	.ingress = 1,
+	};
+	struct rte_flow_item_ipv4 ipv4_spec = {
+    	.hdr.next_proto_id = IPPROTO_TCP,
+	};
+	static const struct rte_flow_item_ipv4 ipv4_mask = {
+    	.hdr.next_proto_id = 0xff,
+	};
+	struct rte_flow_item patterns[2] = {
+		{
+			.type = RTE_FLOW_ITEM_TYPE_IPV4,
+			.spec = &ipv4_spec,
+			.mask = &ipv4_mask,
+		},
+	};
+    struct rte_flow_action_rss action = {
+		.types = ETH_RSS_TCP | ETH_RSS_UDP | ETH_RSS_IP,
+		.key_len = sizeof(g_key),
+		.queue_num = numq - 1,
+		.key = g_key,
+		.queue = rss_queues,
+	};
+	struct rte_flow_action actions[] = {
+    	{ .type = RTE_FLOW_ACTION_TYPE_VOID },
+    	{ .type = RTE_FLOW_ACTION_TYPE_END  },
+	};
+	struct rte_flow_error err;
+	
+	for (uint16_t i = 0; i < numq - 1; i++) {
+		/* queue 0 --> core 1, queue 1 --> core 2, and so on */
+		rss_queues[i] = i + 1;
+		printf("rss_queues[%d]: %d\n", i, i + 1);
+	}
+
+	/* Do RSS over N queues using the default RSS key */
+	actions[0] = (struct rte_flow_action) {
+		.type = RTE_FLOW_ACTION_TYPE_RSS,
+		.conf = &action,
+	};
+
+	if (!rte_flow_create(portid, &attr, patterns, actions, &err))
+    	rte_exit(EXIT_FAILURE,
+        	"rss flow create failed: %s\n error type %u %s\n",
+        	rte_strerror(rte_errno), err.type, err.message);
+}
+/*----------------------------------------------------------------------------*/
+void
+key_flow_configure(uint16_t portid, uint16_t numq)
+{
+	printf("[port %u] Configuring key flow\n",
+		   (unsigned) portid);
 	struct rte_flow_attr attr = {
 		.group = 0,
 		.priority = 1,
     	.ingress = 1,
 	};
-	static const struct rte_flow_item_ipv4 ipv4_mask = {
-    	.hdr.next_proto_id = 0xff,
+	struct rte_flow_item_ipv4 ipv4_spec = {
+		.hdr.type_of_service = 0xff,
 	};
-	struct rte_flow_item_ipv4 ipv4_udp = {
-    	.hdr.next_proto_id = IPPROTO_UDP,
+	static const struct rte_flow_item_ipv4 ipv4_mask = {
+		.hdr.type_of_service = 0xff,
 	};
 	struct rte_flow_item patterns[2] = {
 		{
 			.type = RTE_FLOW_ITEM_TYPE_IPV4,
-			.spec = &ipv4_udp,
+			.spec = &ipv4_spec,
 			.mask = &ipv4_mask,
 		},
 	};
@@ -777,8 +870,8 @@ udp_flow_configure(uint16_t portid, uint16_t udp_q)
     	{ .type = RTE_FLOW_ACTION_TYPE_END  },
 	};
 	struct rte_flow_error err;
-	action.index = udp_q;
-	printf("udp_queue: %d", udp_q);
+	action.index = 0;
+	printf("key_queue: %d", 0);
 	actions[0] = (struct rte_flow_action) {
 		.type = RTE_FLOW_ACTION_TYPE_QUEUE,
 		.conf = &action,
@@ -786,58 +879,42 @@ udp_flow_configure(uint16_t portid, uint16_t udp_q)
 
 	if (!rte_flow_create(portid, &attr, patterns, actions, &err))
     	rte_exit(EXIT_FAILURE,
-        	"udp flow create failed: %s\n error type %u %s\n",
+        	"key flow create failed: %s\n error type %u %s\n",
         	rte_strerror(rte_errno), err.type, err.message);
 }
-/*----------------------------------------------------------------------------*/
-void
-rss_flow_configure(uint16_t portid, uint16_t firstq, uint16_t numq)
-{
-	printf("[port %u] Configuring TCP flow RSS among queue %u ~ %u\n",
-		   (unsigned) portid, (unsigned)firstq, (unsigned)(firstq + numq - 1));
-#if RTE_VERSION >= RTE_VERSION_NUM(20, 0, 0, 0)
-    static const uint8_t key[] = {
-         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-         0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05
-    };
-#else
-	static const uint8_t key[] = {
-		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-		0x05, 0x05
-	};
 #endif
-	uint16_t rss_queues[MAX_CPUS];
+/*----------------------------------------------------------------------------*/
+#if KEY_MAPPING
+void
+data_flow_configure(uint16_t portid, uint16_t numq)
+{
+	printf("[port %u] Configuring session data RSS among 0 ~ %d queues\n",
+		   (unsigned) portid, numq - 1);
+	uint16_t tcp_rss_queues[MAX_CPUS];
 	struct rte_flow_attr attr = {
 		.group = 0,
 		.priority = 2,
     	.ingress = 1,
 	};
+	struct rte_flow_item_ipv4 ipv4_spec = {
+    	.hdr.next_proto_id = IPPROTO_TCP,
+	};
 	static const struct rte_flow_item_ipv4 ipv4_mask = {
     	.hdr.next_proto_id = 0xff,
-	};
-	struct rte_flow_item_ipv4 ipv4_tcp = {
-    	.hdr.next_proto_id = IPPROTO_TCP,
 	};
 	struct rte_flow_item patterns[2] = {
 		{
 			.type = RTE_FLOW_ITEM_TYPE_IPV4,
-			.spec = &ipv4_tcp,
+			.spec = &ipv4_spec,
 			.mask = &ipv4_mask,
 		},
 	};
     struct rte_flow_action_rss action = {
 		.types = ETH_RSS_TCP | ETH_RSS_UDP | ETH_RSS_IP,
-		.key_len = sizeof(key),
+		.key_len = sizeof(g_key),
 		.queue_num = numq,
-		.key = key,
-		.queue = rss_queues,
+		.key = g_key,
+		.queue = tcp_rss_queues,
 	};
 	struct rte_flow_action actions[] = {
     	{ .type = RTE_FLOW_ACTION_TYPE_VOID },
@@ -845,9 +922,67 @@ rss_flow_configure(uint16_t portid, uint16_t firstq, uint16_t numq)
 	};
 	struct rte_flow_error err;
 	
+	printf("Session data RSS queues");
 	for (uint16_t i = 0; i < numq; i++) {
-		rss_queues[i] = firstq + i;
-		printf("rss_queues[%d]: %d\n", i, firstq + i);
+		/* queue 0 --> core 0, queue 1 --> core 1, and so on */
+		tcp_rss_queues[i] = i;
+		printf("[queue %d] --> [core %d]\n", i, i);
+	}
+
+	/* Do RSS over N queues using the default RSS key */
+	actions[0] = (struct rte_flow_action) {
+		.type = RTE_FLOW_ACTION_TYPE_RSS,
+		.conf = &action,
+	};
+
+	if (!rte_flow_create(portid, &attr, patterns, actions, &err))
+    	rte_exit(EXIT_FAILURE,
+        	"rss flow create failed: %s\n error type %u %s\n",
+        	rte_strerror(rte_errno), err.type, err.message);
+}
+/*----------------------------------------------------------------------------*/
+void
+key_flow_configure(uint16_t portid, uint16_t numq)
+{
+	printf("[port %u] Configuring session key RSS among %d ~ %d queues\n",
+		   (unsigned) portid, numq, numq * 2 - 1);
+	uint16_t key_rss_queues[MAX_CPUS];
+	struct rte_flow_attr attr = {
+		.group = 0,
+		.priority = 2,
+    	.ingress = 1,
+	};
+	struct rte_flow_item_ipv4 ipv4_spec = {
+		.hdr.type_of_service = 0xff,
+	};
+	static const struct rte_flow_item_ipv4 ipv4_mask = {
+		.hdr.type_of_service = 0xff,
+	};
+	struct rte_flow_item patterns[2] = {
+		{
+			.type = RTE_FLOW_ITEM_TYPE_IPV4,
+			.spec = &ipv4_spec,
+			.mask = &ipv4_mask,
+		},
+	};
+    struct rte_flow_action_rss action = {
+		.types = ETH_RSS_TCP | ETH_RSS_UDP | ETH_RSS_IP,
+		.key_len = sizeof(g_key),
+		.queue_num = numq,
+		.key = g_key,
+		.queue = key_rss_queues,
+	};
+	struct rte_flow_action actions[] = {
+    	{ .type = RTE_FLOW_ACTION_TYPE_VOID },
+    	{ .type = RTE_FLOW_ACTION_TYPE_END  },
+	};
+	struct rte_flow_error err;
+
+	printf("Session key RSS queues\n");
+	for (uint16_t i = 0; i < numq; i++) {
+		/* queue 0 --> core 16, queue 1 --> core 17, and so on */
+		key_rss_queues[i] = i + numq;
+		printf("[queue %d] --> [core %d]\n", i + numq, i);
 	}
 
 	/* Do RSS over N queues using the default RSS key */
@@ -936,52 +1071,44 @@ dpdk_load_module_lower_half(void)
 {
 	int portid, rxlcore_id, ret;
 	struct rte_eth_fc_conf fc_conf;	/* for Ethernet flow control settings */
-	/* setting the rss key */
-#if RTE_VERSION >= RTE_VERSION_NUM(20, 0, 0, 0)
-    static const uint8_t key[] = {
-        0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05
-    };
-	// static const uint8_t key[] = {
-    //     0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
-    //     0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
-    //     0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
-    //     0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
-    // };
-#else
-	static const uint8_t key[] = {
-		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-		0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05,
-		0x05, 0x05
-	};
-#endif
 
-	port_conf.rx_adv_conf.rss_conf.rss_key = (uint8_t *)key;
-	port_conf.rx_adv_conf.rss_conf.rss_key_len = sizeof(key);
+	/* setting the rss key */
+	port_conf.rx_adv_conf.rss_conf.rss_key = (uint8_t *)g_key;
+	port_conf.rx_adv_conf.rss_conf.rss_key_len = sizeof(g_key);
 
 	/* resetting cpu_qid mapping */
 	memset(cpu_qid_map, 0xFF, sizeof(cpu_qid_map));
 
 	if (!g_config.mos->multiprocess
 			|| (g_config.mos->multiprocess && g_config.mos->multiprocess_is_master)) {
+		/* we use two mbuf for one core, respectively data mbuf, key mbuf */
 		for (rxlcore_id = 0; rxlcore_id < g_config.mos->num_cores; rxlcore_id++) {
 			char name[20];
-			sprintf(name, "mbuf_pool-%d", rxlcore_id);
-			/* create the mbuf pools */
-			pktmbuf_pool[rxlcore_id] =
+			/* create the mbuf pools for tx/rx of session data packets */
+			sprintf(name, "mbuf_pool-%d-data", rxlcore_id);
+			if (!(pktmbuf_pool[rxlcore_id] =
 				rte_mempool_create(name, NB_MBUF,
 						   MBUF_SIZE, MEMPOOL_CACHE_SIZE,
 						   sizeof(struct rte_pktmbuf_pool_private),
 						   rte_pktmbuf_pool_init, NULL,
 						   rte_pktmbuf_init, NULL,
-						   rte_lcore_to_socket_id(rxlcore_id), 0);
-			if (pktmbuf_pool[rxlcore_id] == NULL)
-				rte_exit(EXIT_FAILURE, "Cannot init mbuf pool\n");	
+						   rte_lcore_to_socket_id(rxlcore_id), 0)))
+				rte_exit(EXIT_FAILURE,
+						"Cannot init data mbuf pool in rxlcore_id: %d\n", rxlcore_id);
+
+#if KEY_MAPPING
+			/* create the mbuf pools for rx of session key packet */
+			sprintf(name, "mbuf_pool-%d-key", rxlcore_id);
+			if (!(pktmbuf_pool[rxlcore_id + g_config.mos->num_cores] =
+				rte_mempool_create(name, NB_MBUF,
+						   MBUF_SIZE, MEMPOOL_CACHE_SIZE,
+						   sizeof(struct rte_pktmbuf_pool_private),
+						   rte_pktmbuf_pool_init, NULL,
+						   rte_pktmbuf_init, NULL,
+						   rte_lcore_to_socket_id(rxlcore_id), 0)))
+				rte_exit(EXIT_FAILURE,
+						"Cannot init key mbuf pool in rxlcore_id: %d\n", rxlcore_id);
+#endif
 		}
 
 		/* Initialize each port */
@@ -1003,20 +1130,24 @@ dpdk_load_module_lower_half(void)
 			/* re-adjust rss_hf */
 			port_conf.rx_adv_conf.rss_conf.rss_hf &= dev_info[portid].flow_type_rss_offloads;
 #endif
+			assert(num_queue == g_config.mos->num_cores);
 			/* set 'num_queues' (used for GetRSSCPUCore() in util.c) */
 			num_queues = num_queue;
 			
 			/* init port */
 			printf("[port %u] Initializing port... ", (unsigned) portid);
 			fflush(stdout);
-			ret = rte_eth_dev_configure(portid, num_queue, num_queue,
-										&port_conf);
-			if (ret < 0)
+			if ((ret = rte_eth_dev_configure(portid,
+										/* rx queue num */
+										(KEY_MAPPING && (portid == 0)) ? (num_queue * 2) : num_queue,
+										/* tx queue num */
+										num_queue,
+										&port_conf)) < 0)
 				rte_exit(EXIT_FAILURE, "Cannot configure device:"
 									   "err=%d, port=%u\n",
 									   ret, (unsigned) portid);
 
-			/* init one RX queue per CPU */
+			/* init two RX queue per CPU */
 			fflush(stdout);
 #ifdef DEBUG
 			rte_eth_macaddr_get(portid, &ports_eth_addr[portid]);
@@ -1025,37 +1156,43 @@ dpdk_load_module_lower_half(void)
 			for (rxlcore_id = 0; rxlcore_id < g_config.mos->num_cores; rxlcore_id++) {
 				if (!(g_config.mos->netdev_table->ent[eth_idx]->cpu_mask & (1L << rxlcore_id)))
 					continue;
-				ret = rte_eth_rx_queue_setup(portid, queue_id, nb_rxd,
-#if USE_CUSTOM_THRESH
-						rte_eth_dev_socket_id(portid), &rx_conf,
-#else
-						rte_eth_dev_socket_id(portid), &dev_info[portid].default_rxconf,
-#endif
-						pktmbuf_pool[rxlcore_id]);
-				if (ret < 0)
-					rte_exit(EXIT_FAILURE, "rte_eth_rx_queue_setup:"
-										   "err=%d, port=%u, queueid: %d\n",
+				
+				/* first RX queue for data */
+				if ((ret = rte_eth_rx_queue_setup(portid, queue_id, nb_rxd,
+						rte_eth_dev_socket_id(portid),
+						(USE_CUSTOM_THRESH) ? &rx_conf : &dev_info[portid].default_rxconf,
+						pktmbuf_pool[rxlcore_id])) < 0)
+					rte_exit(EXIT_FAILURE, "rte_eth_rx_queue_setup: "
+										   "err=%d, port=%u, queue_id for data: %d\n",
 										   ret, (unsigned) portid, rxlcore_id);
-				cpu_qid_map[portid][rxlcore_id] = queue_id++;
+#if KEY_MAPPING
+				if (portid == 0)
+					/* second RX queue for key */
+					if ((ret = rte_eth_rx_queue_setup(portid, queue_id + num_queue, nb_rxd,
+							rte_eth_dev_socket_id(portid),
+							(USE_CUSTOM_THRESH) ? &rx_conf : &dev_info[portid].default_rxconf,
+							pktmbuf_pool[rxlcore_id + num_queue])) < 0)
+						rte_exit(EXIT_FAILURE, "rte_eth_rx_queue_setup: "
+											"err=%d, port=%u, queue_id for key: %d\n",
+											ret, (unsigned) portid, rxlcore_id + num_queue);
+#endif
+
+				cpu_qid_map[portid][rxlcore_id] = queue_id;
+				queue_id++;
 			}
 
-			/* init one TX queue on each port per CPU (this is redundant for
-			 * this app) */
+			/* init one TX queue on each port per CPU */
 			fflush(stdout);
 			queue_id = 0;
 			for (rxlcore_id = 0; rxlcore_id < g_config.mos->num_cores; rxlcore_id++) {
 				if (!(g_config.mos->netdev_table->ent[eth_idx]->cpu_mask & (1L << rxlcore_id)))
 					continue;
-				ret = rte_eth_tx_queue_setup(portid, queue_id++, nb_txd,
-#if USE_CUSTOM_THRESH
-						rte_eth_dev_socket_id(portid), &tx_conf);
-#else
-						rte_eth_dev_socket_id(portid), &dev_info[portid].default_txconf);
-#endif
-				if (ret < 0)
-					rte_exit(EXIT_FAILURE, "rte_eth_tx_queue_setup:"
-										   "err=%d, port=%u, queueid: %d\n",
+				if ((ret = rte_eth_tx_queue_setup(portid, queue_id, nb_txd, rte_eth_dev_socket_id(portid),
+						(USE_CUSTOM_THRESH)?&tx_conf:&dev_info[portid].default_txconf)) < 0)
+					rte_exit(EXIT_FAILURE, "rte_eth_tx_queue_setup: "
+										   "err=%d, port=%u, queue_id: %d\n",
 										   ret, (unsigned) portid, rxlcore_id);
+				queue_id++;
 			}
 
 			/* Start device */
@@ -1067,11 +1204,19 @@ dpdk_load_module_lower_half(void)
 			printf("done: \n");
 			rte_eth_promiscuous_enable(portid);
 #if LEADER_ISOLATION
-			if (g_config.mos->num_cores > 1) {
-				/* steer udp packets to leader core (core id: 0)*/
-				udp_flow_configure(portid, LEADER_CORE_NUM);
-				/* rss tcp packets to follower cores */
-				rss_flow_configure(portid, LEADER_CORE_NUM + 1, g_config.mos->num_cores - 1);
+			if (num_queue > 1) {
+				/* data packets to follower cores (core id: 1 ~ 15) */
+				data_flow_configure(portid, num_queue);
+				/* key packets to leader core (core id: 0) */
+				key_flow_configure(portid, num_queue);
+			}
+#endif
+#if KEY_MAPPING
+			if ((portid == 0) && (num_queue > 0)) {
+				/* data packets to queues with pktmbuf_pool 0 ~ 15 (core id: 0 ~ 15) */
+				data_flow_configure(portid, num_queue);
+				/* key packets to queues with pktmbuf_pool 16 ~ 31 (core id: 0 ~ 15) */
+				key_flow_configure(portid, num_queue);
 			}
 #endif
 

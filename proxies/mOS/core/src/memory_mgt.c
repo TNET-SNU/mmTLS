@@ -103,7 +103,7 @@ MPCreate(int chunk_size, size_t total_size, int is_hugepage)
 	return mp;
 }
 /*----------------------------------------------------------------------------*/
-	void *
+void *
 MPAllocateChunk(mem_pool_t mp)
 {
 

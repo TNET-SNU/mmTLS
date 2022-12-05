@@ -10,7 +10,7 @@
 #define MAX_BUF_LEN 16800 /* > 16K */ // this one is better
 #define MAX_BUF_LEN_SVR 1024 /* 1K */
 #define MAX_RECORD_LEN 16385 /* 16K + 1 */
-#define MAX_RAW_PKT_NUM 10
+#define MAX_RAW_PKT_NUM 20
 
 #define TLS_HANDSHAKE_HEADER_LEN 4
 #define TLS_RECORD_TYPE_LEN      1
@@ -140,8 +140,8 @@ typedef struct conn_info
 	pkt_vec ci_raw_pkt[MAX_RAW_PKT_NUM]; /* raw packet buffer */
 	uint32_t ci_raw_len;
 	uint8_t ci_raw_cnt;
-	clock_t ci_clock_est;
-	clock_t ci_clock_key;
+	clock_t ci_clock_stall;
+	clock_t ci_clock_resend;
 	clock_t ci_key_delay;
 } conn_info;
 
