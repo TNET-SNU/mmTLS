@@ -268,7 +268,7 @@ uint16_t mmtls_get_version(mmtls_t mmctx, int cid, int side);
 /*---------------------------------------------------------------------------*/
 uint16_t mmtls_get_cipher(mmtls_t mmctx, int cid, int side);
 /*---------------------------------------------------------------------------*/
-void mmtls_set_monopt(mmtls_t mmctx, int cid, int side, int optval);
+int mmtls_set_monopt(mmtls_t mmctx, int cid, int side, int optval);
 /*---------------------------------------------------------------------------*/
 
 #endif /* __TLS_H__ */

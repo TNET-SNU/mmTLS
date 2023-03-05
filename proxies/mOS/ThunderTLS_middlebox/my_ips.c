@@ -62,7 +62,8 @@ cb_new_record(int cpu, int cid, int side)
 	int len;
 	// if (side != MOS_SIDE_CLI) 
 	// 	return;
-	len = mmtls_getrecord(g_mmtls[cpu], cid, side, plaintext);
+	len = mmtls_get_record(g_mmtls[cpu], cid, side, plaintext);
+    (void)len;
 	// c = mtcp_get_uctx(g_mctx[cpu], cid);
 	// if (fwrite((const void *)plaintext, 1, len, c->ci_tls_ctx[side].tc_fp) == -1)
 	// 	EXIT_WITH_ERROR("fwrite failed");
@@ -117,11 +118,12 @@ int main(int argc, char **argv)
 			EXIT_WITH_ERROR("mmtls_register_callback failed");
 		if (mmtls_register_callback(g_mmtls[i], ON_NEW_TLS_RECORD, cb_new_record))
 			EXIT_WITH_ERROR("mmtls_register_callback failed");
-		if (mmtls_register_callback(g_mmtls[i], ON_MALICIOUS, cb_new_record))
+		if (mmtls_register_callback(g_mmtls[i], ON_MALICIOUS, cb_malicious))
 			EXIT_WITH_ERROR("mmtls_register_callback failed");
 		(void)cb_session_start;
 		(void)cb_session_end;
 		(void)cb_new_record;
+		(void)cb_malicious;
 		INFO_PRINT("[core %d] callback attached", i);
 	}
 

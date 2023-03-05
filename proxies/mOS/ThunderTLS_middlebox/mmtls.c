@@ -766,10 +766,12 @@ process_data(mctx_t mctx, int sock, int side, conn_info *c, tls_buffer *tb)
 										ctx->tc_key_info,
 										ctx->tc_tls_seq,
 										parse_len);
-			if (c->ci_mon_state == STOP_MON)
+			else if (c->ci_mon_state == STOP_MON)
 				/* 2. use below when decrypt off */
 				decrypt_len = (parse_len > EVP_GCM_TLS_TAG_LEN + 1)?
 							  (parse_len - EVP_GCM_TLS_TAG_LEN - 1):0;
+			else
+				decrypt_len = 0;
 			ctx->tc_tls_seq++;
 			if (decrypt_len < 0)
 				return decrypt_len;
@@ -1282,11 +1284,12 @@ uint16_t mmtls_get_cipher(mmtls_t mmctx, int cid, int side)
 	return c->ci_cipher_suite;
 }
 /*---------------------------------------------------------------------------*/
-void mmtls_set_monopt(mmtls_t mmctx, int cid, int side, int opt)
+int mmtls_set_monopt(mmtls_t mmctx, int cid, int side, int opt)
 {
 	conn_info *c;
 	if (!(c = mtcp_get_uctx(g_mctx[mmctx->cpu], cid)))
-		return 0;
+		return -1;
 	c->ci_mon_state = opt;
+	return 0;
 }
 /*---------------------------------------------------------------------------*/
