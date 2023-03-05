@@ -146,6 +146,7 @@ GetBufInfo(socket_map_t sock, int side, void *optval, socklen_t *len)
 		tbi->tcpbi_last_byte_read = rcvbuf->pile;
 		tbi->tcpbi_next_byte_expected = rcvbuf->pile + tcprb_cflen(rcvbuf);
 		tbi->tcpbi_last_byte_received = (f ? f->tail : rcvbuf->head);
+		tbi->tcpbi_recv_buf_size = rcvbuf->len;
 	} else {
 		errno = ENODATA;
 		goto buf_info_error;
@@ -809,7 +810,7 @@ DestroySingleTCPStream(mtcp_manager_t mtcp, tcp_stream *stream)
 		
 		/* free ring buffers */
 		if (stream->sndvar->sndbuf) {
-			SBFree(mtcp->rbm_snd, stream->sndvar->sndbuf);
+			// SBFree(mtcp->rbm_snd, stream->sndvar->sndbuf);
 			stream->sndvar->sndbuf = NULL;
 		}
 	}

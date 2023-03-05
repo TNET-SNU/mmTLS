@@ -246,6 +246,10 @@ struct tcp_buf_info {
 	 * arrive out of order.
 	 */
 	uint32_t tcpbi_last_byte_received;
+	/**
+	 * 
+	 */
+	uint32_t tcpbi_recv_buf_size;
 };
 
 /** Structure to expose TCP ring buffer's fragment information. */

@@ -85,7 +85,7 @@ ForwardIPPacket(mtcp_manager_t mtcp, struct pkt_ctx *pctx)
 			pctx->p.ethh->h_source[i] = g_config.mos->netdev_table->ent[pctx->out_ifidx]->haddr[i];
 			pctx->p.ethh->h_dest[i] = haddr[i];
 		}
-		mtcp->iom->set_wptr(mtcp->ctx, pctx->out_ifidx, pctx->p.in_ifidx, pctx->batch_index);
+		mtcp->iom->set_wptr(mtcp->ctx, pctx->out_ifidx, pctx->p.in_ifidx, pctx->batch_index, pctx->p.l4len);
 		return;
 	}
 #endif

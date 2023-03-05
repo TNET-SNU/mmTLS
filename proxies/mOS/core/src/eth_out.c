@@ -83,7 +83,6 @@ EthernetOutput(struct mtcp_manager *mtcp, struct pkt_ctx *pctx,
 	}
 	buf = mtcp->iom->get_wptr(mtcp->ctx, nif, iplen + ETHERNET_HEADER_LEN, pctx->p.l4len);
 	if (!buf) {
-		printf("Failed to get available write buffer\n");
 		TRACE_DBG("Failed to get available write buffer\n");
 		return NULL;
 	}

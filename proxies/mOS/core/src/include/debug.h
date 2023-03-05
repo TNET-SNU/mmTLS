@@ -2,7 +2,9 @@
 #define __DEBUG_H_
 
 #ifdef DBGMSG
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #include <sched.h>
 #endif
 #include <errno.h>

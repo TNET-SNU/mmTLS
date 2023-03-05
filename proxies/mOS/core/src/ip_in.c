@@ -70,7 +70,7 @@ ProcessInIPv4Packet(mtcp_manager_t mtcp, struct pkt_ctx *pctx)
 			ForwardIPPacket(mtcp, pctx);
 		}
 		return TRUE;
-	}		
+	}
 	
 	if (ip_fast_csum(iph, iph->ihl)) {
 		ret = ERROR;

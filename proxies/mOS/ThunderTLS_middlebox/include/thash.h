@@ -37,9 +37,9 @@ typedef struct st_hashtable {
 ct_hashtable *ct_create(void);
 void ct_destroy(ct_hashtable *ht);
 
-int ct_insert(ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN], conn_info *c, mem_pool_t pool);
-int ct_remove(ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN], mem_pool_t pool);
-conn_info* ct_search(ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN]);
+int ct_insert(ct_hashtable *ht, uint8_t *crandom, conn_info *c, mem_pool_t pool);
+int ct_remove(ct_hashtable *ht, uint8_t *crandom, mem_pool_t pool);
+conn_info* ct_search(ct_hashtable *ht, uint8_t *crandom);
 
 /* functions for connection info table with socket descriptor */
 st_hashtable *st_create(void);

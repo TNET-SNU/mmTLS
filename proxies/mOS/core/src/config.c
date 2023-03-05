@@ -1131,7 +1131,8 @@ PatchCONFIG(struct config *config)
 
 	num_cpus = GetNumCPUs();
 	value = g_config.mos->cpu_mask;
-	for (count = 0; value != 0; count++, value &= value-1);
+	for (count = 0; value != 0; count++, value &= value-1)
+		;
 		TRACE_ERROR("CPU mask (%016lX) \n",
 					g_config.mos->cpu_mask);
 	if (count > num_cpus) {

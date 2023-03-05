@@ -516,8 +516,8 @@ ProcessACK(mtcp_manager_t mtcp, tcp_stream *cur_stream,
 				perror("ProcessACK: write_lock blocked\n");
 			assert(0);
 		}
-		if (HAS_STREAM_TYPE(cur_stream, MOS_SOCK_STREAM))
-			SBRemove(mtcp->rbm_snd, sndvar->sndbuf, rmlen);
+		// if (HAS_STREAM_TYPE(cur_stream, MOS_SOCK_STREAM))
+		// 	SBRemove(mtcp->rbm_snd, sndvar->sndbuf, rmlen);
 		sndvar->snd_una = ack_seq;
 		snd_wnd_prev = sndvar->snd_wnd;
 		sndvar->snd_wnd = sndvar->sndbuf->size - sndvar->sndbuf->len;
@@ -648,7 +648,7 @@ ProcessTCPPayload(mtcp_manager_t mtcp, tcp_stream *cur_stream,
 			}
 		}
 		/* try writing packet payload to buffer */
-		ret = tcprb_pwrite(rb, pctx->p.payload, pctx->p.payloadlen, off);			
+		ret = tcprb_pwrite(rb, pctx->p.payload, pctx->p.payloadlen, off);
 	}
 	/* TODO: update monitor vars */
 

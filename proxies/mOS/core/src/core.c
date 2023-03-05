@@ -1152,12 +1152,12 @@ InitializeMTCPManager(struct mtcp_thread_context* ctx)
 		return NULL;
 	}
 
-	mtcp->rbm_snd = SBManagerCreate(g_config.mos->wmem_size, g_config.mos->no_ring_buffers, 
-					g_config.mos->max_concurrency);
-	if (!mtcp->rbm_snd) {
-		CTRACE_ERROR("Failed to create send ring buffer.\n");
-		return NULL;
-	}
+	// mtcp->rbm_snd = SBManagerCreate(g_config.mos->wmem_size, g_config.mos->no_ring_buffers, 
+	// 				g_config.mos->max_concurrency);
+	// if (!mtcp->rbm_snd) {
+	// 	CTRACE_ERROR("Failed to create send ring buffer.\n");
+	// 	return NULL;
+	// }
 
 	mtcp->smap = (socket_map_t)calloc(g_config.mos->max_concurrency, sizeof(struct socket_map));
 	if (!mtcp->smap) {

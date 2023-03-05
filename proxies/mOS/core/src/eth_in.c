@@ -35,6 +35,17 @@ ProcessPacket(mtcp_manager_t mtcp, const int ifidx, const int index,
 
 	memset(&pctx, 0, sizeof(pctx));
 
+	/* for debugging */
+#if 0
+	if (((struct iphdr *)(ethh + 1))->protocol == IPPROTO_UDP)
+		printf("\nindex: %d key received\n", index);
+	if (((struct iphdr *)(ethh + 1))->protocol == IPPROTO_ICMP)
+		printf("\nindex: %d ping received\n", index);
+	if (((struct iphdr *)(ethh + 1))->tos == 0xff)
+		printf("\nindex: %d keyff received\n", index);
+	if (((struct iphdr *)(ethh + 1))->protocol == IPPROTO_TCP)
+		printf("\nindex: %d tcp received\n", index);
+#endif
 #ifdef PKTDUMP
 	DumpPacket(mtcp, (char *)pkt_data, len, "IN", ifidx);
 #endif
@@ -56,7 +67,8 @@ ProcessPacket(mtcp_manager_t mtcp, const int ifidx, const int index,
 	if (h_proto == ETH_P_IP) {
 		/* process ipv4 packet */
 		ret = ProcessInIPv4Packet(mtcp, &pctx);
-	} else {
+	}
+	else {
 
 		/* drop the packet if forwarding is off */
 		if (!mtcp->num_msp || !pctx.forward) {

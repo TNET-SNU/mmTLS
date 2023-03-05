@@ -12,7 +12,7 @@
 /* Keep in mind about inc/dec buffer */
 /* FYI, I hate current tcp ring buffer implementation with memmove() */
 
-#define UNITBUFSIZE /*131072*/262144
+#define UNITBUFSIZE /*1024*//*131072*//*262144*/1048576/*1310720*/
 #if UNITBUFSIZE < 2
 #error UNITBUFSIZE cannot be smaller than 2
 #endif
@@ -22,14 +22,6 @@
 #define BUFMGMT_OFF     0
 
 // #define DISABLE_DYN_RESIZE
-
-#if 0
-typedef enum {
-	MOS_OVERLAP_POLICY_FIRST=0,
-	MOS_OVERLAP_POLICY_LAST,
-	MOS_OVERLAP_CNT
-} MOS_OVERLAP_POLICY;
-#endif
 
 enum tcprb_mode {
 	__RB_NO_FRAG = 1,

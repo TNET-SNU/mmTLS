@@ -6,6 +6,7 @@
 
 #include "include/thash.h"
 
+#ifdef LEADER_FOLLOWER
 /* ToDo: remove client random and sock number from conn_info */
 /*---------------------------------------------------------------------------*/
 ct_hashtable *
@@ -28,7 +29,7 @@ ct_destroy(ct_hashtable *ht)
 }
 /*----------------------------------------------------------------------------*/
 static inline ct_element * 
-ct_search_int(ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN])
+ct_search_int(ct_hashtable *ht, uint8_t *crandom)
 {
 	ct_element *walk;
 	ct_hash_bucket_head *head = &ht->ht_table[*(unsigned short *)crandom];
@@ -42,7 +43,7 @@ ct_search_int(ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN])
 }
 /*----------------------------------------------------------------------------*/
 int 
-ct_insert(ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN], conn_info *c, mem_pool_t pool)
+ct_insert(ct_hashtable *ht, uint8_t *crandom, conn_info *c, mem_pool_t pool)
 {
 	ct_element *item;
 
@@ -63,7 +64,7 @@ ct_insert(ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN], conn_inf
 }
 /*----------------------------------------------------------------------------*/
 conn_info *
-ct_search(ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN])
+ct_search(ct_hashtable *ht, uint8_t *crandom)
 {
 	ct_element *item;
 
@@ -74,7 +75,7 @@ ct_search(ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN])
 }
 /*----------------------------------------------------------------------------*/
 int
-ct_remove(ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN], mem_pool_t pool)
+ct_remove(ct_hashtable *ht, uint8_t *crandom, mem_pool_t pool)
 {
 	ct_hash_bucket_head *head;
 	ct_element *item;
@@ -89,6 +90,7 @@ ct_remove(ct_hashtable *ht, uint8_t crandom[TLS_1_3_CLIENT_RANDOM_LEN], mem_pool
 
 	return 1;
 }
+#endif
 /*----------------------------------------------------------------------------*/
 st_hashtable *
 st_create(void)

@@ -244,6 +244,10 @@ struct tcp_buf_info {
 	 * arrive out of order.
 	 */
 	uint32_t tcpbi_last_byte_received;
+	/**
+	 * 
+	 */
+	uint32_t tcpbi_recv_buf_size;
 };
 
 /** Structure to expose TCP ring buffer's fragment information. */
@@ -370,9 +374,9 @@ mtcp_register_callback(mctx_t mctx, int sock, event_t event,
  *
  * (both for packet-level and flow-level) for events in hook_point
  */
-//int
-//mtcp_unregister_callback(mctx_t mctx, int sock, event_t event,
-//		                       int hook_point);
+int
+mtcp_unregister_callback(mctx_t mctx, int sock, event_t event,
+		                       int hook_point);
 
 /** Allocate a child event
  * @param [in] event: event id

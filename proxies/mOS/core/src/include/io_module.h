@@ -67,7 +67,7 @@ typedef struct io_module_func {
 	int32_t   (*link_devices)(struct mtcp_thread_context *ctx);
 	void      (*release_pkt)(struct mtcp_thread_context *ctx, int ifidx, unsigned char *pkt_data, int len);
 	uint8_t * (*get_wptr)(struct mtcp_thread_context *ctx, int ifidx, uint16_t len, uint16_t l4len);
-	void 	  (*set_wptr)(struct mtcp_thread_context *ctx, int out_ifidx, int in_ifidx, int idx);
+	void 	  (*set_wptr)(struct mtcp_thread_context *ctx, int out_ifidx, int in_ifidx, int idx, uint16_t l4len);
 	int32_t   (*send_pkts)(struct mtcp_thread_context *ctx, int nif);
 	uint8_t * (*get_rptr)(struct mtcp_thread_context *ctx, int ifidx, int index, uint16_t *len);
 	int       (*get_nif)(struct ifreq *ifr);
@@ -95,7 +95,7 @@ typedef struct {
 #define DRV_NAME		0x08
 
 /* enable shared RX/TX buffers */
-//#define SHARE_IO_BUFFER
+#define SHARE_IO_BUFFER
 
 #ifdef ENABLE_DPDK
 /* registered dpdk context */

@@ -40,11 +40,12 @@
 #define KEY_MAPPING			1
 #define USE_LRO				1
 #if USE_LRO
-#define MBUF_DATA_SIZE		10000
-#define NB_MBUF				100000
+#define MBUF_DATA_SIZE		9024
+#define NB_MBUF				65535
+#define NB_MBUF_KEY			8191
 #else
 #define MBUF_DATA_SIZE		RTE_ETHER_MAX_LEN
-#define NB_MBUF				10000
+#define NB_MBUF				65535
 #endif
 #define MBUF_SIZE 			(MBUF_DATA_SIZE + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM)
 #define MEMPOOL_CACHE_SIZE		512
@@ -64,8 +65,8 @@
 #define RX_WTHRESH 			4 /**< Default values of RX write-back threshold reg. */
 
 /*
- * These default values are optimized for use with the Intel(R) 82599 10 GbE
- * Controller and the DPDK ixgbe PMD. Consider using other values for other
+ * These default values are optimized for use with the ConnectX-6 2 * 100 GbE
+ * Controller and the DPDK mlx5_core PMD. Consider using other values for other
  * network controllers and/or network drivers.
  */
 #define TX_PTHRESH 			36 /**< Default values of TX prefetch threshold reg. */
@@ -77,10 +78,11 @@
 /*
  * Configurable number of RX/TX ring descriptors
  */
-#define RTE_TEST_RX_DESC_DEFAULT	4096
-#define RTE_TEST_TX_DESC_DEFAULT	4096
+#define RTE_TEST_RX_DESC_DEFAULT	/* 8192 */ 4096 /* 2048 */ /* 1024 */ /* 512 */ /* 256 */
+#define RTE_TEST_TX_DESC_DEFAULT	/* 8192 */ /* 4096 */ /* 2048 */ /* 1024 */ /* 512 */ 256
 
-static uint16_t nb_rxd = RTE_TEST_RX_DESC_DEFAULT;
+static uint16_t nb_rxd_data = RTE_TEST_RX_DESC_DEFAULT;
+static uint16_t nb_rxd_key = RTE_TEST_RX_DESC_DEFAULT / 4;
 static uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT;
 /*----------------------------------------------------------------------------*/
 /* packet memory pools for storing packet bufs */
@@ -96,7 +98,7 @@ static const uint8_t g_key[] = {
     0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
     0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
     0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
-    0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
+    0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A
 };
 #else
 static const uint8_t g_key[] = {
@@ -150,7 +152,8 @@ static struct rte_eth_conf port_conf = {
 	},
 	.rx_adv_conf = {
 		.rss_conf = {
-			.rss_key = NULL,
+			.rss_key = (uint8_t *)g_key,
+			.rss_key_len = sizeof(g_key),
 			.rss_hf = ETH_RSS_TCP | ETH_RSS_UDP |
 					ETH_RSS_IP | ETH_RSS_L2_PAYLOAD
 		},
@@ -203,7 +206,10 @@ struct mbuf_table {
 
 struct dpdk_private_context {
 	struct mbuf_table rmbufs[RTE_MAX_ETHPORTS];
+	/* shares mbufs with rmbufs by default */
 	struct mbuf_table wmbufs[RTE_MAX_ETHPORTS];
+	/* does not share mbufs with rmbufs, is used for sending raw packets */
+	struct mbuf_table wmbufs_raw[RTE_MAX_ETHPORTS];
 	struct rte_mempool *pktmbuf_pool;
 #if KEY_MAPPING
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST * 2];
@@ -309,15 +315,15 @@ dpdk_init_handle(struct mtcp_thread_context *ctxt)
 	for (j = 0; j < g_config.mos->netdev_table->num; j++) {
 		/* Allocate wmbufs for each registered port */
 		for (i = 0; i < MAX_PKT_BURST; i++) {
-			dpc->wmbufs[j].m_table[i] = rte_pktmbuf_alloc(pktmbuf_pool[ctxt->cpu]);
-			if (dpc->wmbufs[j].m_table[i] == NULL) {
+			dpc->wmbufs_raw[j].m_table[i] = rte_pktmbuf_alloc(pktmbuf_pool[ctxt->cpu]);
+			if (dpc->wmbufs_raw[j].m_table[i] == NULL) {
 				TRACE_ERROR("Failed to allocate %d:wmbuf[%d] on device %d!\n",
 					    ctxt->cpu, i, j);
 				exit(EXIT_FAILURE);
 			}
 		}
 		/* set mbufs queue length to 0 to begin with */
-		dpc->wmbufs[j].len = 0;
+		dpc->wmbufs_raw[j].len = 0;
 	}
 
 #ifdef ENABLE_STATS_IOCTL
@@ -347,7 +353,7 @@ dpdk_send_pkts(struct mtcp_thread_context *ctxt, int nif)
 		return 0;
 	
 	/* if there are packets in the queue... flush them out to the wire */
-	if (dpc->wmbufs[nif].len >/*= MAX_PKT_BURST*/ 0) {
+	if (dpc->wmbufs[nif].len > 0) {
 		struct rte_mbuf **pkts;
 #ifdef ENABLE_STATS_IOCTL
 		struct stats_struct ss;
@@ -373,27 +379,59 @@ dpdk_send_pkts(struct mtcp_thread_context *ctxt, int nif)
 #endif
 		do {
 			/* tx cnt # of packets */
-			ret = rte_eth_tx_burst(nif, qid, 
-					       pkts, cnt);
+			ret = rte_eth_tx_burst(nif, qid, pkts, cnt);
 			pkts += ret;
 			cnt -= ret;
 			/* if not all pkts were sent... then repeat the cycle */
 		} while (cnt > 0);
-#ifndef SHARE_IO_BUFFER
+		/* reset the len of mbufs var after flushing of packets */
+		dpc->wmbufs[nif].len = 0;
+	}
+	/* if there are packets in the queue... flush them out to the wire */
+	if (dpc->wmbufs_raw[nif].len > 0) {
+		struct rte_mbuf **pkts;
+#ifdef ENABLE_STATS_IOCTL
+		struct stats_struct ss;
+#endif /* !ENABLE_STATS_IOCTL */
+		int cnt = dpc->wmbufs_raw[nif].len;
+		pkts = dpc->wmbufs_raw[nif].m_table;
+#ifdef NETSTAT
+		mtcp->nstat.tx_packets[nif] += cnt;
+#ifdef ENABLE_STATS_IOCTL
+		if (likely(dpc->fd) >= 0) {
+			ss.tx_pkts = mtcp->nstat.tx_packets[nif];
+			ss.tx_bytes = mtcp->nstat.tx_bytes[nif];
+			ss.rx_pkts = mtcp->nstat.rx_packets[nif];
+			ss.rx_bytes = mtcp->nstat.rx_bytes[nif];
+			ss.qid = ctxt->cpu;
+			ss.dev = nif;
+			ioctl(dpc->fd, 0, &ss);
+		}
+#endif /* !ENABLE_STATS_IOCTL */
+#else
+		UNUSED(ss); 
+		UNUSED(mtcp);
+#endif
+		do {
+			/* tx cnt # of packets */
+			ret = rte_eth_tx_burst(nif, qid, pkts, cnt);
+			pkts += ret;
+			cnt -= ret;
+			/* if not all pkts were sent... then repeat the cycle */
+		} while (cnt > 0);
 		int i;
 		/* time to allocate fresh mbufs for the queue */
-		for (i = 0; i < dpc->wmbufs[nif].len; i++) {
-			dpc->wmbufs[nif].m_table[i] = rte_pktmbuf_alloc(pktmbuf_pool[ctxt->cpu]);
+		for (i = 0; i < dpc->wmbufs_raw[nif].len; i++) {
+			dpc->wmbufs_raw[nif].m_table[i] = rte_pktmbuf_alloc(pktmbuf_pool[ctxt->cpu]);
 			/* error checking */
-			if (unlikely(dpc->wmbufs[nif].m_table[i] == NULL)) {
-				TRACE_ERROR("Failed to allocate %d:wmbuf[%d] on device %d!\n",
+			if (unlikely(dpc->wmbufs_raw[nif].m_table[i] == NULL)) {
+				TRACE_ERROR("Failed to allocate %d:wmbuf_raw[%d] on device %d!\n",
 					    ctxt->cpu, i, nif);
 				exit(EXIT_FAILURE);
 			}
 		}
-#endif
 		/* reset the len of mbufs var after flushing of packets */
-		dpc->wmbufs[nif].len = 0;
+		dpc->wmbufs_raw[nif].len = 0;
 	}
 	return ret;
 }
@@ -411,10 +449,10 @@ dpdk_get_wptr(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, uint1
 	mtcp = ctxt->mtcp_manager;
 	
 	/* sanity check */
-	if (unlikely(dpc->wmbufs[nif].len == MAX_PKT_BURST))
+	if (unlikely(dpc->wmbufs_raw[nif].len == MAX_PKT_BURST))
 		return NULL;
-	len_of_mbuf = dpc->wmbufs[nif].len;
-	m = dpc->wmbufs[nif].m_table[len_of_mbuf];
+	len_of_mbuf = dpc->wmbufs_raw[nif].len;
+	m = dpc->wmbufs_raw[nif].m_table[len_of_mbuf];
 	/* retrieve the right write offset */
 #if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
 	ptr = (void *)rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
@@ -430,7 +468,7 @@ dpdk_get_wptr(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, uint1
 #endif
 	
 	/* increment the len_of_mbuf var */
-	dpc->wmbufs[nif].len = len_of_mbuf + 1;
+	dpc->wmbufs_raw[nif].len = len_of_mbuf + 1;
 	
 	return (uint8_t *)ptr;
 }
@@ -449,7 +487,7 @@ dpdk_get_wptr_tso(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, u
 	mtcp = ctxt->mtcp_manager;
 	
 	/* sanity check */
-	if (unlikely(dpc->wmbufs[nif].len == MAX_PKT_BURST)) {
+	if (unlikely(dpc->wmbufs_raw[nif].len == MAX_PKT_BURST)) {
 		// return NULL;
 		// fprintf(stdout, "burst pkt exceeded!\n");
 		while(1) {
@@ -458,8 +496,8 @@ dpdk_get_wptr_tso(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, u
 				break;
 		}
 	}
-	len_of_mbuf = dpc->wmbufs[nif].len;
-	m = dpc->wmbufs[nif].m_table[len_of_mbuf];
+	len_of_mbuf = dpc->wmbufs_raw[nif].len;
+	m = dpc->wmbufs_raw[nif].m_table[len_of_mbuf];
 	/* retrieve the right write offset */
 #if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
 	ptr = (void *)rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
@@ -474,7 +512,7 @@ dpdk_get_wptr_tso(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, u
 	m->l2_len = ETHERNET_HEADER_LEN;
 	m->l3_len = IP_HEADER_LEN;
 	m->l4_len = l4len;
-	m->tso_segsz = RTE_ETHER_MTU - (m->l3_len + m->l4_len);
+	m->tso_segsz = RTE_ETHER_MTU - (IP_HEADER_LEN + l4len);
 
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
 	m->ol_flags = RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM;
@@ -483,7 +521,7 @@ dpdk_get_wptr_tso(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, u
 	} else {
 		m->ol_flags |= RTE_MBUF_F_TX_TCP_CKSUM;
 	}
-#else   
+#else
 	m->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM;
 	if (pktsize > RTE_ETHER_MTU + ETHERNET_HEADER_LEN) {
 		m->ol_flags |= PKT_TX_TCP_SEG;
@@ -497,16 +535,17 @@ dpdk_get_wptr_tso(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, u
 #endif
 	
 	/* increment the len_of_mbuf var */
-	dpc->wmbufs[nif].len = len_of_mbuf + 1;
+	dpc->wmbufs_raw[nif].len = len_of_mbuf + 1;
 	
 	return (uint8_t *)ptr;
 }
 /*----------------------------------------------------------------------------*/
 void
-dpdk_set_wptr(struct mtcp_thread_context *ctxt, int out_nif, int in_nif, int index)
+dpdk_set_wptr(struct mtcp_thread_context *ctxt, int out_nif, int in_nif, int index, uint16_t l4len)
 {
 	struct dpdk_private_context *dpc;
 	mtcp_manager_t mtcp;
+	struct rte_mbuf *m;
 	int len_of_mbuf;
 
 	dpc = (struct dpdk_private_context *) ctxt->io_private_context;
@@ -520,10 +559,64 @@ dpdk_set_wptr(struct mtcp_thread_context *ctxt, int out_nif, int in_nif, int ind
 	dpc->wmbufs[out_nif].m_table[len_of_mbuf] = 
 		dpc->rmbufs[in_nif].m_table[index];
 
-	dpc->wmbufs[out_nif].m_table[len_of_mbuf]->udata64 = 0;
+	m = dpc->wmbufs[out_nif].m_table[len_of_mbuf];
+	m->udata64 = 0;
 	
 #ifdef NETSTAT
-	mtcp->nstat.tx_bytes[out_nif] += dpc->rmbufs[in_nif].m_table[index]->pkt_len + ETHER_OVR;
+	mtcp->nstat.tx_bytes[out_nif] += m->pkt_len + ETHER_OVR;
+#endif
+	
+	/* increment the len_of_mbuf var */
+	dpc->wmbufs[out_nif].len = len_of_mbuf + 1;
+	
+	return;
+}
+/*----------------------------------------------------------------------------*/
+void
+dpdk_set_wptr_tso(struct mtcp_thread_context *ctxt, int out_nif, int in_nif, int index, uint16_t l4len)
+{
+	struct dpdk_private_context *dpc;
+	mtcp_manager_t mtcp;
+	struct rte_mbuf *m;
+	int len_of_mbuf;
+
+	dpc = (struct dpdk_private_context *) ctxt->io_private_context;
+	mtcp = ctxt->mtcp_manager;
+	
+	/* sanity check */
+	if (unlikely(dpc->wmbufs[out_nif].len == MAX_PKT_BURST))
+		return;
+
+	len_of_mbuf = dpc->wmbufs[out_nif].len;
+	dpc->wmbufs[out_nif].m_table[len_of_mbuf] = 
+		dpc->rmbufs[in_nif].m_table[index];
+
+	m = dpc->wmbufs[out_nif].m_table[len_of_mbuf];
+	m->udata64 = 0;
+
+	/* enable TSO */
+	m->l2_len = ETHERNET_HEADER_LEN;
+	m->l3_len = IP_HEADER_LEN;
+	m->l4_len = l4len;
+	m->tso_segsz = RTE_ETHER_MTU - (IP_HEADER_LEN + l4len);
+	
+#if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
+	m->ol_flags = RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM;
+	if (m->pkt_len > RTE_ETHER_MTU + ETHERNET_HEADER_LEN) {
+		m->ol_flags |= RTE_MBUF_F_TX_TCP_SEG;
+	} else {
+		m->ol_flags |= RTE_MBUF_F_TX_TCP_CKSUM;
+	}
+#else
+	m->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM;
+	if (m->pkt_len > RTE_ETHER_MTU + ETHERNET_HEADER_LEN) {
+		m->ol_flags |= PKT_TX_TCP_SEG;
+	} else {
+		m->ol_flags |= PKT_TX_TCP_CKSUM;
+	}
+#endif
+#ifdef NETSTAT
+	mtcp->nstat.tx_bytes[out_nif] += m->pkt_len + ETHER_OVR;
 #endif
 	
 	/* increment the len_of_mbuf var */
@@ -565,8 +658,7 @@ dpdk_recv_pkts(struct mtcp_thread_context *ctxt, int ifidx)
 	}
 	
 	/* rx from data mbuf */
-	ret = rte_eth_rx_burst((uint8_t)ifidx, qid,
-							dpc->pkts_burst, MAX_PKT_BURST);
+	ret = rte_eth_rx_burst((uint8_t)ifidx, qid, dpc->pkts_burst, MAX_PKT_BURST);
 #if KEY_MAPPING
 	/* rx from key mbuf */
 	int ret_key = (ifidx == 0) ?
@@ -662,7 +754,7 @@ dpdk_destroy_handle(struct mtcp_thread_context *ctxt)
 
 	/* free wmbufs */
 	for (i = 0; i < g_config.mos->netdev_table->num; i++)
-		free_pkts(dpc->wmbufs[i].m_table, MAX_PKT_BURST);
+		free_pkts(dpc->wmbufs_raw[i].m_table, MAX_PKT_BURST);
 
 #ifdef ENABLE_STATS_IOCTL
 	/* free fd */
@@ -871,7 +963,7 @@ key_flow_configure(uint16_t portid, uint16_t numq)
 	};
 	struct rte_flow_error err;
 	action.index = 0;
-	printf("key_queue: %d", 0);
+	printf("key_queue: 0");
 	actions[0] = (struct rte_flow_action) {
 		.type = RTE_FLOW_ACTION_TYPE_QUEUE,
 		.conf = &action,
@@ -922,7 +1014,7 @@ data_flow_configure(uint16_t portid, uint16_t numq)
 	};
 	struct rte_flow_error err;
 	
-	printf("Session data RSS queues");
+	printf("Session data RSS queues\n");
 	for (uint16_t i = 0; i < numq; i++) {
 		/* queue 0 --> core 0, queue 1 --> core 1, and so on */
 		tcp_rss_queues[i] = i;
@@ -1072,10 +1164,6 @@ dpdk_load_module_lower_half(void)
 	int portid, rxlcore_id, ret;
 	struct rte_eth_fc_conf fc_conf;	/* for Ethernet flow control settings */
 
-	/* setting the rss key */
-	port_conf.rx_adv_conf.rss_conf.rss_key = (uint8_t *)g_key;
-	port_conf.rx_adv_conf.rss_conf.rss_key_len = sizeof(g_key);
-
 	/* resetting cpu_qid mapping */
 	memset(cpu_qid_map, 0xFF, sizeof(cpu_qid_map));
 
@@ -1100,7 +1188,7 @@ dpdk_load_module_lower_half(void)
 			/* create the mbuf pools for rx of session key packet */
 			sprintf(name, "mbuf_pool-%d-key", rxlcore_id);
 			if (!(pktmbuf_pool[rxlcore_id + g_config.mos->num_cores] =
-				rte_mempool_create(name, NB_MBUF,
+				rte_mempool_create(name, NB_MBUF_KEY,
 						   MBUF_SIZE, MEMPOOL_CACHE_SIZE,
 						   sizeof(struct rte_pktmbuf_pool_private),
 						   rte_pktmbuf_pool_init, NULL,
@@ -1113,6 +1201,7 @@ dpdk_load_module_lower_half(void)
 
 		/* Initialize each port */
 		for (portid = 0; portid < g_config.mos->netdev_table->num; portid++) {
+			printf("\nportid: %d/%d\n\n", portid, g_config.mos->netdev_table->num);
 			int num_queue = 0, eth_idx, i, queue_id;
 			for (eth_idx = 0; eth_idx < g_config.mos->netdev_table->num; eth_idx++)
 				if (portid == g_config.mos->netdev_table->ent[eth_idx]->ifindex)
@@ -1158,7 +1247,7 @@ dpdk_load_module_lower_half(void)
 					continue;
 				
 				/* first RX queue for data */
-				if ((ret = rte_eth_rx_queue_setup(portid, queue_id, nb_rxd,
+				if ((ret = rte_eth_rx_queue_setup(portid, queue_id, nb_rxd_data,
 						rte_eth_dev_socket_id(portid),
 						(USE_CUSTOM_THRESH) ? &rx_conf : &dev_info[portid].default_rxconf,
 						pktmbuf_pool[rxlcore_id])) < 0)
@@ -1168,7 +1257,7 @@ dpdk_load_module_lower_half(void)
 #if KEY_MAPPING
 				if (portid == 0)
 					/* second RX queue for key */
-					if ((ret = rte_eth_rx_queue_setup(portid, queue_id + num_queue, nb_rxd,
+					if ((ret = rte_eth_rx_queue_setup(portid, queue_id + num_queue, nb_rxd_key,
 							rte_eth_dev_socket_id(portid),
 							(USE_CUSTOM_THRESH) ? &rx_conf : &dev_info[portid].default_rxconf,
 							pktmbuf_pool[rxlcore_id + num_queue])) < 0)
@@ -1187,8 +1276,9 @@ dpdk_load_module_lower_half(void)
 			for (rxlcore_id = 0; rxlcore_id < g_config.mos->num_cores; rxlcore_id++) {
 				if (!(g_config.mos->netdev_table->ent[eth_idx]->cpu_mask & (1L << rxlcore_id)))
 					continue;
-				if ((ret = rte_eth_tx_queue_setup(portid, queue_id, nb_txd, rte_eth_dev_socket_id(portid),
-						(USE_CUSTOM_THRESH)?&tx_conf:&dev_info[portid].default_txconf)) < 0)
+				if ((ret = rte_eth_tx_queue_setup(portid, queue_id, nb_txd,
+						rte_eth_dev_socket_id(portid),
+						(USE_CUSTOM_THRESH ) ? &tx_conf : &dev_info[portid].default_txconf)) < 0)
 					rte_exit(EXIT_FAILURE, "rte_eth_tx_queue_setup: "
 										   "err=%d, port=%u, queue_id: %d\n",
 										   ret, (unsigned) portid, rxlcore_id);
@@ -1212,7 +1302,7 @@ dpdk_load_module_lower_half(void)
 			}
 #endif
 #if KEY_MAPPING
-			if ((portid == 0) && (num_queue > 0)) {
+			if (portid == 0) {
 				/* data packets to queues with pktmbuf_pool 0 ~ 15 (core id: 0 ~ 15) */
 				data_flow_configure(portid, num_queue);
 				/* key packets to queues with pktmbuf_pool 16 ~ 31 (core id: 0 ~ 15) */
@@ -1273,15 +1363,22 @@ io_module_func dpdk_module_func = {
 	.link_devices		   = NULL,
 	.release_pkt		   = NULL,
 	.send_pkts		   = dpdk_send_pkts,
-	// .get_wptr   		   = dpdk_get_wptr,
+#if USE_LRO
 	.get_wptr   		   = dpdk_get_wptr_tso,
+#else
+	.get_wptr   		   = dpdk_get_wptr,
+#endif
 	.recv_pkts		   = dpdk_recv_pkts,
 	.get_rptr	   	   = dpdk_get_rptr,
 	.get_nif		   = dpdk_get_nif,
 	.select			   = dpdk_select,
 	.destroy_handle		   = dpdk_destroy_handle,
 	.dev_ioctl		   = dpdk_dev_ioctl,
+#if USE_LRO
+	.set_wptr		   = dpdk_set_wptr_tso,
+#else
 	.set_wptr		   = dpdk_set_wptr,
+#endif
 };
 /*----------------------------------------------------------------------------*/
 

@@ -568,10 +568,13 @@ UnregCb(kvs_t *store, stree_t **pstree, event_t ev)
 	uint64_t id = 0, nid;
 	callback_t cb;
 	
-	if (!(stree = *pstree) || !(target = tree_search(stree->root, ev)) ||
-	    !(cb = target->cb))
-		/* Illegal trial of unregistering a callback which is never registered
-		 * before. */
+	/* Illegal trial of unregistering a callback which is never registered
+		* before. */
+	if (!(stree = *pstree))
+		return -1;
+	if (!(target = tree_search(stree->root, ev)))
+		return -1;
+	if (!(cb = target->cb))
 		return -1;
 	
 	id = stree->id;
