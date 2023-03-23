@@ -9,6 +9,7 @@
 #include <signal.h>
 #include <assert.h>
 #include <string.h>
+#include <rte_mbuf.h>
 
 #include "cpu.h"
 #include "eth_in.h"

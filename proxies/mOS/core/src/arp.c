@@ -103,7 +103,7 @@ GetDestinationHWaddr(uint32_t dip)
 			if (g_config.mos->arp_table->ent[i]->ip == dip) {
 				d_haddr = g_config.mos->arp_table->ent[i]->haddr;
 				break;
-			}	
+			}
 		} else {
 			if ((dip & g_config.mos->arp_table->ent[i]->mask) ==
 					g_config.mos->arp_table->ent[i]->masked_ip) {

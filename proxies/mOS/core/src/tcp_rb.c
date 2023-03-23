@@ -179,8 +179,8 @@ buf_try_resize(tcprb_t *rb, int len, loff_t data, int datalen)
 		if (head > tail && headseg == tailseg) {
 			tcpbufseg_t *seg = bufseg_new(rb->mp);
 			assert(seg);
-			memcpy(&seg->buf[head % UNITBUFSIZE],
-				   &headseg->buf[head % UNITBUFSIZE],
+			memcpy(seg->buf + head % UNITBUFSIZE,
+				   headseg->buf + head % UNITBUFSIZE,
 				   UNITBUFSIZE - (head % UNITBUFSIZE));
 			TAILQ_INSERT_AFTER(&rb->bufsegs, tailseg, seg, link);
 			headseg = seg;
@@ -268,8 +268,8 @@ buf_try_resize(tcprb_t *rb, int len, loff_t data, int datalen)
 			if (tobeshrank) {
 				assert(tobeshrank == 1);
 				assert((tail % UNITBUFSIZE) < (head % UNITBUFSIZE));
-				memcpy(&tailseg->buf[head % UNITBUFSIZE],
-						&headseg->buf[head % UNITBUFSIZE],
+				memcpy(tailseg->buf + head % UNITBUFSIZE,
+						headseg->buf + head % UNITBUFSIZE,
 						UNITBUFSIZE - (head % UNITBUFSIZE));
 				TAILQ_REMOVE(&rb->bufsegs, headseg, link);
 				bufseg_del(rb->mp, headseg);
@@ -296,32 +296,32 @@ buf_read(tcprb_t *rb, uint8_t *buf, int len, loff_t off)
 
 	if (from > to) {
 		off = UNITBUFSIZE - (from % UNITBUFSIZE);
-		memcpy(&buf[0], &bufseg_from->buf[from % UNITBUFSIZE], off);
+		memcpy(buf, bufseg_from->buf + from % UNITBUFSIZE, off);
 		for (bufseg = buf_next(rb, bufseg_from);
 			 bufseg && (bufseg != bufseg_to);
 			 bufseg = buf_next(rb, bufseg)) {
-			memcpy(&buf[off], &bufseg->buf[0], UNITBUFSIZE);
+			memcpy(buf + off, bufseg->buf, UNITBUFSIZE);
 			off += UNITBUFSIZE;
 		}
 		for (bufseg = buf_first(rb);
 			 bufseg && (bufseg != bufseg_to);
 			 bufseg = buf_next(rb, bufseg)) {
-			memcpy(&buf[off], &bufseg->buf[0], UNITBUFSIZE);
+			memcpy(buf + off, bufseg->buf, UNITBUFSIZE);
 			off += UNITBUFSIZE;
 		}
-		memcpy(&buf[off], &bufseg_to->buf[0], to % UNITBUFSIZE);
+		memcpy(buf + off, bufseg_to->buf, to % UNITBUFSIZE);
 	} else if (bufseg_from == bufseg_to) {
-		memcpy(&buf[0], &bufseg_from->buf[from % UNITBUFSIZE], len);
+		memcpy(buf, bufseg_from->buf + from % UNITBUFSIZE, len);
 	} else {
 		off = UNITBUFSIZE - (from % UNITBUFSIZE);
-		memcpy(&buf[0], &bufseg_from->buf[from % UNITBUFSIZE], off);
+		memcpy(buf, bufseg_from->buf + from % UNITBUFSIZE, off);
 		for (bufseg = buf_next(rb, bufseg_from);
 			 bufseg && (bufseg != bufseg_to);
 			 bufseg = buf_next(rb, bufseg)) {
-			memcpy(&buf[off], &bufseg->buf[0], UNITBUFSIZE);
+			memcpy(buf + off, bufseg->buf, UNITBUFSIZE);
 			off += UNITBUFSIZE;
 		}
-		memcpy(&buf[off], &bufseg_to->buf[0], to % UNITBUFSIZE);
+		memcpy(buf + off, bufseg_to->buf, to % UNITBUFSIZE);
 	}
 }
 /*--------------------------------------------------------------------------*/
@@ -338,32 +338,32 @@ buf_write(tcprb_t *rb, uint8_t *buf, int len, loff_t off)
 
 	if (from > to) {
 		off = UNITBUFSIZE - (from % UNITBUFSIZE);
-		memcpy(&bufseg_from->buf[from % UNITBUFSIZE], &buf[0], off);
+		memcpy(bufseg_from->buf + from % UNITBUFSIZE, buf, off);
 		for (bufseg = buf_next(rb, bufseg_from);
 			 bufseg && (bufseg != bufseg_to);
 			 bufseg = buf_next(rb, bufseg)) {
-			memcpy(&bufseg->buf[0], &buf[off], UNITBUFSIZE);
+			memcpy(bufseg->buf, buf + off, UNITBUFSIZE);
 			off += UNITBUFSIZE;
 		}
 		for (bufseg = buf_first(rb);
 			 bufseg && (bufseg != bufseg_to);
 			 bufseg = buf_next(rb, bufseg)) {
-			memcpy(&bufseg->buf[0], &buf[off], UNITBUFSIZE);
+			memcpy(bufseg->buf, buf + off, UNITBUFSIZE);
 			off += UNITBUFSIZE;
 		}
-		memcpy(&bufseg_to->buf[0], &buf[off], to % UNITBUFSIZE);
+		memcpy(bufseg_to->buf, buf + off, to % UNITBUFSIZE);
 	} else if (bufseg_from == bufseg_to) {
-		memcpy(&bufseg_from->buf[from % UNITBUFSIZE], &buf[0], len);
+		memcpy(bufseg_from->buf + from % UNITBUFSIZE, buf, len);
 	} else {
 		off = UNITBUFSIZE - (from % UNITBUFSIZE);
-		memcpy(&bufseg_from->buf[from % UNITBUFSIZE], &buf[0], off);
+		memcpy(bufseg_from->buf + from % UNITBUFSIZE, buf, off);
 		for (bufseg = buf_next(rb, bufseg_from);
 			 bufseg && (bufseg != bufseg_to);
 			 bufseg = buf_next(rb, bufseg)) {
-			memcpy(&bufseg->buf[0], &buf[off], UNITBUFSIZE);
+			memcpy(bufseg->buf, buf + off, UNITBUFSIZE);
 			off += UNITBUFSIZE;
 		}
-		memcpy(&bufseg_to->buf[0], &buf[off], to % UNITBUFSIZE);
+		memcpy(bufseg_to->buf, buf + off, to % UNITBUFSIZE);
 	}
 }
 /* -------------------------------------------------------------------------- */
@@ -787,7 +787,7 @@ tcprb_pwrite(tcprb_t *rb, uint8_t *buf, int len, loff_t off)
 		/* copy data */
 		if ((rb->overlap == MOS_OVERLAP_POLICY_LAST || !skip)
 			&& rb->buf_mgmt)
-			buf_write(rb, &buf[uoff], wrlen, off + uoff);
+			buf_write(rb, buf + uoff, wrlen, off + uoff);
 		uoff += wrlen;
 	}
 

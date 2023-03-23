@@ -29,8 +29,8 @@
 #include <mos_api.h>
 #include "cpu.h"
 #include "include/mmtls.h"
-#include "../util/include/rss.h"
-#include "../core/src/include/memory_mgt.h"
+#include "rss.h"
+#include "memory_mgt.h"
 
 /* Maximum CPU cores */
 #define MAX_CPUS 16
@@ -43,37 +43,13 @@
 #define TCP_HEADER_LEN 20
 #define TLS_HEADER_LEN 5
 
-#define VERBOSE_TCP 1
-#define VERBOSE_TLS 1
-#define VERBOSE_KEY 1
-#define VERBOSE_STALL 0
-#define VERBOSE_DEBUG 0
-
-/* Mode */
-#define IPS 1
-#define IDS (!IPS)
-#define KEY_MAPPING 1
-#define CNT_CONN 1
-#define CNT_KEY 1
-#define CORRECTNESS_CHECK 0
-#define MAX_FILE_NAME_LEN	64
+#define VERBOSE_TCP 0
+#define VERBOSE_TLS 0
+#define VERBOSE_KEY 0
+#define VERBOSE_CRYPTO_DEBUG 0
 /*---------------------------------------------------------------------------*/
-mmtls_cb OnTLSSessionStart = NULL;
-mmtls_cb OnTLSSessionEnd = NULL;
-mmtls_cb OnTLSHandshakeStart = NULL;
-mmtls_cb OnTLSHandshakeEnd = NULL;
-mmtls_cb OnNewTLSRecord = NULL;
-mmtls_cb OnMalicious = NULL;
-/*---------------------------------------------------------------------------*/
-struct debug_cnt {
-	int ins;
-	int del;
-	int shash;
-	int chash;
-	int key;
-	int cr;
-} g_cnt[MAX_CPUS] = {{0}};
-mctx_t g_mctx[MAX_CPUS]; /* mOS context */
+/* mmTLS context manager */
+struct mmtls_manager g_mmtls[MAX_CPUS];
 mem_pool_t g_ci_pool[MAX_CPUS] = {NULL};
 mem_pool_t g_rawpkt_pool[MAX_CPUS] = {NULL};
 mem_pool_t g_cli_cipher_pool[MAX_CPUS] = {NULL};
@@ -84,17 +60,23 @@ EVP_CIPHER_CTX *g_evp_ctx[MAX_CPUS];
 /* OpenSSL context to find IANA standard name */
 SSL_CTX *g_ssl_ctx;
 SSL *g_ssl;
-/* miscellaneous */
-int g_measure_delay = 0;
-FILE *g_delay_fp;
 /*---------------------------------------------------------------------------*/
 /* Signal handler */
 static void
 sigint_handler(int signum)
 {
+	struct mtcp_conf mcfg;
+	/* get the core limit */
+	if (mtcp_getconf(&mcfg) == -1)
+		EXIT_WITH_ERROR("mtcp_getconf() failed\n");
 	/* Terminate the program if any interrupt happens */
-	for (int i = 0; i < MAX_CPUS; i++)
-		mtcp_destroy_context(g_mctx[i]);
+	for (int i = 0; i < mcfg.num_cores; i++)
+		if (mtcp_destroy_context(g_mmtls[i].mctx) == -1)
+			EXIT_WITH_ERROR("mtcp_destroy_context() failed\n");
+		
+	if (mmtls_destroy() == -1)
+		EXIT_WITH_ERROR("mmtls_destroy() failed\n");
+	
 	exit(EXIT_SUCCESS);
 }
 /*---------------------------------------------------------------------------*/
@@ -102,14 +84,12 @@ sigint_handler(int signum)
 static inline void
 hexdump(char *title, uint8_t *buf, size_t len)
 {
-#if VERBOSE_TCP | VERBOSE_TLS | VERBOSE_KEY | VERBOSE_DEBUG | 1
 	if (title)
 		fprintf(stdout, "%s\n", title);
 	for (size_t i = 0; i < len; i++)
 		fprintf(stdout, "%02X%c", buf[i], ((i + 1) % 16 ? ' ' : '\n'));
 		// fprintf(stdout, "%02X", buf[i]);
 	fprintf(stdout, "\n");
-#endif
 }
 /*---------------------------------------------------------------------------*/
 /* Print AAD, TAG, and decrypted plain text */
@@ -118,7 +98,7 @@ print_text(uint8_t *aad, int aad_len,
 		   uint8_t *tag, int tag_len,
 		   uint8_t *plain, int plain_len)
 {
-#if VERBOSE_DEBUG
+#if VERBOSE_CRYPTO_DEBUG
 	INFO_PRINT("\n--------------------------------------------------\n");
 	if (aad)
 		hexdump("[aad]", aad, aad_len);
@@ -127,75 +107,21 @@ print_text(uint8_t *aad, int aad_len,
 	fprintf(stdout, "plaintext_len: 0x%x\n", plain_len);
 	if (cipher)
 		hexdump("[plain text]", plain, plain_len);
-#endif /* !VERBOSE_DEBUG */
-}
-/*---------------------------------------------------------------------------*/
-static inline void
-print_conn_stat(mctx_t mctx, conn_info *c)
-{
-	if (g_measure_delay)
-		fprintf(g_delay_fp, "%lf\n",
-			// (double)c->ci_clock_stall / CLOCKS_PER_SEC,
-			// (double)c->ci_clock_resend / CLOCKS_PER_SEC,
-			(double)c->ci_key_delay / CLOCKS_PER_SEC);
-#if CNT_CONN
-	struct debug_cnt sum = {0,};
-	for (int i = 0; i < MAX_CPUS; i++) {
-		sum.ins += g_cnt[i].ins;
-		sum.del += g_cnt[i].del;
-		sum.key += g_cnt[i].key;
-	}
-	fprintf(stdout,
-			"\n--------------------------------------------------\n"
-			"[CORE: %d]\n"
-			"CLIENT: %lu B\n"
-			"CLIENT peek: %lu B\n"
-			"SERVER: %lu B\n"
-			"SERVER peek: %lu B\n"
-			"Record cnt: %lu\n"
-			"Insert conn cnt: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n"
-			"Total insert conn: %d\n"
-			"Remove conn cnt: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n"
-			"Total remove conn: %d\n"
-			"key cnt: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n"
-			"Total key: %d\n",
-			mctx->cpu,
-			c->ci_tls_ctx[MOS_SIDE_CLI].decrypt_len,
-			c->ci_tls_ctx[MOS_SIDE_CLI].peek_len,
-			c->ci_tls_ctx[MOS_SIDE_SVR].decrypt_len,
-			c->ci_tls_ctx[MOS_SIDE_SVR].peek_len,
-			c->ci_tls_ctx[MOS_SIDE_CLI].tc_tls_seq + 
-			c->ci_tls_ctx[MOS_SIDE_SVR].tc_tls_seq,
-			/* master core: num of keys */
-			g_cnt[0].ins, g_cnt[1].ins, g_cnt[2].ins, g_cnt[3].ins,
-			g_cnt[4].ins, g_cnt[5].ins, g_cnt[6].ins, g_cnt[7].ins,
-			g_cnt[8].ins, g_cnt[9].ins, g_cnt[10].ins, g_cnt[11].ins,
-			g_cnt[12].ins, g_cnt[13].ins, g_cnt[14].ins, g_cnt[15].ins,
-			sum.ins,
-			g_cnt[0].del, g_cnt[1].del, g_cnt[2].del, g_cnt[3].del,
-			g_cnt[4].del, g_cnt[5].del, g_cnt[6].del, g_cnt[7].del,
-			g_cnt[8].del, g_cnt[9].del, g_cnt[10].del, g_cnt[11].del,
-			g_cnt[12].del, g_cnt[13].del, g_cnt[14].del, g_cnt[15].del,
-			sum.del,
-			g_cnt[0].key, g_cnt[1].key, g_cnt[2].key, g_cnt[3].key,
-			g_cnt[4].key, g_cnt[5].key, g_cnt[6].key, g_cnt[7].key,
-			g_cnt[8].key, g_cnt[9].key, g_cnt[10].key, g_cnt[11].key,
-			g_cnt[12].key, g_cnt[13].key, g_cnt[14].key, g_cnt[15].key,
-			sum.key);
-#endif
-	// if (c->ci_tls_ctx[MOS_SIDE_CLI].decrypt_len == 0)
-	// 	EXIT_WITH_ERROR("decrypt_len = 0");
+#endif /* !VERBOSE_CRYPTO_DEBUG */
 }
 /*---------------------------------------------------------------------------*/
 /* Create connection structure for new connection */
 static inline conn_info *
 create_conn_info(mctx_t mctx, int sock)
 {
+	struct mmtls_manager *mmtls = &g_mmtls[mctx->cpu];
+	mmtls_t mmctx = mmtls->mmctx;
+	mmtls_cb cb = mmtls->cb[ON_TLS_SESSION_START];
 	conn_info *c;
 	/* already created */
 	if ((c = mtcp_get_uctx(mctx, sock)))
 		return c;
-	if (!(c = (conn_info *)MPAllocateChunk(g_ci_pool[mctx->cpu])))
+	if (!(c = MPAllocateChunk(g_ci_pool[mctx->cpu])))
 		EXIT_WITH_ERROR("conn info pool alloc failed");
 	/* MPAlloc needs memset */
 	memset(c, 0, sizeof(conn_info));
@@ -207,33 +133,34 @@ create_conn_info(mctx_t mctx, int sock)
 		EXIT_WITH_ERROR("record pool alloc failed");
 	/* Insert the structure to the queue */
 	mtcp_set_uctx(mctx, sock, c);
-	if (OnTLSSessionStart) {
-		OnTLSSessionStart(mctx->cpu, sock, MOS_SIDE_CLI);
-		OnTLSSessionStart(mctx->cpu, sock, MOS_SIDE_SVR);
+	/* handle callback */
+	if (cb) {
+		cb(mmctx, sock, MOS_SIDE_CLI);
+		cb(mmctx, sock, MOS_SIDE_SVR);
 	}
 
-#if CNT_CONN
-	g_cnt[mctx->cpu].ins++;
-#endif
 	return c;
 }
 /*---------------------------------------------------------------------------*/
-/* remove connection structure
- * in IDS, if some ciphers are pending as undecrypted, postpone destroy
- */
+/* remove connection structure */
 static inline void
 remove_conn_info(mctx_t mctx, int sock)
 {
+	struct mmtls_manager *mmtls = &g_mmtls[mctx->cpu];
+	mmtls_t mmctx = mmtls->mmctx;
+	mmtls_cb cb = mmtls->cb[ON_TLS_SESSION_END];
 	conn_info *c;
 	/* already removed */
 	if (!(c = mtcp_get_uctx(mctx, sock)))
 		return;
-#if IDS
-	if (!c->ci_has_key) {
-		c->ci_tls_state = TO_BE_DESTROYED;
-		return;
+	/* handle callback */
+	if (cb) {
+		cb(mmctx, sock, MOS_SIDE_CLI);
+		cb(mmctx, sock, MOS_SIDE_SVR);
 	}
-#endif
+	/* remove the structure from the queue */
+	mtcp_set_uctx(mctx, sock, NULL);
+
 	if (c->ci_tls_ctx[MOS_SIDE_CLI].tc_cipher.buf)
 		MPFreeChunk(g_cli_cipher_pool[mctx->cpu],
 					c->ci_tls_ctx[MOS_SIDE_CLI].tc_cipher.buf);
@@ -241,22 +168,11 @@ remove_conn_info(mctx_t mctx, int sock)
 		MPFreeChunk(g_svr_cipher_pool[mctx->cpu],
 					c->ci_tls_ctx[MOS_SIDE_SVR].tc_cipher.buf);
 	MPFreeChunk(g_ci_pool[mctx->cpu], c);
-
-	if (OnTLSSessionEnd) {
-		OnTLSSessionEnd(mctx->cpu, sock, MOS_SIDE_CLI);
-		OnTLSSessionEnd(mctx->cpu, sock, MOS_SIDE_SVR);
-	}
-
-#if CNT_CONN
-	g_cnt[mctx->cpu].del++;
-#endif
-	print_conn_stat(mctx, c);
 }
 /*---------------------------------------------------------------------------*/
 static inline void
 handle_malicious(mctx_t mctx, int sock, int side, int code)
 {
-	WARNING_PRINT("[core %d] malicious code: %d", mctx->cpu, code);
 	if (mtcp_setlastpkt(mctx, sock, side, 0, NULL, 0, MOS_DROP) == -1)
 		EXIT_WITH_ERROR("mtcp_setlastpkt failed");
 	if (mtcp_reset_conn(mctx, sock) < 0)
@@ -596,24 +512,63 @@ static inline bool
 update_conn_info(mctx_t mctx, int sock, int side, conn_info *c,
 				 uint8_t record_type, int record_len, uint8_t *record)
 {
+	struct mmtls_manager *mmtls = &g_mmtls[mctx->cpu];
+	mmtls_t mmctx = mmtls->mmctx;
+	mmtls_cb cb;
 	const char *IANA_cipher_name;
 	const SSL_CIPHER *ssl_cipher;
 	uint8_t *cipher_suite;
-	uint16_t total_ex_len, ex_type, ex_len, ex_val;
+	uint16_t total_ex_len, ex_type, ex_len, ex_val, sni_len;
 
 	if (record_type == HANDSHAKE) {
 		record += TLS_HEADER_LEN;
 		if (*record == CLIENT_HS) {
 			if ((side != MOS_SIDE_SVR) || (c->ci_tls_state != INITIAL_STATE))
 				return NO_DECRYPT;
+			if ((cb = mmtls->cb[ON_TLS_HANDSHAKE_START])) {
+				cb(mmctx, sock, MOS_SIDE_CLI);
+				cb(mmctx, sock, MOS_SIDE_SVR);
+			}
 
 			c->ci_tls_state = RECV_CH;
 			/* TLS HS header */
 			record += TLS_HANDSHAKE_HEADER_LEN;
-			/* protocol version */
+			/* client protocol version */
 			record += sizeof(uint16_t);
-			if (OnTLSHandshakeStart)
-				OnTLSHandshakeStart(mctx->cpu, sock, side);
+			/* TLS1.3 client random */
+			// memcpy(c->ci_client_random, record, TLS_CLIENT_RANDOM_LEN);
+			record += TLS_CLIENT_RANDOM_LEN;
+			/* pass session id (one byte len field) */
+			record += 1 + *record;
+			/* cipher suite list (two byte len field) */
+			record += 2 + be16toh(*(uint16_t *)record);
+			/* compression method */
+			record += 1 + *record;
+			/* total extension length */
+			total_ex_len = be16toh(*(uint16_t *)record);
+			record += sizeof(uint16_t);
+			/* find protocol extension */
+			while (total_ex_len > 0) {
+				ex_type = be16toh(*(uint16_t *)record);
+				record += sizeof(uint16_t);
+				ex_len = be16toh(*((uint16_t *)record));
+				record += sizeof(uint16_t);
+				/* SNI */
+				if (ex_type == TLSEXT_TYPE_server_name) {
+					// sni_len = be16toh(*((uint16_t *)record));
+					record += sizeof(uint16_t);
+					c->ci_sni_type = *record;
+					record++;
+					sni_len = be16toh(*((uint16_t *)record));
+					record += sizeof(uint16_t);
+					memcpy(c->ci_sni, record, sni_len);
+					break;
+				}
+				else {
+					record += ex_len;
+					total_ex_len -= 2 * sizeof(uint16_t) + ex_len;
+				}
+			}
 
 			return NO_DECRYPT;
 		}
@@ -625,10 +580,11 @@ update_conn_info(mctx_t mctx, int sock, int side, conn_info *c,
 			c->ci_tls_state = RECV_SH;
 			/* TLS HS header */
 			record += TLS_HANDSHAKE_HEADER_LEN;
-			/* protocol version */
+			/* server protocol version */
 			c->ci_tls_version = be16toh(*(uint16_t *)record);
 			record += sizeof(uint16_t);
 			/* TLS1.3 server random */
+			// memcpy(c->ci_server_random, record, TLS_SERVER_RANDOM_LEN);
 			record += TLS_SERVER_RANDOM_LEN;
 			/* pass session id (one byte len field) */
 			record += 1 + *record;
@@ -644,17 +600,20 @@ update_conn_info(mctx_t mctx, int sock, int side, conn_info *c,
 			/* find protocol extension */
 			while (total_ex_len > 0) {
 				ex_type = be16toh(*(uint16_t *)record);
-				ex_len = be16toh(*((uint16_t *)record + 1));
+				record += sizeof(uint16_t);
+				ex_len = be16toh(*((uint16_t *)record));
+				record += sizeof(uint16_t);
+				/* TLS1.3 */
 				if ((ex_type == TLSEXT_TYPE_supported_versions) &&
 					(ex_len == sizeof(uint16_t))) {
-					ex_val = be16toh(*((uint16_t *)record + 2));
+					ex_val = be16toh(*(uint16_t *)record);
 					if (ex_val == TLS_1_3_VERSION) {
 						c->ci_tls_version = TLS_1_3_VERSION;
 						break;
 					}
 				}
 				else {
-					record += 2 * sizeof(uint16_t) + ex_len;
+					record += ex_len;
 					total_ex_len -= 2 * sizeof(uint16_t) + ex_len;
 				}
 			}
@@ -683,8 +642,10 @@ update_conn_info(mctx_t mctx, int sock, int side, conn_info *c,
 
 					c->ci_tls_state = TLS_ESTABLISHED;
 
-					if (OnTLSHandshakeEnd)
-						OnTLSHandshakeEnd(mctx->cpu, sock, side);
+					if ((cb = mmtls->cb[ON_TLS_HANDSHAKE_END])) {
+						cb(mmctx, sock, MOS_SIDE_CLI);
+						cb(mmctx, sock, MOS_SIDE_SVR);
+					}
 				}
 			}
 			/* TLS1.2 */
@@ -700,6 +661,7 @@ update_conn_info(mctx_t mctx, int sock, int side, conn_info *c,
 	return NO_DECRYPT;
 
 Select_cipher:
+	/* ToDo: identify cipher suite by 2B ID, not IANA name */
 	if (!(ssl_cipher = SSL_CIPHER_find(g_ssl, cipher_suite)))
 		EXIT_WITH_ERROR("Not supported cipher suite");
 	if (!(IANA_cipher_name = SSL_CIPHER_standard_name(ssl_cipher)))
@@ -744,6 +706,8 @@ Select_cipher:
 static inline int
 process_data(mctx_t mctx, int sock, int side, conn_info *c, tls_buffer *tb)
 {
+	struct mmtls_manager *mmtls = &g_mmtls[mctx->cpu];
+	mmtls_cb cb;
 	tls_context *ctx = &c->ci_tls_ctx[side];
 	int parse_len; /* TLS header not included */
 	int decrypt_len;
@@ -755,7 +719,7 @@ process_data(mctx_t mctx, int sock, int side, conn_info *c, tls_buffer *tb)
 							 record_type, parse_len, tb->buf + tb->chead)) {
 			if (!c->ci_has_key)
 				return NO_KEY;
-			if (c->ci_mon_state == RUN_MON)
+			if (c->ci_mon_state[side] == DO_DECRYPT)
 				/* 1. use below when decrypt on */
 				decrypt_len = decrypt_tls(g_evp_ctx[mctx->cpu],
 										c->ci_evp_cipher,
@@ -766,20 +730,20 @@ process_data(mctx_t mctx, int sock, int side, conn_info *c, tls_buffer *tb)
 										ctx->tc_key_info,
 										ctx->tc_tls_seq,
 										parse_len);
-			else if (c->ci_mon_state == STOP_MON)
+			else if (c->ci_mon_state[side] == NO_DECRYPT)
 				/* 2. use below when decrypt off */
 				decrypt_len = (parse_len > EVP_GCM_TLS_TAG_LEN + 1)?
 							  (parse_len - EVP_GCM_TLS_TAG_LEN - 1):0;
 			else
-				decrypt_len = 0;
+				EXIT_WITH_ERROR("Not supported monitoring mode");
 			ctx->tc_tls_seq++;
 			if (decrypt_len < 0)
 				return decrypt_len;
 			tb->ptail += decrypt_len;
-			c->ci_tls_ctx[side].decrypt_len += decrypt_len; // for debugging
 			
-			if (OnNewTLSRecord)
-				OnNewTLSRecord(mctx->cpu, sock, side);
+			/* handle callback */
+			if ((cb = mmtls->cb[ON_TLS_NEW_RECORD]) && decrypt_len)
+				cb(mmtls->mmctx, sock, side);
 
 			tb->ptail = 0;
 		}
@@ -829,12 +793,13 @@ copy_lastpkt(mctx_t mctx, int sock, int side, conn_info *c)
 static inline int
 stall_lastpkt(mctx_t mctx, int sock, int side, conn_info *c)
 {
-	if (g_measure_delay && (c->ci_clock_stall == 0))
-		c->ci_clock_stall = clock();
-	if (copy_lastpkt(mctx, sock, side, c) == MISSING_KEY) {
-		WARNING_PRINT("[core %d] key missing", mctx->cpu);
+	struct mmtls_manager *mmtls = &g_mmtls[mctx->cpu];
+	mmtls_t mmctx = mmtls->mmctx;
+	mmtls_cb cb = mmtls->cb[ON_TLS_STALL];
+	if (cb)
+		cb(mmctx, sock, side);
+	if (copy_lastpkt(mctx, sock, side, c) == MISSING_KEY)
 		return MISSING_KEY;
-	}
 	if (mtcp_setlastpkt(mctx, sock, side, 0, NULL, 0, MOS_DROP) == -1)
 		EXIT_WITH_ERROR("drop failed");
 	return 1;
@@ -858,12 +823,6 @@ resend_lastpkts(mctx_t mctx, int sock, conn_info *c)
 		}
 		rp++;
 	}
-#if VERBOSE_STALL
-	fprintf(stdout,
-			"\n--------------------------------------------------\n"
-			"[%s] core: %d, sock: %u\nsent %d stalled pkts\n",
-			__FUNCTION__, mctx->cpu, c->ci_sock, c->ci_raw_cnt);
-#endif
 	assert(c->ci_raw_pkt->data);
 	MPFreeChunk(g_rawpkt_pool[mctx->cpu], c->ci_raw_pkt->data);
 	c->ci_raw_cnt = c->ci_raw_len = 0;
@@ -871,10 +830,20 @@ resend_lastpkts(mctx_t mctx, int sock, conn_info *c)
 /*----------------------------------------------------------------------------*/
 /* Called when received new packet from monitoring stream socket (sock, side) */
 static inline void
-peek_and_process(mctx_t mctx, int sock, int side, conn_info *c)
+mmtls_core(mctx_t mctx, int sock, int side, conn_info *c)
 {
+	struct mmtls_manager *mmtls = &g_mmtls[mctx->cpu];
+	mmtls_cb cb = mmtls->cb[ON_TLS_ABNORMAL];
 	tls_buffer *tb;
 	int len, ret;
+	if ((!c->ci_has_key) && (c->ci_tls_state == TLS_ESTABLISHED)) {
+		ret = stall_lastpkt(mctx, sock, side, c);
+		if (ret == MISSING_KEY) {
+			/* client did not send keys */
+			side = MOS_SIDE_SVR;
+			goto Abnormal;
+		}
+	}
 	while (true) {
 		tb = &c->ci_tls_ctx[side].tc_cipher;
 		if ((len = mtcp_peek(mctx, sock, side, (char *)tb->buf + tb->ctail,
@@ -882,26 +851,17 @@ peek_and_process(mctx_t mctx, int sock, int side, conn_info *c)
 			return;
 		}
 		tb->ctail += len;
-		c->ci_tls_ctx[side].peek_len += len; /* for debugging */
-		if ((ret = process_data(mctx, sock, side, c, tb)) < 0) {
-			if (OnMalicious) {
-				c->ci_err_code = ret;
-				OnMalicious(mctx->cpu, sock, side);
+		// c->ci_tls_ctx[side].peek_len += len; /* for debugging */
+		if ((ret = process_data(mctx, sock, side, c, tb)) < 0)
+			goto Abnormal;
+		if (ret == NO_KEY) {
+			ret = stall_lastpkt(mctx, sock, side, c);
+			if (ret == MISSING_KEY) {
+				/* client did not send keys */
+				side = MOS_SIDE_SVR;
+				goto Abnormal;
 			}
-			else
-				handle_malicious(mctx, sock, side, ret);
-			return;
 		}
-		if (ret == NO_KEY)
-			if (stall_lastpkt(mctx, sock, side, c) == MISSING_KEY) {
-				if (OnMalicious) {
-					c->ci_err_code = MISSING_KEY;
-					OnMalicious(mctx->cpu, sock, side);
-				}
-				else
-					handle_malicious(mctx, sock, side, MISSING_KEY);
-				return;
-			}
 		/* if cipher is full, move buffer to left by head offset and re-peek */
 		if (tb->ctail == MAX_BUF_LEN) {
 			// printf("cipher full\n");
@@ -915,6 +875,14 @@ peek_and_process(mctx_t mctx, int sock, int side, conn_info *c)
 #if VERBOSE_TCP
 	hexdump(NULL, tb->buf + tb->chead, len);
 #endif
+	return;
+Abnormal:
+	/* handle callback */
+	c->ci_err_code = ret;
+	if (cb)
+		cb(mmtls->mmctx, sock, side);
+	else
+		handle_malicious(mctx, sock, side, ret);
 }
 /*----------------------------------------------------------------------------*/
 /* Called when received new packet from monitoring stream socket (sock, side) */
@@ -925,27 +893,7 @@ cb_pkt_in(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 	if (!(c = mtcp_get_uctx(mctx, sock)))
 		/* retransmitted packet in removed conn */
 		return;
-	if ((!c->ci_has_key) && (c->ci_tls_state == TLS_ESTABLISHED))
-		if (stall_lastpkt(mctx, sock, side, c) == MISSING_KEY) {
-			if (OnMalicious) {
-				c->ci_err_code = MISSING_KEY;
-				OnMalicious(mctx->cpu, sock, side);
-			}
-			handle_malicious(mctx, sock, side, MISSING_KEY);
-			return;
-		}
-	peek_and_process(mctx, sock, side, c);
-}
-/*----------------------------------------------------------------------------*/
-/* Called when received new packet from monitoring stream socket (sock, side) */
-static void
-cb_conn_on_new_data(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
-{
-	conn_info *c;
-	if (!(c = mtcp_get_uctx(mctx, sock)))
-		/* retransmitted packet in removed conn */
-		return;
-	peek_and_process(mctx, sock, side, c);
+	mmtls_core(mctx, sock, side, c);
 }
 /*----------------------------------------------------------------------------*/
 /* Destroy connection structure */
@@ -991,7 +939,7 @@ cb_buf_full(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 		}
 	}
 
-	peek_and_process(mctx, sock, side, c);
+	mmtls_core(mctx, sock, side, c);
 }
 /*----------------------------------------------------------------------------*/
 /* Create connection structure */
@@ -1005,6 +953,12 @@ cb_conn_start(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *ar
 static void
 cb_new_key(mctx_t mctx, int rsock, int side, uint64_t events, filter_arg_t *arg)
 {
+	struct mmtls_manager *mmtls = &g_mmtls[mctx->cpu];
+	mmtls_t mmctx = mmtls->mmctx;
+	mmtls_cb cb = mmtls->cb[ON_TLS_RECV_KEY];
+	int sock;
+	conn_info *c;
+	struct session_address addr;
 	uint8_t *udph, *payload;
 #ifdef MTCP_CB_GETCURPKT_CREATE_COPY
 	struct pkt_info p;
@@ -1033,9 +987,7 @@ cb_new_key(mctx_t mctx, int rsock, int side, uint64_t events, filter_arg_t *arg)
 	 * contents in recv buffer are sent by server (client)
 	 * so, save the server (client) key at client (server) context
 	 */
-	int sock;
-	conn_info *c;
-	struct session_address addr = (struct session_address) {
+	addr = (struct session_address) {
 		ntohl(pctx->p.iph->saddr),
 		ntohl(pctx->p.iph->daddr),
 		ntohs(*(uint16_t *)udph),
@@ -1046,14 +998,6 @@ cb_new_key(mctx_t mctx, int rsock, int side, uint64_t events, filter_arg_t *arg)
 		return;
 	}
 	c = create_conn_info(mctx, sock);
-#if CNT_KEY
-	g_cnt[mctx->cpu].key++;
-	printf("key found: %d\n",
-			g_cnt[0].key + g_cnt[1].key + g_cnt[2].key + g_cnt[3].key + 
-			g_cnt[4].key + g_cnt[5].key + g_cnt[6].key + g_cnt[7].key + 
-			g_cnt[8].key + g_cnt[9].key + g_cnt[10].key + g_cnt[11].key + 
-			g_cnt[12].key + g_cnt[13].key + g_cnt[14].key + g_cnt[15].key);
-#endif
 	parse_tls_key(payload + TLS_CLIENT_RANDOM_LEN,
 				&c->ci_tls_version,
 				&c->ci_cipher_suite,
@@ -1061,18 +1005,16 @@ cb_new_key(mctx_t mctx, int rsock, int side, uint64_t events, filter_arg_t *arg)
 				c->ci_tls_ctx[MOS_SIDE_CLI].tc_key_info);
 	c->ci_has_key = 1;
 	// if (mtcp_register_callback(mctx, sock, MOS_ON_CONN_NEW_DATA,
-	// 						   MOS_NULL, cb_conn_on_new_data) == -1)
-	// 	EXIT_WITH_ERROR("Failed to register cb_conn_on_new_data() on MOS_ON_CONN_NEW_DATA");
+	// 						   MOS_NULL, cb_pkt_in) == -1)
+	// 	EXIT_WITH_ERROR("Failed to register cb_pkt_in() on MOS_ON_CONN_NEW_DATA");
 	/* it did not work */
 	// if (mtcp_unregister_callback(mctx, sock, MOS_ON_PKT_IN,
 	// 							 MOS_HK_RCV) == -1)
 	// 	EXIT_WITH_ERROR("Failed to unregister cb_pkt_in() on MOS_ON_PKT_IN");
-	(void)cb_conn_on_new_data;
-	if (g_measure_delay && (c->ci_clock_stall)) {
-		c->ci_clock_resend = clock();
-		c->ci_key_delay = c->ci_clock_resend - c->ci_clock_stall;
-	}
+	if (cb)
+		cb(mmctx, sock, MOS_SIDE_SVR);
 	resend_lastpkts(mctx, sock, c);
+
 	return;
 }
 /*---------------------------------------------------------------------------*/
@@ -1156,18 +1098,18 @@ int mmtls_init(const char *fname, int num_cpus)
 /*---------------------------------------------------------------------------*/
 mmtls_t mmtls_create_context(int cpu)
 {
+	struct mmtls_manager *mmtls;
 	int msock_raw, msock_stream;
-	mmtls_t mmtls_ctx = calloc(1, sizeof(struct mmtls_context));
-
-	mmtls_ctx->cpu = cpu;
-	// mmtls_ctx->OnNewTLSRecord = NULL;
-	// mmtls_ctx->OnTLSHandshakeEnd = NULL;
-	// mmtls_ctx->OnTLSHandshakeStart = NULL;
-	// mmtls_ctx->OnTLSSessionEnd = NULL;
-	// mmtls_ctx->OnTLSSessionStart = NULL;
+	if (cpu >= MAX_CPUS || cpu < 0)
+		/* invalid number of cores */
+		return NULL;
+	mmtls = &g_mmtls[cpu];
+	if (!(mmtls->mmctx = (mmtls_t)calloc(1, sizeof(struct mmtls_context))))
+		return NULL;
+	mmtls->mmctx->cpu = cpu;
 
 	/* Run mOS for each CPU core */
-	if (!(g_mctx[cpu] = mtcp_create_context(cpu)))
+	if (!(mmtls->mctx = mtcp_create_context(cpu)))
 		return NULL;
 
 	/* create CIPHER context */
@@ -1175,103 +1117,135 @@ mmtls_t mmtls_create_context(int cpu)
 		return NULL;
 	
 	/* Make a raw packet monitoring socket */
-	if ((msock_raw = mtcp_socket(g_mctx[cpu], AF_INET,
+	if ((msock_raw = mtcp_socket(mmtls->mctx, AF_INET,
 								MOS_SOCK_MONITOR_RAW, 0)) == -1)
 		return NULL;
 
 	/* Register raw packet callback for key delivery */
-	if (register_key_callback(g_mctx[cpu], msock_raw) == -1)
+	if (register_key_callback(mmtls->mctx, msock_raw) == -1)
 		return NULL;
 
 	/* Make a stream data monitoring socket */
-	if ((msock_stream = mtcp_socket(g_mctx[cpu], AF_INET,
+	if ((msock_stream = mtcp_socket(mmtls->mctx, AF_INET,
 									MOS_SOCK_MONITOR_STREAM, 0)) == -1)
 		return NULL;
 
 	/* Register stream data callback for TCP connections */
-	if (register_data_callback(g_mctx[cpu], msock_stream) == -1)
+	if (register_data_callback(mmtls->mctx, msock_stream) == -1)
 		return NULL;
+
+	for (int i = 0; i < NUM_MMTLS_CALLBACK; i++)
+		mmtls->cb[i] = NULL;
 	
-	return mmtls_ctx;
+	return mmtls->mmctx;
 }
 /*---------------------------------------------------------------------------*/
 int mmtls_destroy()
 {
+	struct mtcp_conf mcfg;
 	SSL_free(g_ssl);
 	SSL_CTX_free(g_ssl_ctx);
+	/* get the core limit */
+	if (mtcp_getconf(&mcfg) == -1)
+		return -1;
+	for (int i = 0; i < mcfg.num_cores; i++) {
+		/* free allocated memories */
+		MPDestroy(g_cli_cipher_pool[i]);
+		MPDestroy(g_svr_cipher_pool[i]);
+		MPDestroy(g_rawpkt_pool[i]);
+		MPDestroy(g_ci_pool[i]);
+		/* free EVP context buffer */
+		EVP_CIPHER_CTX_free(g_evp_ctx[i]);
+		/* free mmtls context */
+		free(g_mmtls[i].mmctx);
+	}
 	if (mtcp_destroy() == -1)
 		return -1;
 	return 0;
 }
 /*---------------------------------------------------------------------------*/
-int mmtls_register_callback(mmtls_t mmtls, event_t event, mmtls_cb cb)
+int mmtls_register_callback(mmtls_t mmctx, event_t event, mmtls_cb cb)
 {
-	if (event == ON_TLS_SESSION_START)
-		OnTLSSessionStart = cb;
-	else if (event == ON_TLS_SESSION_END)
-		OnTLSSessionEnd = cb;
-	else if (event == ON_TLS_HANDSHAKE_START)
-		OnTLSHandshakeStart = cb;
-	else if (event == ON_TLS_HANDSHAKE_END)
-		OnTLSHandshakeEnd = cb;
-	else if (event == ON_NEW_TLS_RECORD)
-		OnNewTLSRecord = cb;
-	else
+	struct mmtls_manager *mmtls;
+	if (!mmctx)
+		/* mmtls context is not created */
 		return -1;
+	if (mmctx->cpu >= MAX_CPUS || mmctx->cpu < 0)
+		/* invalid number of cores */
+		return -1;
+	mmtls = &g_mmtls[mmctx->cpu];
+	if (event >= NUM_MMTLS_CALLBACK)
+		return -1;
+	mmtls->cb[event] = cb;
 	return 0;
 }
 /*---------------------------------------------------------------------------*/
-void mmtls_app_join(int i)
+int mmtls_deregister_callback(mmtls_t mmctx, event_t event)
 {
-	mtcp_app_join(g_mctx[i]);
-	/* free allocated memories */
-	MPDestroy(g_cli_cipher_pool[i]);
-	MPDestroy(g_svr_cipher_pool[i]);
-	MPDestroy(g_rawpkt_pool[i]);
-	MPDestroy(g_ci_pool[i]);
-	/* free EVP context buffer */
-	EVP_CIPHER_CTX_free(g_evp_ctx[i]);
+	return mmtls_register_callback(mmctx, event, NULL);
 }
 /*---------------------------------------------------------------------------*/
-int mmtls_get_record(mmtls_t mmctx, int cid, int side, uint8_t *buf)
+void mmtls_app_join(mmtls_t mmctx)
 {
-	conn_info *c;
-	if (!(c = mtcp_get_uctx(g_mctx[mmctx->cpu], cid)))
-		return -1;
-	tls_buffer *tb = &c->ci_tls_ctx[side].tc_cipher;
-	if (!tb->ptail)
-		return -1; // please call me OnNewTLSRecord
-	if (c->ci_mon_state != RUN_MON)
-		return -1;
-	memcpy(buf, tb->buf + tb->phead, tb->ptail - tb->phead);
-	return tb->ptail - tb->phead;
+	mtcp_app_join(g_mmtls[mmctx->cpu].mctx);
 }
 /*---------------------------------------------------------------------------*/
-int mmtls_get_err(mmtls_t mmctx, int cid, int side)
+int mmtls_get_record(mmtls_t mmctx, int cid, int side, uint8_t *buf, int *len)
 {
 	conn_info *c;
-	if (!(c = mtcp_get_uctx(g_mctx[mmctx->cpu], cid)))
+	tls_buffer *tb;
+	if (!mmctx)
+		/* mmtls context is not created */
 		return -1;
-	return c->ci_err_code;
+	if (!buf || !*len)
+		return 0;
+	if (!(c = mtcp_get_uctx(g_mmtls[mmctx->cpu].mctx, cid)))
+		return -1;
+	tb = &c->ci_tls_ctx[side].tc_cipher;
+	if (!tb->ptail) {
+		*len = 0;
+		return 0; // please call me OnNewTLSRecord
+	}
+	*len = tb->ptail - tb->phead;
+	if (c->ci_mon_state[side] != DO_DECRYPT)
+		return 0;
+	memcpy(buf, tb->buf + tb->phead, *len);
+	return 0;
 }
 /*---------------------------------------------------------------------------*/
 void mmtls_drop_packet(mmtls_t mmctx, int cid, int side)
 {
-	if (mtcp_setlastpkt(g_mctx[mmctx->cpu], cid, side, 0, NULL, 0, MOS_DROP) == -1)
+	if (mtcp_setlastpkt(g_mmtls[mmctx->cpu].mctx, cid, side, 0, NULL, 0, MOS_DROP) == -1)
 		EXIT_WITH_ERROR("mtcp_setlastpkt failed");
 }
 /*---------------------------------------------------------------------------*/
 void mmtls_reset_conn(mmtls_t mmctx, int cid, int side)
 {
-	if (mtcp_reset_conn(g_mctx[mmctx->cpu], cid) < 0)
+	if (mtcp_reset_conn(g_mmtls[mmctx->cpu].mctx, cid) < 0)
 		EXIT_WITH_ERROR("mtcp_reset_conn failed");
-	remove_conn_info(g_mctx[mmctx->cpu], cid);
+	remove_conn_info(g_mmtls[mmctx->cpu].mctx, cid);
+}
+/*---------------------------------------------------------------------------*/
+int mmtls_get_err(mmtls_t mmctx, int cid, int side)
+{
+	conn_info *c;
+	if (!(c = mtcp_get_uctx(g_mmtls[mmctx->cpu].mctx, cid)))
+		return -1;
+	return c->ci_err_code;
+}
+/*---------------------------------------------------------------------------*/
+uint8_t *mmtls_get_random(mmtls_t mmctx, int cid, int side)
+{
+	conn_info *c;
+	if (!(c = mtcp_get_uctx(g_mmtls[mmctx->cpu].mctx, cid)))
+		return NULL;
+	return side?c->ci_client_random:c->ci_server_random;
 }
 /*---------------------------------------------------------------------------*/
 uint16_t mmtls_get_version(mmtls_t mmctx, int cid, int side)
 {
 	conn_info *c;
-	if (!(c = mtcp_get_uctx(g_mctx[mmctx->cpu], cid)))
+	if (!(c = mtcp_get_uctx(g_mmtls[mmctx->cpu].mctx, cid)))
 		return 0;
 	return c->ci_tls_version;
 }
@@ -1279,7 +1253,7 @@ uint16_t mmtls_get_version(mmtls_t mmctx, int cid, int side)
 uint16_t mmtls_get_cipher(mmtls_t mmctx, int cid, int side)
 {
 	conn_info *c;
-	if (!(c = mtcp_get_uctx(g_mctx[mmctx->cpu], cid)))
+	if (!(c = mtcp_get_uctx(g_mmtls[mmctx->cpu].mctx, cid)))
 		return 0;
 	return c->ci_cipher_suite;
 }
@@ -1287,9 +1261,41 @@ uint16_t mmtls_get_cipher(mmtls_t mmctx, int cid, int side)
 int mmtls_set_monopt(mmtls_t mmctx, int cid, int side, int opt)
 {
 	conn_info *c;
-	if (!(c = mtcp_get_uctx(g_mctx[mmctx->cpu], cid)))
+	if (!(c = mtcp_get_uctx(g_mmtls[mmctx->cpu].mctx, cid)))
 		return -1;
-	c->ci_mon_state = opt;
+	c->ci_mon_state[side] = opt;
 	return 0;
+}
+/*---------------------------------------------------------------------------*/
+int mmtls_get_stallcnt(mmtls_t mmctx, int cid, int side)
+{
+	conn_info *c;
+	if (!(c = mtcp_get_uctx(g_mmtls[mmctx->cpu].mctx, cid)))
+		return -1;
+	return c->ci_raw_cnt;
+}
+/*---------------------------------------------------------------------------*/
+int mmtls_get_monopt(mmtls_t mmctx, int cid, int side)
+{
+	conn_info *c;
+	if (!(c = mtcp_get_uctx(g_mmtls[mmctx->cpu].mctx, cid)))
+		return -1;
+	return c->ci_mon_state[side];
+}
+/*---------------------------------------------------------------------------*/
+void mmtls_set_uctx(mmtls_t mmctx, int cid, void *uctx)
+{
+	conn_info *c;
+	if (!(c = mtcp_get_uctx(g_mmtls[mmctx->cpu].mctx, cid)))
+		return;
+	c->ci_uctx = uctx;
+}
+/*---------------------------------------------------------------------------*/
+void *mmtls_get_uctx(mmtls_t mmctx, int cid)
+{
+	conn_info *c;
+	if (!(c = mtcp_get_uctx(g_mmtls[mmctx->cpu].mctx, cid)))
+		return NULL;
+	return c->ci_uctx;
 }
 /*---------------------------------------------------------------------------*/

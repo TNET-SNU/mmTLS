@@ -150,7 +150,6 @@ SendTCPPacketStandalone(struct mtcp_manager *mtcp,
 	uint32_t *ts;
 	uint16_t optlen;
 	struct pkt_ctx pctx;
-	int rc = -1;
 	
 	memset(&pctx, 0, sizeof(pctx));
 	pctx.p.in_ifidx = in_ifidx;
@@ -205,7 +204,8 @@ SendTCPPacketStandalone(struct mtcp_manager *mtcp,
 		memcpy((uint8_t *)tcph + TCP_HEADER_LEN + optlen, payload, payloadlen);
 	}
 
-#if TCP_CALCULATE_CHECKSUM
+#if 0 // already turned on offload by default
+	int rc = -1;
 	/* offload TCP checkum if possible */
 	if (likely(mtcp->iom->dev_ioctl != NULL))
 		rc = mtcp->iom->dev_ioctl(mtcp->ctx,
@@ -253,7 +253,6 @@ SendTCPPacket(struct mtcp_manager *mtcp, tcp_stream *cur_stream,
 	uint8_t wscale = 0;
 	uint32_t window32 = 0;
 	struct pkt_ctx pctx;
-	int rc = -1;
 
 	memset(&pctx, 0, sizeof(pctx));
 	optlen = CalculateOptionLength(flags);
@@ -342,7 +341,8 @@ SendTCPPacket(struct mtcp_manager *mtcp, tcp_stream *cur_stream,
 		memcpy((uint8_t *)tcph + TCP_HEADER_LEN + optlen, payload, payloadlen);
 	}
 
-#if TCP_CALCULATE_CHECKSUM
+#if 0 // already turned on offload by default
+	int rc = -1;
 	if (likely(mtcp->iom->dev_ioctl != NULL))
 		rc = mtcp->iom->dev_ioctl(mtcp->ctx,
 					  pctx.out_ifidx,
@@ -355,6 +355,7 @@ SendTCPPacket(struct mtcp_manager *mtcp, tcp_stream *cur_stream,
 					      cur_stream->saddr, 
 					      cur_stream->daddr);
 #endif
+
 	cur_stream->snd_nxt += payloadlen;
 
 	if (tcph->syn || tcph->fin) {

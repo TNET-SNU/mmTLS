@@ -32,6 +32,7 @@
 
 #define VERBOSE 0
 #define STAT 1
+#define IP_CSUM 1
 #define UDP_CSUM 0
 
 #define TLS_PORT 443
@@ -39,20 +40,16 @@
 #define MAX_FD_NUM 10000
 #define BACK_LOG 128
 
-#define KEYBLOCK_SIZE 120
-#define BUF_SIZE 128
-#define SEGMENT_SIZE (sizeof(struct udphdr) + KEYBLOCK_SIZE)
+#define CLIENT_RANDOM_SIZE 32
+#define _4TUPLE_SIZE 12
+#define RECV_BUF_SIZE 65536 /* 256 * 64 */
+#define PAYLOAD_SIZE 256
+#define MAX_MSG (RECV_BUF_SIZE/PAYLOAD_SIZE)
+
+#define SEGMENT_SIZE (sizeof(struct udphdr) + PAYLOAD_SIZE)
 #define DGRAM_SIZE (sizeof(struct iphdr) + SEGMENT_SIZE)
-#define RAW_PACKET_SIZE (sizeof(struct ether_header) + DGRAM_SIZE)
 
 #define RESET_BY_PEER 104
-
-/* interface and MAC */
-#define INTERFACE "p0"
-// 0c:42:a1:e7:1e:16
-#define DST_MAC {0x0c, 0x42, 0xa1, 0xe7, 0x1e, 0x16}
-// 0c:42:a1:e7:1e:1a
-#define SRC_MAC {0x0c, 0x42, 0xa1, 0xe7, 0x1e, 0x1a}
 
 enum {
 	SSL_UNUSED = 0,
@@ -74,34 +71,16 @@ int g_total_key_cnt[MAX_CPU] = {0,};
 int g_total_conn_cnt[MAX_CPU] = {0,};
 struct ssl_info {
 	SSL *ssl;
-	uint16_t worker_id;
 	uint16_t state;
-	int offset;
-	uint8_t payload[KEYBLOCK_SIZE];
-} ssl_map[MAX_FD_NUM];
+	uint16_t offset;
+	uint8_t payload[PAYLOAD_SIZE];
+} ssl_map[MAX_CPU][MAX_FD_NUM];
 
 /* raw socket to proxy */
 int g_sd;
 uint8_t g_src_mac[ETH_ALEN];
-uint8_t g_dst_mac[ETH_ALEN];
+uint8_t g_dst_mac[ETH_ALEN] = {0xb8, 0xce, 0xf6, 0xd2, 0xca, 0x46};
 struct sockaddr_ll g_server_addr;
-static __thread struct ether_frame {
-	struct ether_header ethh;
-	struct iphdr iph;
-	struct udphdr udph;
-} __attribute__ ((__packed__)) l_hdr;
-static __thread uint8_t l_payload[BUF_SIZE];
-static __thread struct iovec l_msg_iov[2];
-static __thread struct mmsghdr l_msg[1];
-#if UDP_CSUM
-static __thread struct pseudo_header {
-	uint32_t src;
-	uint32_t dst;
-	uint8_t padding;
-	uint8_t proto;
-	uint16_t udp_len;
-} l_psh;
-#endif
 /*-----------------------------------------------------------------------------*/
 static inline void
 Usage()
@@ -274,93 +253,177 @@ AcceptSSL(SSL* ssl) /* Serve the connection -- threadable */
  * returns 1 if sends successfully, 0 if connection end
  */
 static inline int
-DeliverKey(struct ssl_info *si) {
-	int offset, readbytes, sendbytes;
-	struct sockaddr_in client_addr = {0,};
-	socklen_t socketlen = sizeof(struct sockaddr_in);
-	int status;
+DeliverKey(struct ssl_info *si, int worker_id) {
+	int readbytes, remainder, recv_key_cnt, send_key_cnt, msg_cnt, status;
+	int recv_offset = 0, send_offset = 0;
+	uint16_t tls_version, cipher_suite, info_size;
+	uint8_t payload[RECV_BUF_SIZE], *ptr;
 
 	// ShowCerts(ssl);
-	/* ToDo: make loop to fill packets and send packets at once after loop */
-	while (1) {
-		/* fill payload */
-		offset = si->offset;
-		if (offset > 0) {
-			/* fill previous payload */
-			printf("incomplete key block remained\n");
-			memcpy(l_payload, si->payload, offset);
-		}
-		do {
-			if ((readbytes = SSL_read(si->ssl, l_payload + offset, BUF_SIZE - offset)) == 0)
-				/* client called SSL_shutdown */
+	struct mmsghdr msg[MAX_MSG];
+	/* [0] for common header, [1] for own payload */
+	struct iovec msg_iov[MAX_MSG][2];
+#if UDP_CSUM
+	struct pseudo_header {
+		uint32_t src;
+		uint32_t dst;
+		uint8_t padding;
+		uint8_t proto;
+		uint16_t udp_len;
+	} psh;
+#endif
+	/* raw datagram header (we use udp w/ tos 0xff for key delivery) */
+	struct ether_frame {
+		struct ether_header ethh;
+		struct iphdr iph;
+		struct udphdr udph;
+	} __attribute__ ((__packed__)) hdr = 
+	{
+		{
+			.ether_type = htons(ETH_P_IP)
+		},
+		{
+			.ihl = 0x5,
+			.version = 0x4,
+			.tos = 0xff,
+			.tot_len = htons(DGRAM_SIZE),
+    			.id = 0,
+    			.frag_off = 0,
+			.ttl = 0xff,
+			.protocol = IPPROTO_UDP,
+			.check = 0
+		},
+		{{{
+			.uh_ulen = htons(SEGMENT_SIZE),
+			.uh_sum = 0
+		}}}
+	};
+	memcpy(hdr.ethh.ether_dhost, g_dst_mac, ETH_ALEN);
+	memcpy(hdr.ethh.ether_shost, g_src_mac, ETH_ALEN);
+	
+	/* fill payload */
+	if (si->offset) {
+		printf("[Info] Incomplete key block loaded: %d\n", si->offset);
+		recv_offset = si->offset;
+		memcpy(payload, si->payload, recv_offset);
+		si->offset = 0;
+	}
+	if ((readbytes = SSL_read(si->ssl, payload + recv_offset, RECV_BUF_SIZE - recv_offset)) == 0) {
+		printf("[Info] Graceful shutdown\n");
+		return DELIVERY_SHUTDOWN;
+	}
+	if (readbytes < 0) {
+		status = get_sslstatus(si->ssl, readbytes);
+		if (status == SSLSTATUS_FAIL) {
+			if (errno == RESET_BY_PEER) {
+				printf("[Warning] Forced shutdown\n");
 				return DELIVERY_SHUTDOWN;
-			if (readbytes < 0) {
-				status = get_sslstatus(si->ssl, readbytes);
-				if (status == SSLSTATUS_FAIL) {
-					if (errno == RESET_BY_PEER) {
-						printf("[Warning] shutdown forced\n");
-						return DELIVERY_SHUTDOWN;
-					}
-					else if (errno == EAGAIN)
-						return DELIVERY_INCOMPLETED;
-					else {
-						printf("[Error] SSL_read failed\n");
-						exit(EXIT_FAILURE);
-					}
-				}
-				else if (status == SSLSTATUS_WANT_IO)
-					return DELIVERY_INCOMPLETED;
 			}
-			offset += readbytes;
-		} while (offset < BUF_SIZE);
-
-		/* incomplete key block, save payload and offset to ssl_info map */
-		if (offset < BUF_SIZE) {
-			memcpy(si->payload + si->offset, l_payload + si->offset, offset - si->offset);
-			si->offset = offset;
+			else if (errno == EAGAIN) {
+				printf("[Info] Nothing to read\n");
+				return DELIVERY_INCOMPLETED;
+			}
+			else {
+				printf("[Error] SSL_read failed\n");
+				exit(EXIT_FAILURE);
+			}
+		}
+		else if (status == SSLSTATUS_WANT_IO) {
+			printf("[Info] Nothing to read\n");
 			return DELIVERY_INCOMPLETED;
 		}
+	}
+	recv_offset += readbytes;
+	recv_key_cnt = recv_offset / PAYLOAD_SIZE;
+	remainder = recv_offset % PAYLOAD_SIZE;
+	printf("recv_offset: %d, recv_key_cnt: %d, remainder: %d\n", recv_offset, recv_key_cnt, remainder);
 
-		/* now key block is completely received */
-		assert(offset == BUF_SIZE);
-		si->offset = 0;
-		
-		/* fill headers */
-		getpeername(SSL_get_fd(si->ssl), (struct sockaddr *)&client_addr, &socketlen);
-		l_hdr.iph.saddr = client_addr.sin_addr.s_addr;
-		l_hdr.iph.daddr = *(uint32_t *)(l_payload + KEYBLOCK_SIZE);
-		l_hdr.udph.source = *(uint16_t *)(l_payload + KEYBLOCK_SIZE + 4);
-		l_hdr.udph.dest = *(uint16_t *)(l_payload + KEYBLOCK_SIZE + 6);
-	#if UDP_CSUM
+	/* incomplete key block, save payload and offset to ssl_info map */
+	if (remainder) {
+		printf("[Info] Incomplete key block saved\n");
+		memcpy(si->payload, payload + recv_offset - remainder, remainder);
+		si->offset = remainder;
+		recv_offset -= remainder;
+	}
+
+	for (msg_cnt = 0; msg_cnt < recv_key_cnt; msg_cnt++) {
+		/* parse recv packet */
+		ptr = payload + send_offset + CLIENT_RANDOM_SIZE;
+		tls_version = be16toh(*(uint16_t *)ptr);
+		ptr += sizeof(uint16_t);
+		cipher_suite = be16toh(*(uint16_t *)ptr);
+		ptr += sizeof(uint16_t);
+		info_size = be16toh(*(uint16_t *)ptr);
+		ptr += sizeof(uint16_t);
+		// printf("tls_version: %d, cipher_suite: %d, info_size: %d\n", tls_version, cipher_suite, info_size);
+		(void)tls_version;
+		(void)cipher_suite;
+		/* fill headers (they are already network byte order) */
+		ptr += info_size * 2;
+		hdr.iph.saddr = *(uint32_t *)ptr;
+		ptr += sizeof(uint32_t);
+		hdr.iph.daddr = *(uint32_t *)ptr;
+		ptr += sizeof(uint32_t);
+		hdr.udph.source = *(uint16_t *)ptr;
+		ptr += sizeof(uint16_t);
+		hdr.udph.dest = *(uint16_t *)ptr;
+#if IP_CSUM
+		hdr.iph.check = ~WrapAroundAdd((uint16_t *)&hdr.iph, hdr.iph.ihl << 2);
+#endif
+#if UDP_CSUM
 		/* 12B pseudo header for udp csum */
-		l_psh = (struct pseudo_header) {
+		psh = (struct pseudo_header) {
 			.src = hdr.iph.saddr,
 			.dst = hdr.iph.daddr,
 			.padding = 0,
 			.proto = IPPROTO_UDP,
-			.udp_len = SEGMENT_SIZE
+			.udp_len = htons(SEGMENT_SIZE),
 		};
-		g_hdr.udph.check = WrapAroundAdd((uint16_t *)&l_psh, sizeof(l_psh));
-	#endif
-		do {
-			sendbytes = sendmmsg(g_sd, l_msg, 1, 0);
-		} while ((sendbytes == -1) && ((errno == EAGAIN) || (errno == EINTR)));
-		if (sendbytes == -1) {
-			fprintf(stderr, "[Error] sendmsg failed\n");
-			exit(EXIT_FAILURE);
-		}
-	#if VERBOSE
-		printf("[core %d] %d bytes read, %d bytes sent\n"
-				"[client] ip: %u, port: %u\n"
-				"[server] ip: %u, port: %u\n",
-				sched_getcpu(), readbytes, sendbytes, 
-				ntohl(frame.iph.saddr), ntohs(frame.udph.source),
-				ntohl(frame.iph.daddr), ntohs(frame.udph.dest));
-	#endif
-		/* counts key sent */
-		g_key_cnt[si->worker_id]++;
-		g_total_key_cnt[si->worker_id]++;
+		hdr.udph.check = WrapAroundAdd((uint16_t *)&psh, sizeof(psh));
+		hdr.udph.check = WrapAroundAdd((uint16_t *)&hdr.udph, sizeof(hdr.udph));
+		uint32_t temp = WrapAroundAdd((uint16_t *)(payload + send_offset), PAYLOAD_SIZE);
+		temp += hdr.udph.check;
+		hdr.udph.check = ~((temp & 0xffff) + (temp >> 16));
+#endif
+		msg_iov[msg_cnt][0] = (struct iovec) {
+			.iov_base = &hdr,
+			.iov_len = sizeof(hdr)
+		};
+		msg_iov[msg_cnt][1] = (struct iovec) {
+			.iov_base = payload + send_offset,
+			.iov_len = PAYLOAD_SIZE
+		};
+		msg[msg_cnt].msg_hdr = (struct msghdr) {
+			.msg_name = &g_server_addr,
+			.msg_namelen = sizeof(g_server_addr),
+			.msg_iov = msg_iov[msg_cnt],
+			.msg_iovlen = 2
+		};
+		send_offset += PAYLOAD_SIZE;
 	}
+	assert(msg_cnt == recv_key_cnt);
+	assert(send_offset == recv_offset);
+
+	do {
+		send_key_cnt = sendmmsg(g_sd, msg, msg_cnt, 0);
+	} while ((send_key_cnt == -1) && ((errno == EAGAIN) || (errno == EINTR)));
+	if (send_key_cnt == -1) {
+		fprintf(stderr, "[Error] sendmsg failed\n");
+		exit(EXIT_FAILURE);
+	}
+	printf("sent key: %d\n", send_key_cnt);
+
+#if VERBOSE
+	printf("[core %d] %d bytes read, %d bytes sent\n"
+			"[client] ip: %u, port: %u\n"
+			"[server] ip: %u, port: %u\n",
+			sched_getcpu(), readbytes, sendbytes, 
+			ntohl(frame.iph.saddr), ntohs(frame.udph.source),
+			ntohl(frame.iph.daddr), ntohs(frame.udph.dest));
+#endif
+	/* counts key sent */
+	g_key_cnt[worker_id] += send_key_cnt;
+	g_total_key_cnt[worker_id] += send_key_cnt;
 
 	return DELIVERY_COMPLETED;
 }
@@ -384,44 +447,6 @@ worker(void *arg)
 	struct epoll_event listen_ev, client_ev, *events;
 	SSL_CTX *ctx;
 	const size_t EPOLL_SIZE = 100000;
-	
-	/* raw datagram header (we use tos as 0xff for key delivery) */
-	l_hdr = (struct ether_frame) {
-		{
-			.ether_dhost = DST_MAC,
-			.ether_shost = SRC_MAC,
-			.ether_type = htons(ETH_P_IP)
-		},
-		{
-			.version = 0x4,
-			.ihl = 0x5,
-			.tos = 0xff,
-			.tot_len = htons(DGRAM_SIZE), 
-    		.id = 0,
-    		.frag_off = 0,
-			.ttl = 0xff,
-			.protocol = IPPROTO_UDP,
-			.check = 0
-		},
-		{{{
-			.uh_ulen = htons(SEGMENT_SIZE),
-			.uh_sum = 0
-		}}}
-	};
-	l_msg_iov[0] = (struct iovec) {
-		.iov_base = &l_hdr,
-		.iov_len = sizeof(l_hdr)
-	};
-	l_msg_iov[1] = (struct iovec) {
-		.iov_base = l_payload,
-		.iov_len = KEYBLOCK_SIZE
-	};
-	l_msg[0].msg_hdr = (struct msghdr) {
-		.msg_name = &g_server_addr,
-		.msg_namelen = sizeof(g_server_addr),
-		.msg_iov = l_msg_iov,
-		.msg_iovlen = 2
-	};
 
 #if VERBOSE
 	printf("worker id: %d, cpu id: %d\n", worker_id, sched_getcpu());
@@ -485,9 +510,7 @@ worker(void *arg)
 				};
 				
 				/* initialize ssl info */
-				ssl_map[client_fd].worker_id = worker_id;
-				ssl_map[client_fd].state = SSL_UNUSED;
-				ssl_map[client_fd].offset = 0;
+				ssl_map[worker_id][client_fd].state = SSL_UNUSED;
 				
 				/* set non-block */
 				if (fcntl(client_fd, F_SETFL, O_NONBLOCK) == -1) {
@@ -506,11 +529,9 @@ worker(void *arg)
 			}
 			/* TCP accepted socket fd */
 			else if (events[i].events & EPOLLIN) {
-				/* thread safe check */
-				assert(ssl_map[events[i].data.fd].worker_id == worker_id);
 
 				/* start SSL handshake */
-				if (ssl_map[events[i].data.fd].state == SSL_UNUSED) {
+				if (ssl_map[worker_id][events[i].data.fd].state == SSL_UNUSED) {
 					/* get new SSL state with context */
 					SSL *ssl = SSL_new(ctx);
 					if (!ssl) {
@@ -525,40 +546,44 @@ worker(void *arg)
 						fprintf(stderr, "Error: can't SSL_accept\n");
 						close(events[i].data.fd);
 						SSL_free(ssl);
-						ssl_map[events[i].data.fd].state = SSL_UNUSED;
+						ssl_map[worker_id][events[i].data.fd].state = SSL_UNUSED;
 						continue;
 					}
 
 					/* add new ssl_info into ssl_map */
-					struct ssl_info ssl_info;
-					ssl_info.ssl = ssl;
-					ssl_info.worker_id = worker_id;
-					ssl_info.state = SSL_ACCEPT_INCOMPLETED;
-					ssl_map[events[i].data.fd] = ssl_info;
+					ssl_map[worker_id][events[i].data.fd] = (struct ssl_info) {
+						ssl,
+						SSL_ACCEPT_INCOMPLETED,
+						0,
+						{0,}
+					};
 				}
 				/* continue SSL handshake */
-				else if (ssl_map[events[i].data.fd].state == SSL_ACCEPT_INCOMPLETED) {
+				else if (ssl_map[worker_id][events[i].data.fd].state == SSL_ACCEPT_INCOMPLETED) {
 					static int accept_ret;
-					SSL *ssl = ssl_map[events[i].data.fd].ssl;
+					SSL *ssl = ssl_map[worker_id][events[i].data.fd].ssl;
 					if ((accept_ret = AcceptSSL(ssl)) < 0) {
 						fprintf(stderr, "Error: can't SSL_accept\n");
 						close(events[i].data.fd);
 						SSL_free(ssl);
-						ssl_map[events[i].data.fd].state = SSL_UNUSED;
+						ssl_map[worker_id][events[i].data.fd].state = SSL_UNUSED;
 						continue;
 					}
-					ssl_map[events[i].data.fd].state = accept_ret;
+					/* initialize offset */
+					if (accept_ret == SSL_ACCEPT_COMPLETED)
+						ssl_map[worker_id][events[i].data.fd].offset = 0;
+					ssl_map[worker_id][events[i].data.fd].state = accept_ret;
 				}
 				/* receive encrypted data
 				 * reply and close the connection if exit command */
-				else if (ssl_map[events[i].data.fd].state == SSL_ACCEPT_COMPLETED) {
-					int ret = DeliverKey(&ssl_map[events[i].data.fd]);
+				else if (ssl_map[worker_id][events[i].data.fd].state == SSL_ACCEPT_COMPLETED) {
+					int ret = DeliverKey(&ssl_map[worker_id][events[i].data.fd], worker_id);
 					if (ret == DELIVERY_SHUTDOWN) {
-						SSL *ssl = ssl_map[events[i].data.fd].ssl;
+						SSL *ssl = ssl_map[worker_id][events[i].data.fd].ssl;
 						close(SSL_get_fd(ssl));
 						SSL_shutdown(ssl);
 						SSL_free(ssl); /* release SSL state */
-						ssl_map[events[i].data.fd].state = SSL_UNUSED;
+						ssl_map[worker_id][events[i].data.fd].state = SSL_UNUSED;
 						/* counts finished connections */
 						g_conn_cnt[worker_id]++;
 						g_total_conn_cnt[worker_id]++;
@@ -583,6 +608,7 @@ main(int argc, char *argv[])
 	int tid[MAX_CPU];
 	cpu_set_t *cpusetp[MAX_CPU];
 	int c, cpu_size, thread_num = 1;
+	struct ifreq s = {0,};
 
 	if (getuid()) {
 		printf("This program must be run as root/sudo user!\n");
@@ -590,7 +616,7 @@ main(int argc, char *argv[])
 	}
 
 	/* parse options */
-	while ((c = getopt(argc, argv, "c:")) != -1) {
+	while ((c = getopt(argc, argv, "c:i:")) != -1) {
 		if (c == 'c') {
 			thread_num = atoi(optarg);
 			if(thread_num < 1) {
@@ -602,9 +628,10 @@ main(int argc, char *argv[])
 				exit(EXIT_SUCCESS);
 			}
 		}
-		else {
+		else if (c == 'i')
+			memcpy(s.ifr_name, optarg, strlen(optarg));
+		else
 			Usage();
-		}
 	}
 
 	/* extend limit of available file descriptor number */
@@ -638,22 +665,34 @@ main(int argc, char *argv[])
 		fprintf(stderr, "Error: socket() failed\n");
 		exit(EXIT_FAILURE);
 	}
+
+	/* get src MAC */
+	if (!ioctl(g_sd, SIOCGIFHWADDR, &s)) {
+		memcpy(g_src_mac, s.ifr_addr.sa_data, ETH_ALEN);
+		// memcpy(g_dst_mac, g_src_mac, ETH_ALEN);
+		// g_dst_mac[ETH_ALEN - 1] -= 4;
+		printf("src_mac: %02x %02x %02x %02x %02x %02x\n"
+			"dst_mac: %02x %02x %02x %02x %02x %02x\n",
+			g_src_mac[0], g_src_mac[1], g_src_mac[2],
+			g_src_mac[3], g_src_mac[4], g_src_mac[5],
+			g_dst_mac[0], g_dst_mac[1], g_dst_mac[2],
+			g_dst_mac[3], g_dst_mac[4], g_dst_mac[5]);
+	}
+	else {
+		fprintf(stderr, "Error: ioctl() failed\n");
+		exit(EXIT_FAILURE);
+	}
 	
 	/* common low layer socketaddr */
 	g_server_addr = (struct sockaddr_ll) {
 		.sll_family = 0,
 		.sll_protocol = ETH_P_IP,
-		.sll_ifindex = if_nametoindex(INTERFACE),
+		.sll_ifindex = if_nametoindex(s.ifr_name),
 		.sll_hatype = 0,
 		.sll_pkttype = 0,
-		.sll_halen = ETH_ALEN,
-		.sll_addr = DST_MAC
+		.sll_halen = ETH_ALEN
 	};
-
-	/* get src MAC */
-	struct ifreq s = {.ifr_name = INTERFACE};
-	if (!ioctl(g_sd, SIOCGIFHWADDR, &s))
-		memcpy(g_src_mac, s.ifr_addr.sa_data, ETH_ALEN);
+	memcpy(g_server_addr.sll_addr, g_dst_mac, ETH_ALEN);
 
 	/* create threads */  
 	for (int i = 0; i < thread_num; i++) {

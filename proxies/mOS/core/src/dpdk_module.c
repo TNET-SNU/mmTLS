@@ -197,25 +197,17 @@ static const struct rte_eth_txconf tx_conf = {
 
 struct mbuf_table {
 	unsigned len; /* length of queued packets */
-#if KEY_MAPPING
-	struct rte_mbuf *m_table[MAX_PKT_BURST * 2];
-#else
 	struct rte_mbuf *m_table[MAX_PKT_BURST];
-#endif
 };
 
 struct dpdk_private_context {
 	struct mbuf_table rmbufs[RTE_MAX_ETHPORTS];
 	/* shares mbufs with rmbufs by default */
 	struct mbuf_table wmbufs[RTE_MAX_ETHPORTS];
+	/* rmbufs for key receiving */
+	struct mbuf_table rmbufs_key[RTE_MAX_ETHPORTS];
 	/* does not share mbufs with rmbufs, is used for sending raw packets */
 	struct mbuf_table wmbufs_raw[RTE_MAX_ETHPORTS];
-	struct rte_mempool *pktmbuf_pool;
-#if KEY_MAPPING
-	struct rte_mbuf *pkts_burst[MAX_PKT_BURST * 2];
-#else
-	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
-#endif
 #ifdef RX_IDLE_ENABLE
 	uint8_t rx_idle;
 #endif
@@ -309,7 +301,6 @@ dpdk_init_handle(struct mtcp_thread_context *ctxt)
 	
 	sprintf(mempool_name, "mbuf_pool-%d", ctxt->cpu);
 	dpc = (struct dpdk_private_context *)ctxt->io_private_context;
-	dpc->pktmbuf_pool = pktmbuf_pool[ctxt->cpu];
 
 	/* set wmbufs correctly */
 	for (j = 0; j < g_config.mos->netdev_table->num; j++) {
@@ -443,7 +434,6 @@ dpdk_get_wptr(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, uint1
 	mtcp_manager_t mtcp;
 	struct rte_mbuf *m;
 	uint8_t *ptr;
-	int len_of_mbuf;
 
 	dpc = (struct dpdk_private_context *) ctxt->io_private_context;
 	mtcp = ctxt->mtcp_manager;
@@ -451,8 +441,7 @@ dpdk_get_wptr(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, uint1
 	/* sanity check */
 	if (unlikely(dpc->wmbufs_raw[nif].len == MAX_PKT_BURST))
 		return NULL;
-	len_of_mbuf = dpc->wmbufs_raw[nif].len;
-	m = dpc->wmbufs_raw[nif].m_table[len_of_mbuf];
+	m = dpc->wmbufs_raw[nif].m_table[dpc->wmbufs_raw[nif].len];
 	/* retrieve the right write offset */
 #if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
 	ptr = (void *)rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
@@ -467,8 +456,8 @@ dpdk_get_wptr(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, uint1
 	mtcp->nstat.tx_bytes[nif] += pktsize + ETHER_OVR;
 #endif
 	
-	/* increment the len_of_mbuf var */
-	dpc->wmbufs_raw[nif].len = len_of_mbuf + 1;
+	/* increment the len of mbuf */
+	dpc->wmbufs_raw[nif].len++;
 	
 	return (uint8_t *)ptr;
 }
@@ -480,7 +469,6 @@ dpdk_get_wptr_tso(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, u
 	mtcp_manager_t mtcp;
 	struct rte_mbuf *m;
 	uint8_t *ptr;
-	int len_of_mbuf;
 	int send_cnt;
 
 	dpc = (struct dpdk_private_context *) ctxt->io_private_context;
@@ -496,8 +484,7 @@ dpdk_get_wptr_tso(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, u
 				break;
 		}
 	}
-	len_of_mbuf = dpc->wmbufs_raw[nif].len;
-	m = dpc->wmbufs_raw[nif].m_table[len_of_mbuf];
+	m = dpc->wmbufs_raw[nif].m_table[dpc->wmbufs_raw[nif].len];
 	/* retrieve the right write offset */
 #if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
 	ptr = (void *)rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
@@ -534,8 +521,8 @@ dpdk_get_wptr_tso(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, u
 	mtcp->nstat.tx_bytes[nif] += pktsize + ETHER_OVR;
 #endif
 	
-	/* increment the len_of_mbuf var */
-	dpc->wmbufs_raw[nif].len = len_of_mbuf + 1;
+	/* increment the len of mbuf */
+	dpc->wmbufs_raw[nif].len++;
 	
 	return (uint8_t *)ptr;
 }
@@ -546,7 +533,6 @@ dpdk_set_wptr(struct mtcp_thread_context *ctxt, int out_nif, int in_nif, int ind
 	struct dpdk_private_context *dpc;
 	mtcp_manager_t mtcp;
 	struct rte_mbuf *m;
-	int len_of_mbuf;
 
 	dpc = (struct dpdk_private_context *) ctxt->io_private_context;
 	mtcp = ctxt->mtcp_manager;
@@ -555,19 +541,18 @@ dpdk_set_wptr(struct mtcp_thread_context *ctxt, int out_nif, int in_nif, int ind
 	if (unlikely(dpc->wmbufs[out_nif].len == MAX_PKT_BURST))
 		return;
 
-	len_of_mbuf = dpc->wmbufs[out_nif].len;
-	dpc->wmbufs[out_nif].m_table[len_of_mbuf] = 
+	dpc->wmbufs[out_nif].m_table[dpc->wmbufs[out_nif].len] = 
 		dpc->rmbufs[in_nif].m_table[index];
 
-	m = dpc->wmbufs[out_nif].m_table[len_of_mbuf];
+	m = dpc->rmbufs[in_nif].m_table[index];
 	m->udata64 = 0;
 	
 #ifdef NETSTAT
 	mtcp->nstat.tx_bytes[out_nif] += m->pkt_len + ETHER_OVR;
 #endif
 	
-	/* increment the len_of_mbuf var */
-	dpc->wmbufs[out_nif].len = len_of_mbuf + 1;
+	/* increment the len of mbuf */
+	dpc->wmbufs[out_nif].len++;
 	
 	return;
 }
@@ -578,7 +563,6 @@ dpdk_set_wptr_tso(struct mtcp_thread_context *ctxt, int out_nif, int in_nif, int
 	struct dpdk_private_context *dpc;
 	mtcp_manager_t mtcp;
 	struct rte_mbuf *m;
-	int len_of_mbuf;
 
 	dpc = (struct dpdk_private_context *) ctxt->io_private_context;
 	mtcp = ctxt->mtcp_manager;
@@ -587,11 +571,10 @@ dpdk_set_wptr_tso(struct mtcp_thread_context *ctxt, int out_nif, int in_nif, int
 	if (unlikely(dpc->wmbufs[out_nif].len == MAX_PKT_BURST))
 		return;
 
-	len_of_mbuf = dpc->wmbufs[out_nif].len;
-	dpc->wmbufs[out_nif].m_table[len_of_mbuf] = 
+	dpc->wmbufs[out_nif].m_table[dpc->wmbufs[out_nif].len] = 
 		dpc->rmbufs[in_nif].m_table[index];
 
-	m = dpc->wmbufs[out_nif].m_table[len_of_mbuf];
+	m = dpc->rmbufs[in_nif].m_table[index];
 	m->udata64 = 0;
 
 	/* enable TSO */
@@ -619,8 +602,8 @@ dpdk_set_wptr_tso(struct mtcp_thread_context *ctxt, int out_nif, int in_nif, int
 	mtcp->nstat.tx_bytes[out_nif] += m->pkt_len + ETHER_OVR;
 #endif
 	
-	/* increment the len_of_mbuf var */
-	dpc->wmbufs[out_nif].len = len_of_mbuf + 1;
+	/* increment the len of mbuf */
+	dpc->wmbufs[out_nif].len++;
 	
 	return;
 }
@@ -658,18 +641,26 @@ dpdk_recv_pkts(struct mtcp_thread_context *ctxt, int ifidx)
 	}
 	
 	/* rx from data mbuf */
-	ret = rte_eth_rx_burst((uint8_t)ifidx, qid, dpc->pkts_burst, MAX_PKT_BURST);
+	ret = rte_eth_rx_burst((uint8_t)ifidx, qid,
+			dpc->rmbufs[ifidx].m_table, MAX_PKT_BURST);
+	dpc->rmbufs[ifidx].len = ret;
+
 #if KEY_MAPPING
+	int ret_key;
+	if (ifidx)
+		goto Ret;
+
 	/* rx from key mbuf */
-	int ret_key = (ifidx == 0) ?
-		rte_eth_rx_burst((uint8_t)ifidx, qid + g_config.mos->num_cores,
-			    		dpc->pkts_burst + ret, 2 * MAX_PKT_BURST - ret) : 0;
+	ret_key = rte_eth_rx_burst((uint8_t)ifidx, qid + g_config.mos->num_cores,
+				dpc->rmbufs_key[ifidx].m_table, MAX_PKT_BURST);
+	dpc->rmbufs_key[ifidx].len = ret_key;
 	ret += ret_key;
+Ret:
 #endif
+
 #ifdef RX_IDLE_ENABLE
 	dpc->rx_idle = (likely(ret != 0)) ? 0 : dpc->rx_idle + 1;
 #endif
-	dpc->rmbufs[ifidx].len = ret;
 
 	return ret;
 }
@@ -683,17 +674,17 @@ dpdk_get_rptr(struct mtcp_thread_context *ctxt, int ifidx, int index, uint16_t *
 
 	dpc = (struct dpdk_private_context *) ctxt->io_private_context;	
 
-
-	m = dpc->pkts_burst[index];
-	/* tag to check if the packet is a local or a forwarded pkt */
-	m->udata64 = 1;
+	if (index < dpc->rmbufs[ifidx].len) {
+		m = dpc->rmbufs[ifidx].m_table[index];
+		/* tag to check if the packet is a local or a forwarded pkt */
+		m->udata64 = 1;
+	}
+	else
+		m = dpc->rmbufs_key[ifidx].m_table[index - dpc->rmbufs[ifidx].len];
 	/* don't enable pre-fetching... performance goes down */
 	//rte_prefetch0(rte_pktmbuf_mtod(m, void *));
 	pktbuf = rte_pktmbuf_mtod(m, uint8_t *);
 	*len = ETH_HLEN + htons(*(uint16_t *)(pktbuf + ETH_HLEN + 2));
-
-	/* enqueue the pkt ptr in mbuf */
-	dpc->rmbufs[ifidx].m_table[index] = m;
 
 	return pktbuf;
 }
@@ -821,61 +812,61 @@ check_all_ports_link_status(uint8_t port_num, uint32_t port_mask)
 	}
 }
 /*----------------------------------------------------------------------------*/
-int32_t
-dpdk_dev_ioctl(struct mtcp_thread_context *ctx, int nif, int cmd, void *argp)
-{
-	struct dpdk_private_context *dpc;
-	struct rte_mbuf *m;
-	int len_of_mbuf;
-	struct iphdr *iph;
-	struct tcphdr *tcph;
-	RssInfo *rss_i;
-	void **argpptr = (void **)argp;
+// int32_t
+// dpdk_dev_ioctl(struct mtcp_thread_context *ctx, int nif, int cmd, void *argp)
+// {
+// 	struct dpdk_private_context *dpc;
+// 	struct rte_mbuf *m;
+// 	int len_of_mbuf;
+// 	struct iphdr *iph;
+// 	struct tcphdr *tcph;
+// 	RssInfo *rss_i;
+// 	void **argpptr = (void **)argp;
 
-	if (cmd == DRV_NAME) {
-		*argpptr = (void *)dev_info->driver_name;
-		return 0;
-	}
+// 	if (cmd == DRV_NAME) {
+// 		*argpptr = (void *)dev_info->driver_name;
+// 		return 0;
+// 	}
 	
-	iph = (struct iphdr *)argp;
-	dpc = (struct dpdk_private_context *)ctx->io_private_context;
-	len_of_mbuf = dpc->wmbufs[nif].len;
-	rss_i = NULL;
+// 	iph = (struct iphdr *)argp;
+// 	dpc = (struct dpdk_private_context *)ctx->io_private_context;
+// 	len_of_mbuf = dpc->wmbufs[nif].len;
+// 	rss_i = NULL;
 
-	switch (cmd) {
-	case PKT_TX_IP_CSUM:
-		m = dpc->wmbufs[nif].m_table[len_of_mbuf - 1];
-		m->ol_flags |= PKT_TX_IP_CKSUM | PKT_TX_IPV4;
-#if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
-		m->l2_len = sizeof(struct rte_ether_hdr);
-#else
-		m->l2_len = sizeof(struct ether_hdr);
-#endif
-		m->l3_len = (iph->ihl<<2);
-		break;
-	case PKT_TX_TCP_CSUM:
-		m = dpc->wmbufs[nif].m_table[len_of_mbuf - 1];
-		tcph = (struct tcphdr *)((unsigned char *)iph + (iph->ihl<<2));
-		m->ol_flags |= PKT_TX_TCP_CKSUM;
-#if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
-		tcph->check = rte_ipv4_phdr_cksum((struct rte_ipv4_hdr *)iph, m->ol_flags);
-#else
-		tcph->check = rte_ipv4_phdr_cksum((struct ipv4_hdr *)iph, m->ol_flags);
-#endif
-		break;
-	case PKT_RX_RSS:
-		rss_i = (RssInfo *)argp;
-		m = dpc->pkts_burst[rss_i->pktidx];
-		rss_i->hash_value = m->hash.rss;
-		break;
-	default:
-		goto dev_ioctl_err;
-	}
+// 	switch (cmd) {
+// 	case PKT_TX_IP_CSUM:
+// 		m = dpc->wmbufs[nif].m_table[len_of_mbuf - 1];
+// 		m->ol_flags |= PKT_TX_IP_CKSUM | PKT_TX_IPV4;
+// #if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
+// 		m->l2_len = sizeof(struct rte_ether_hdr);
+// #else
+// 		m->l2_len = sizeof(struct ether_hdr);
+// #endif
+// 		m->l3_len = (iph->ihl<<2);
+// 		break;
+// 	case PKT_TX_TCP_CSUM:
+// 		m = dpc->wmbufs[nif].m_table[len_of_mbuf - 1];
+// 		tcph = (struct tcphdr *)((unsigned char *)iph + (iph->ihl<<2));
+// 		m->ol_flags |= PKT_TX_TCP_CKSUM;
+// #if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
+// 		tcph->check = rte_ipv4_phdr_cksum((struct rte_ipv4_hdr *)iph, m->ol_flags);
+// #else
+// 		tcph->check = rte_ipv4_phdr_cksum((struct ipv4_hdr *)iph, m->ol_flags);
+// #endif
+// 		break;
+// 	case PKT_RX_RSS:
+// 		rss_i = (RssInfo *)argp;
+// 		m = dpc->pkts_burst[rss_i->pktidx];
+// 		rss_i->hash_value = m->hash.rss;
+// 		break;
+// 	default:
+// 		goto dev_ioctl_err;
+// 	}
 
-	return 0;
- dev_ioctl_err:
-	return -1;
-}
+// 	return 0;
+//  dev_ioctl_err:
+// 	return -1;
+// }
 /*----------------------------------------------------------------------------*/
 #if LEADER_ISOLATION
 void
@@ -1373,7 +1364,7 @@ io_module_func dpdk_module_func = {
 	.get_nif		   = dpdk_get_nif,
 	.select			   = dpdk_select,
 	.destroy_handle		   = dpdk_destroy_handle,
-	.dev_ioctl		   = dpdk_dev_ioctl,
+	// .dev_ioctl		   = dpdk_dev_ioctl,
 #if USE_LRO
 	.set_wptr		   = dpdk_set_wptr_tso,
 #else

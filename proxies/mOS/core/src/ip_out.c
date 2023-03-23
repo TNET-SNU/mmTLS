@@ -126,7 +126,6 @@ IPOutputStandalone(struct mtcp_manager *mtcp,
 	struct iphdr *iph;
 	int nif;
 	unsigned char * haddr;
-	int rc = -1;
 
 	nif = GetOutputInterface(daddr);
 	if (nif < 0)
@@ -167,11 +166,14 @@ IPOutputStandalone(struct mtcp_manager *mtcp,
 	iph->check = 0;
 	
 	/* offload IP checkum if possible */
+#if 0
+	int rc = -1;
 	if (likely(mtcp->iom->dev_ioctl != NULL))
 		rc = mtcp->iom->dev_ioctl(mtcp->ctx, nif, PKT_TX_IP_CSUM, iph);
 	/* otherwise calculate IP checksum in S/W */
 	if (rc == -1)
 		iph->check = ip_fast_csum(iph, iph->ihl);
+#endif
 
 	FillOutPacketIPContext(pctx, iph, tcplen + IP_HEADER_LEN);
 
@@ -185,7 +187,6 @@ IPOutput(struct mtcp_manager *mtcp, tcp_stream *stream, uint16_t tcplen,
 	struct iphdr *iph;
 	int nif;
 	unsigned char *haddr;
-	int rc = -1;
 
 	if (stream->sndvar->nif_out >= 0) {
 		nif = stream->sndvar->nif_out;
@@ -229,11 +230,14 @@ IPOutput(struct mtcp_manager *mtcp, tcp_stream *stream, uint16_t tcplen,
 	iph->check = 0;
 
 	/* offload IP checkum if possible */
+#if 0 // already turned on offload by default
+	int rc = -1;
 	if (likely(mtcp->iom->dev_ioctl != NULL))
 		rc = mtcp->iom->dev_ioctl(mtcp->ctx, nif, PKT_TX_IP_CSUM, iph);
 	/* otherwise calculate IP checksum in S/W */
 	if (rc == -1)
 		iph->check = ip_fast_csum(iph, iph->ihl);
+#endif
 
 	FillOutPacketIPContext(pctx, iph, tcplen + IP_HEADER_LEN);
 

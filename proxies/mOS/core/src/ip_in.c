@@ -71,11 +71,13 @@ ProcessInIPv4Packet(mtcp_manager_t mtcp, struct pkt_ctx *pctx)
 		}
 		return TRUE;
 	}
-	
+
+#if 0 // already turned on offload by default
 	if (ip_fast_csum(iph, iph->ihl)) {
 		ret = ERROR;
 		goto __return;
 	}
+#endif
 
 	switch (iph->protocol) {
 		case IPPROTO_TCP:
