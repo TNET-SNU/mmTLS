@@ -244,12 +244,11 @@ mtcp_get_uctx(mctx_t mctx, int msock)
 ssize_t 
 mtcp_peek(mctx_t mctx, int msock, int side, char *buf, size_t len) 
 {
-	int copylen, rc;
+	int rc;
 	struct tcp_stream *cur_stream;
 	mtcp_manager_t mtcp;
 	socket_map_t sock;
 	
-	copylen = rc = 0;
 	mtcp = GetMTCPManager(mctx);
 	if (!mtcp) {
 		errno = EACCES;
@@ -278,7 +277,6 @@ mtcp_peek(mctx_t mctx, int msock, int side, char *buf, size_t len)
 
 	struct tcp_stream *mstrm = sock->monitor_stream->stream;
 	cur_stream = (side == mstrm->side) ? mstrm : mstrm->pair_stream;
-
 	if (!cur_stream || !cur_stream->buffer_mgmt) {
 		TRACE_DBG("Stream is NULL!! or buffer management is disabled\n");
 		errno = EINVAL;
@@ -286,39 +284,172 @@ mtcp_peek(mctx_t mctx, int msock, int side, char *buf, size_t len)
 	}
 
 	/* Check if the read was not just due to syn-ack recv */
-	if (cur_stream->rcvvar != NULL && 
-	    cur_stream->rcvvar->rcvbuf != NULL) {
-		tcprb_t *rcvbuf = cur_stream->rcvvar->rcvbuf;
-		loff_t *poff = &sock->monitor_stream->peek_offset[cur_stream->side];
-
-		rc = tcprb_ppeek(rcvbuf, (uint8_t *)buf, len, *poff);
-		if (rc < 0) {
-			if (*poff >= rcvbuf->head) {
-				/* this should not happen */
-				// TRACE_ERROR("tcprb_ppeek() failed\n");
-				// exit(EXIT_FAILURE);
-				return rc;
-			}
-			/*
-			 * if we already missed some bytes to read, 
-			 * return (the number of bytes missed) * (-1)
-			 */
-			int missed = rcvbuf->head - *poff;
-			*poff = rcvbuf->head;
-			errno = ENODATA;
-			return -1 * missed;
-		}		
-
-		*poff += rc;
-		UNUSED(copylen);
-
-		return rc;
-	} else {
+	if (cur_stream->rcvvar == NULL || cur_stream->rcvvar->rcvbuf == NULL) {
 		TRACE_DBG("Stream hasn't yet been initialized!\n");
-		rc = 0;
+		return 0;
 	}
+
+	tcprb_t *rcvbuf = cur_stream->rcvvar->rcvbuf;
+	loff_t *poff = &sock->monitor_stream->peek_offset[cur_stream->side];
+	if ((rc = tcprb_ppeek(rcvbuf, (uint8_t *)buf, len, *poff)) < 0) {
+		if (*poff >= rcvbuf->head) {
+			// /* this should not happen */
+			// TRACE_ERROR("tcprb_ppeek() failed\n");
+			// exit(EXIT_FAILURE);
+
+			/* 
+			 * already peeked in other event than MOS_ON_CONN_NEW_DATA,
+			 * but recvbuf head is not updated yet
+			 */
+			return rc;
+		}
+		/*
+		 * if we already missed some bytes to read,
+		 * return (the number of bytes missed) * (-1)
+		 */
+		int missed = rcvbuf->head - *poff;
+		*poff = rcvbuf->head;
+		errno = ENODATA;
+		return -1 * missed;
+	}
+
+	/* proceed peek offset */
+	*poff += rc;
 	
 	return rc;
+}
+/*----------------------------------------------------------------------------*/
+uint8_t *
+mtcp_get_record(mctx_t mctx, int msock, int side, int *outlen)
+{
+	struct tcp_stream *cur_stream;
+	mtcp_manager_t mtcp;
+	socket_map_t sock;
+	uint8_t *ptr;
+	
+	*outlen = 0; /* len of record including record header */
+	mtcp = GetMTCPManager(mctx);
+	if (!mtcp) {
+		errno = EACCES;
+		return NULL;
+	}
+	
+	/* check if the calling thread is in MOS context */
+	if (mtcp->ctx->thread != pthread_self()) {
+		errno = EPERM;
+		return NULL;
+	}
+
+	/* check if the socket is monitor stream */
+	sock = &mtcp->msmap[msock];
+	if (sock->socktype != MOS_SOCK_MONITOR_STREAM_ACTIVE) {
+		TRACE_DBG("Invalid socket type!\n");
+		errno = EBADF;
+		return NULL;
+	}
+
+	if (side != MOS_SIDE_CLI && side != MOS_SIDE_SVR) {
+		TRACE_ERROR("Invalid side requested!\n");
+		exit(EXIT_FAILURE);
+		return NULL;
+	}
+
+	struct tcp_stream *mstrm = sock->monitor_stream->stream;
+	cur_stream = (side == mstrm->side) ? mstrm : mstrm->pair_stream;
+	if (!cur_stream || !cur_stream->buffer_mgmt) {
+		TRACE_DBG("Stream is NULL!! or buffer management is disabled\n");
+		errno = EINVAL;
+		return NULL;
+	}
+
+	/* Check if the read was not just due to syn-ack recv */
+	if (cur_stream->rcvvar == NULL || cur_stream->rcvvar->rcvbuf == NULL) {
+		TRACE_DBG("Stream hasn't yet been initialized!\n");
+		return NULL;
+	}
+
+	tcprb_t *rcvbuf = cur_stream->rcvvar->rcvbuf;
+	loff_t *poff = &sock->monitor_stream->peek_offset[cur_stream->side];
+
+	ptr = tcprb_get_record(rcvbuf, *poff, outlen);
+	if (!ptr) {
+		if (*outlen > TLS_RECORD_BUF_SIZE)
+			return NULL;
+		if (*poff >= rcvbuf->head) {
+			/* 
+			 * already peeked in other event than MOS_ON_CONN_NEW_DATA,
+			 * but recvbuf head is not updated yet
+			 */
+			return NULL;
+		}
+		/*
+		 * if we already missed some bytes to read
+		 */
+		int missed = rcvbuf->head - *poff;
+		*poff = rcvbuf->head;
+		errno = ENODATA;
+		*outlen = -1 * missed;
+		return NULL;
+	}
+
+	/*
+	 * should not proceed peek offset
+	 * We separated moving peek offset as another API
+	 */
+	// *poff += *outlen;
+
+	return ptr;
+}
+/*----------------------------------------------------------------------------*/
+int 
+mtcp_move_poff(mctx_t mctx, int msock, int side, int len)
+{
+	struct tcp_stream *cur_stream;
+	mtcp_manager_t mtcp;
+	socket_map_t sock;
+	
+	mtcp = GetMTCPManager(mctx);
+	if (!mtcp) {
+		errno = EACCES;
+		return -1;
+	}
+	
+	/* check if the calling thread is in MOS context */
+	if (mtcp->ctx->thread != pthread_self()) {
+		errno = EPERM;
+		return -1;
+	}
+
+	/* check if the socket is monitor stream */
+	sock = &mtcp->msmap[msock];
+	if (sock->socktype != MOS_SOCK_MONITOR_STREAM_ACTIVE) {
+		TRACE_DBG("Invalid socket type!\n");
+		errno = EBADF;
+		return -1;
+	}
+
+	if (side != MOS_SIDE_CLI && side != MOS_SIDE_SVR) {
+		TRACE_ERROR("Invalid side requested!\n");
+		exit(EXIT_FAILURE);
+		return -1;
+	}
+
+	struct tcp_stream *mstrm = sock->monitor_stream->stream;
+	cur_stream = (side == mstrm->side) ? mstrm : mstrm->pair_stream;
+	if (!cur_stream || !cur_stream->buffer_mgmt) {
+		TRACE_DBG("Stream is NULL!! or buffer management is disabled\n");
+		errno = EINVAL;
+		return -1;
+	}
+
+	/* Check if the read was not just due to syn-ack recv */
+	if (cur_stream->rcvvar == NULL || cur_stream->rcvvar->rcvbuf == NULL)
+		return -1;
+
+	/* proceed peek offset */
+	sock->monitor_stream->peek_offset[cur_stream->side] += len;
+
+	return 0;
 }
 /*----------------------------------------------------------------------------*/
 /**
@@ -882,6 +1013,105 @@ mtcp_reset_conn(mctx_t mctx, int sock)
 				NULL, 0, 0, 0, 0, -1);
 	
 	return 0;
+}
+/*----------------------------------------------------------------------------*/
+/**
+ * Create offload rule for the connection
+ */
+void *
+mtcp_offload_flow(mctx_t mctx, int sock, int side, int cmd)
+{
+	mtcp_manager_t mtcp;
+	socket_map_t socket;
+	int nif;
+	unsigned char *h_daddr, *h_saddr;
+
+	mtcp = GetMTCPManager(mctx);
+	if (!mtcp) {
+		errno = EACCES;
+		return NULL;
+	}
+
+	socket = &mtcp->msmap[sock];
+
+	/* passive monitoring socket is not connected to any stream */
+	if (socket->socktype == MOS_SOCK_MONITOR_STREAM) {
+		errno = EINVAL;
+		return NULL;
+	}
+	if (unlikely(!mtcp->iom->offload))
+		return NULL;
+#ifdef MTCP_CB_GETCURPKT_CREATE_COPY
+	struct pkt_info p;
+	if (mtcp_getlastpkt(mctx, sock, side, &p) < 0)
+		exit(EXIT_FAILURE);
+	nif = p.in_ifidx;
+	if (cmd == OFFLOAD_BYPASS) {
+		h_daddr = GetDestinationHWaddr(p.iph->daddr);
+		if (!h_daddr)
+			return NULL;
+		h_saddr = g_config.mos->netdev_table->ent[nif]->haddr;
+		if (!h_saddr)
+			return NULL;
+		memcpy(p.ethh->h_dest, h_daddr, ETH_ALEN);
+		memcpy(p.ethh->h_source, h_saddr, ETH_ALEN);
+	}
+	return mtcp->iom->offload(nif, cmd, p.ethh);
+#else
+	struct pkt_ctx *pctx;
+	if (mtcp_getlastpkt(mctx, sock, side, &pctx) < 0)
+		exit(EXIT_FAILURE);
+	nif = pctx->p.in_ifidx;
+	printf("nif: %d\n", nif);
+	if (cmd == OFFLOAD_BYPASS) {
+		h_daddr = GetDestinationHWaddr(pctx->p.iph->daddr);
+		if (!h_daddr)
+			return NULL;
+		h_saddr = g_config.mos->netdev_table->ent[nif]->haddr;
+		if (!h_saddr)
+			return NULL;
+		memcpy(pctx->p.ethh->h_dest, h_daddr, ETH_ALEN);
+		memcpy(pctx->p.ethh->h_source, h_saddr, ETH_ALEN);
+	}
+	return mtcp->iom->offload(nif, cmd, pctx->p.ethh);
+#endif
+}
+/*----------------------------------------------------------------------------*/
+/**
+ * Remove offload rule for the connection
+ */
+int
+mtcp_onload_flow(mctx_t mctx, int sock, int side, void *flow)
+{
+	mtcp_manager_t mtcp;
+	socket_map_t socket;
+
+	mtcp = GetMTCPManager(mctx);
+	if (!mtcp) {
+		errno = EACCES;
+		return -1;
+	}
+
+	socket = &mtcp->msmap[sock];
+
+	/* passive monitoring socket is not connected to any stream */
+	if (socket->socktype == MOS_SOCK_MONITOR_STREAM) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (unlikely(!mtcp->iom->onload))
+		return -1;
+#ifdef MTCP_CB_GETCURPKT_CREATE_COPY
+	struct pkt_info p;
+	if (mtcp_getlastpkt(mctx, sock, side, &p) < 0)
+		exit(EXIT_FAILURE);
+	return mtcp->iom->onload(p.in_ifidx, flow);
+#else
+	struct pkt_ctx *pctx;
+	if (mtcp_getlastpkt(mctx, sock, side, &pctx) < 0)
+		exit(EXIT_FAILURE);
+	return mtcp->iom->onload(pctx->p.in_ifidx, flow);
+#endif
 }
 /*----------------------------------------------------------------------------*/
 uint32_t

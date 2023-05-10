@@ -89,7 +89,7 @@ unsigned char *
 GetDestinationHWaddr(uint32_t dip)
 {
 	unsigned char *d_haddr = NULL;
-	int prefix = 0;
+	int prefix = -1;
 	int i;
 
 #ifdef L3_TRANSPARENT

@@ -11,7 +11,7 @@
 #include <rte_thash.h>
 #include <rte_malloc.h>
 #include <sched.h>
-#include <rte_thread.h>
+// #include <rte_thread.h>
 
 #include "tcpstack.h"
 #if USE_HASHTABLE_FOR_ACTIVE_SESSION
@@ -125,6 +125,7 @@ print_pkt_info(uint16_t core_id, uint16_t port,
 
     ethh = (struct rte_ether_hdr *)pktbuf;
 	iph = (struct rte_ipv4_hdr *)(ethh + 1);
+    printf("protoid: %d\n", iph->next_proto_id);
     tcph = (struct rte_tcp_hdr *)(iph + 1);
     payload = (uint8_t *)tcph + ((tcph->data_off & 0xf0) >> 2);
 
@@ -143,7 +144,7 @@ print_pkt_info(uint16_t core_id, uint16_t port,
 	if (type == TCP_SEND)
 		return;
 #endif
-#if 1
+#if 0
 	if (type == TCP_RECV) {
 		TCP_PRINT("\n\n"
 				"----------Packet RECV Info--------------------------\n");

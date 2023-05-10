@@ -73,16 +73,19 @@
 #define TX_HTHRESH			0  /**< Default values of TX host threshold reg. */
 #define TX_WTHRESH			0  /**< Default values of TX write-back threshold reg. */
 
-#define MAX_PKT_BURST			64
+#define MAX_PKT_BURST		16
+#define MAX_ETHPORTS		2
 
 /*
  * Configurable number of RX/TX ring descriptors
  */
-#define RTE_TEST_RX_DESC_DEFAULT	/* 8192 */ 4096 /* 2048 */ /* 1024 */ /* 512 */ /* 256 */
+#define RTE_TEST_RX_DESC_DEFAULT	/* 8192 */ /* 4096 */ 2048 /* 1024 */ /* 512 */ /* 256 */
 #define RTE_TEST_TX_DESC_DEFAULT	/* 8192 */ /* 4096 */ /* 2048 */ /* 1024 */ /* 512 */ 256
 
 static uint16_t nb_rxd_data = RTE_TEST_RX_DESC_DEFAULT;
+#if KEY_MAPPING
 static uint16_t nb_rxd_key = RTE_TEST_RX_DESC_DEFAULT / 4;
+#endif
 static uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT;
 /*----------------------------------------------------------------------------*/
 /* packet memory pools for storing packet bufs */
@@ -91,81 +94,45 @@ static struct rte_mempool *pktmbuf_pool[MAX_CPUS * 2] = {NULL};
 #else
 static struct rte_mempool *pktmbuf_pool[MAX_CPUS] = {NULL};
 #endif
-static uint8_t cpu_qid_map[RTE_MAX_ETHPORTS][MAX_CPUS] = {{0}};
+static uint8_t cpu_qid_map[MAX_ETHPORTS][MAX_CPUS] = {{0}};
 
-#if RTE_VERSION >= RTE_VERSION_NUM(20, 0, 0, 0)
 static const uint8_t g_key[] = {
     0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
     0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
     0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
     0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A
 };
-#else
-static const uint8_t g_key[] = {
-	0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
-	0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
-	0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
-	0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
-	0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A, 0x6D, 0x5A,
-	0x6D, 0x5A
-};
-#endif
 
 //#define DEBUG				1
 #ifdef DEBUG
 /* ethernet addresses of ports */
-#if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
-static struct rte_ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
-#else
-static struct ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
-#endif
+static struct rte_ether_addr ports_eth_addr[MAX_ETHPORTS];
 #endif
 
-static struct rte_eth_dev_info dev_info[RTE_MAX_ETHPORTS];
+static struct rte_eth_dev_info dev_info[MAX_ETHPORTS];
 
 static struct rte_eth_conf port_conf = {
 	.rxmode = {
-		.mq_mode	= 	ETH_MQ_RX_RSS,
-#if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
-		.max_rx_pkt_len = 	RTE_ETHER_MAX_LEN,
-#else
-		.max_rx_pkt_len = 	ETHER_MAX_LEN,
-#endif
-		.split_hdr_size = 	0,
-#if RTE_VERSION < RTE_VERSION_NUM(18, 5, 0, 0)
-		.header_split   = 	0, /**< Header Split disabled */
-		.hw_ip_checksum = 	1, /**< IP checksum offload enabled */
-		.hw_vlan_filter = 	0, /**< VLAN filtering disabled */
-		.jumbo_frame    = 	0, /**< Jumbo Frame Support disabled */
-		.hw_strip_crc   = 	1, /**< CRC stripped by hardware */
-#else
-		.offloads	=	(
-							DEV_RX_OFFLOAD_CHECKSUM
-#if USE_LRO
-							| DEV_RX_OFFLOAD_TCP_LRO
-#endif
-						),
-#if USE_LRO
+		.mq_mode	= 	RTE_ETH_MQ_RX_RSS,
+		.mtu = RTE_ETHER_MAX_LEN,
+		.offloads	=	RTE_ETH_RX_OFFLOAD_CHECKSUM |
+						RTE_ETH_RX_OFFLOAD_TCP_LRO,
 		.max_lro_pkt_size =   MBUF_DATA_SIZE,
-#endif
-#endif
 	},
 	.rx_adv_conf = {
 		.rss_conf = {
 			.rss_key = (uint8_t *)g_key,
 			.rss_key_len = sizeof(g_key),
-			.rss_hf = ETH_RSS_TCP | ETH_RSS_UDP |
-					ETH_RSS_IP | ETH_RSS_L2_PAYLOAD
+			.rss_hf = RTE_ETH_RSS_TCP | RTE_ETH_RSS_UDP |
+					  RTE_ETH_RSS_IP | RTE_ETH_RSS_L2_PAYLOAD
 		},
 	},
 	.txmode = {
-		.mq_mode = ETH_MQ_TX_NONE,
-#if RTE_VERSION >= RTE_VERSION_NUM(18, 2, 0, 0)
-		.offloads = DEV_TX_OFFLOAD_IPV4_CKSUM |
-					DEV_TX_OFFLOAD_UDP_CKSUM |
-					DEV_TX_OFFLOAD_TCP_CKSUM |
-                    DEV_TX_OFFLOAD_TCP_TSO
-#endif
+		.mq_mode = RTE_ETH_MQ_TX_NONE,
+		.offloads = RTE_ETH_TX_OFFLOAD_IPV4_CKSUM |
+					RTE_ETH_TX_OFFLOAD_UDP_CKSUM |
+					RTE_ETH_TX_OFFLOAD_TCP_CKSUM |
+                    RTE_ETH_TX_OFFLOAD_TCP_TSO
 	},
 };
 
@@ -186,13 +153,6 @@ static const struct rte_eth_txconf tx_conf = {
 	},
 	.tx_free_thresh = 		0, /* Use PMD default values */
 	.tx_rs_thresh = 		0, /* Use PMD default values */
-#if RTE_VERSION < RTE_VERSION_NUM(18, 5, 0, 0)
-	/*
-	 * As the example won't handle mult-segments and offload cases,
-	 * set the flag by default.
-	 */
-	.txq_flags = 			0x0,
-#endif
 };
 
 struct mbuf_table {
@@ -201,13 +161,13 @@ struct mbuf_table {
 };
 
 struct dpdk_private_context {
-	struct mbuf_table rmbufs[RTE_MAX_ETHPORTS];
+	struct mbuf_table rmbufs[MAX_ETHPORTS];
 	/* shares mbufs with rmbufs by default */
-	struct mbuf_table wmbufs[RTE_MAX_ETHPORTS];
+	struct mbuf_table wmbufs[MAX_ETHPORTS];
 	/* rmbufs for key receiving */
-	struct mbuf_table rmbufs_key[RTE_MAX_ETHPORTS];
+	struct mbuf_table rmbufs_key[MAX_ETHPORTS];
 	/* does not share mbufs with rmbufs, is used for sending raw packets */
-	struct mbuf_table wmbufs_raw[RTE_MAX_ETHPORTS];
+	struct mbuf_table wmbufs_raw[MAX_ETHPORTS];
 #ifdef RX_IDLE_ENABLE
 	uint8_t rx_idle;
 #endif
@@ -443,11 +403,7 @@ dpdk_get_wptr(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, uint1
 		return NULL;
 	m = dpc->wmbufs_raw[nif].m_table[dpc->wmbufs_raw[nif].len];
 	/* retrieve the right write offset */
-#if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
 	ptr = (void *)rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
-#else
-	ptr = (void *)rte_pktmbuf_mtod(m, struct ether_hdr *);
-#endif
 	m->pkt_len = m->data_len = pktsize;
 	m->nb_segs = 1;
 	m->next = NULL;
@@ -486,11 +442,7 @@ dpdk_get_wptr_tso(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, u
 	}
 	m = dpc->wmbufs_raw[nif].m_table[dpc->wmbufs_raw[nif].len];
 	/* retrieve the right write offset */
-#if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
 	ptr = (void *)rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
-#else
-	ptr = (void *)rte_pktmbuf_mtod(m, struct ether_hdr *);
-#endif
 	m->pkt_len = m->data_len = pktsize;
 	m->nb_segs = 1;
 	m->next = NULL;
@@ -500,22 +452,12 @@ dpdk_get_wptr_tso(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize, u
 	m->l3_len = IP_HEADER_LEN;
 	m->l4_len = l4len;
 	m->tso_segsz = RTE_ETHER_MTU - (IP_HEADER_LEN + l4len);
-
-#if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
 	m->ol_flags = RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM;
 	if (pktsize > RTE_ETHER_MTU + ETHERNET_HEADER_LEN) {
 		m->ol_flags |= RTE_MBUF_F_TX_TCP_SEG;
 	} else {
 		m->ol_flags |= RTE_MBUF_F_TX_TCP_CKSUM;
 	}
-#else
-	m->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM;
-	if (pktsize > RTE_ETHER_MTU + ETHERNET_HEADER_LEN) {
-		m->ol_flags |= PKT_TX_TCP_SEG;
-	} else {
-		m->ol_flags |= PKT_TX_TCP_CKSUM;
-	}
-#endif
 
 #ifdef NETSTAT
 	mtcp->nstat.tx_bytes[nif] += pktsize + ETHER_OVR;
@@ -545,7 +487,7 @@ dpdk_set_wptr(struct mtcp_thread_context *ctxt, int out_nif, int in_nif, int ind
 		dpc->rmbufs[in_nif].m_table[index];
 
 	m = dpc->rmbufs[in_nif].m_table[index];
-	m->udata64 = 0;
+	m->dynfield1[0] = 0;
 	
 #ifdef NETSTAT
 	mtcp->nstat.tx_bytes[out_nif] += m->pkt_len + ETHER_OVR;
@@ -558,7 +500,8 @@ dpdk_set_wptr(struct mtcp_thread_context *ctxt, int out_nif, int in_nif, int ind
 }
 /*----------------------------------------------------------------------------*/
 void
-dpdk_set_wptr_tso(struct mtcp_thread_context *ctxt, int out_nif, int in_nif, int index, uint16_t l4len)
+dpdk_set_wptr_tso(struct mtcp_thread_context *ctxt, int out_nif,
+				  int in_nif, int index, uint16_t l4len)
 {
 	struct dpdk_private_context *dpc;
 	mtcp_manager_t mtcp;
@@ -575,29 +518,19 @@ dpdk_set_wptr_tso(struct mtcp_thread_context *ctxt, int out_nif, int in_nif, int
 		dpc->rmbufs[in_nif].m_table[index];
 
 	m = dpc->rmbufs[in_nif].m_table[index];
-	m->udata64 = 0;
+	m->dynfield1[0] = 0;
 
 	/* enable TSO */
 	m->l2_len = ETHERNET_HEADER_LEN;
 	m->l3_len = IP_HEADER_LEN;
 	m->l4_len = l4len;
 	m->tso_segsz = RTE_ETHER_MTU - (IP_HEADER_LEN + l4len);
-	
-#if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
 	m->ol_flags = RTE_MBUF_F_TX_IPV4 | RTE_MBUF_F_TX_IP_CKSUM;
 	if (m->pkt_len > RTE_ETHER_MTU + ETHERNET_HEADER_LEN) {
 		m->ol_flags |= RTE_MBUF_F_TX_TCP_SEG;
 	} else {
 		m->ol_flags |= RTE_MBUF_F_TX_TCP_CKSUM;
 	}
-#else
-	m->ol_flags = PKT_TX_IPV4 | PKT_TX_IP_CKSUM;
-	if (m->pkt_len > RTE_ETHER_MTU + ETHERNET_HEADER_LEN) {
-		m->ol_flags |= PKT_TX_TCP_SEG;
-	} else {
-		m->ol_flags |= PKT_TX_TCP_CKSUM;
-	}
-#endif
 #ifdef NETSTAT
 	mtcp->nstat.tx_bytes[out_nif] += m->pkt_len + ETHER_OVR;
 #endif
@@ -615,7 +548,7 @@ free_pkts(struct rte_mbuf **mtable, unsigned len)
 	
 	/* free the freaking packets */
 	for (i = 0; i < len; i++)
-		if (mtable[i]->udata64 == 1) {
+		if (mtable[i]->dynfield1[0] == 1) {
 			rte_pktmbuf_free_seg(mtable[i]);
 			RTE_MBUF_PREFETCH_TO_FREE(mtable[i+1]);
 		}
@@ -677,7 +610,7 @@ dpdk_get_rptr(struct mtcp_thread_context *ctxt, int ifidx, int index, uint16_t *
 	if (index < dpc->rmbufs[ifidx].len) {
 		m = dpc->rmbufs[ifidx].m_table[index];
 		/* tag to check if the packet is a local or a forwarded pkt */
-		m->udata64 = 1;
+		m->dynfield1[0] = 1;
 	}
 	else
 		m = dpc->rmbufs_key[ifidx].m_table[index - dpc->rmbufs[ifidx].len];
@@ -694,19 +627,11 @@ dpdk_get_nif(struct ifreq *ifr)
 {
 	int i;
 	static int num_dev = -1;
-#if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
-	static struct rte_ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
-#else
-	static struct ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
-#endif
+	static struct rte_ether_addr ports_eth_addr[MAX_ETHPORTS];
 
 	/* get mac addr entries of 'detected' dpdk ports */
 	if (num_dev < 0) {
-#if RTE_VERSION < RTE_VERSION_NUM(18, 5, 0, 0)
-		num_dev = rte_eth_dev_count();
-#else
 		num_dev = rte_eth_dev_count_avail();
-#endif
 		for (i = 0; i < num_dev; i++)
 			rte_eth_macaddr_get(i, &ports_eth_addr[i]);
 	}
@@ -781,7 +706,7 @@ check_all_ports_link_status(uint8_t port_num, uint32_t port_mask)
 					printf("Port %d Link Up - speed %u "
 						"Mbps - %s\n", (uint8_t)portid,
 						(unsigned)link.link_speed,
-				(link.link_duplex == ETH_LINK_FULL_DUPLEX) ?
+				(link.link_duplex == RTE_ETH_LINK_FULL_DUPLEX) ?
 					("full-duplex") : ("half-duplex\n"));
 				else
 					printf("Port %d Link Down\n",
@@ -812,111 +737,221 @@ check_all_ports_link_status(uint8_t port_num, uint32_t port_mask)
 	}
 }
 /*----------------------------------------------------------------------------*/
-// int32_t
-// dpdk_dev_ioctl(struct mtcp_thread_context *ctx, int nif, int cmd, void *argp)
-// {
-// 	struct dpdk_private_context *dpc;
-// 	struct rte_mbuf *m;
-// 	int len_of_mbuf;
-// 	struct iphdr *iph;
-// 	struct tcphdr *tcph;
-// 	RssInfo *rss_i;
-// 	void **argpptr = (void **)argp;
+static inline struct rte_flow *
+offload_bypass(uint16_t portid, uint8_t *h_daddr, uint8_t *h_saddr,
+			   rte_be32_t saddr, rte_be32_t daddr,
+			   rte_be16_t sport, rte_be16_t dport, uint8_t proto)
+{
+	struct rte_flow_error err;
+	struct rte_flow *flow;
+	struct rte_flow_attr attr = {
+		.group = 0,
+		.priority = 1,
+		.transfer = 1,
+	};
+	struct rte_flow_item patterns[] = {
+		{
+			.type = RTE_FLOW_ITEM_TYPE_PORT_ID,
+			.spec = &(struct rte_flow_item_port_id){.id = portid}
+		},
+		{
+			.type = RTE_FLOW_ITEM_TYPE_IPV4,
+			.spec = &(struct rte_flow_item_ipv4) {
+				.hdr.src_addr = saddr,
+				.hdr.dst_addr = daddr,
+			},
+			.mask = &rte_flow_item_ipv4_mask,
+		},
+		{
+			.type = RTE_FLOW_ITEM_TYPE_TCP,
+			.spec = &(struct rte_flow_item_tcp) {
+				.hdr.src_port = sport,
+				.hdr.dst_port = dport,
+			},
+			.mask = &rte_flow_item_tcp_mask,
+		},
+		/* should be terminated with END pattern item */
+		{.type = RTE_FLOW_ITEM_TYPE_END}
+	};
+	struct rte_flow_action actions[] = {
+		/* modifying dst haddr works well */
+    	{
+			.type = RTE_FLOW_ACTION_TYPE_MODIFY_FIELD,
+			.conf = &(struct rte_flow_action_modify_field) {
+				.operation = (enum rte_flow_modify_op) RTE_FLOW_MODIFY_SET,
+				.dst = (struct rte_flow_action_modify_data) {
+					.field = RTE_FLOW_FIELD_MAC_DST
+				},
+				.src = (struct rte_flow_action_modify_data) {
+					.field = RTE_FLOW_FIELD_POINTER,
+					.pvalue = h_daddr,
+				},
+				.width = ETH_ALEN * 8
+			}
+		},
+		{
+			.type = RTE_FLOW_ACTION_TYPE_PORT_ID,
+			.conf = &(struct rte_flow_action_port_id) {
+				// .original = 1,
+				.reserved = 0,
+				.id = portid
+			}
+		},
+		/* should be terminated with END action */
+    	{.type = RTE_FLOW_ACTION_TYPE_END}
+	};
+	printf("offload_bypass called\n");
+	if (rte_flow_validate(portid, &attr, patterns, actions, &err) < 0)
+    	rte_exit(EXIT_FAILURE,
+        	"flow rule validate failed: %s\n error type %u %s\n",
+        	rte_strerror(rte_errno), err.type, err.message);
+	flow = rte_flow_create(portid, &attr, patterns, actions, &err);
+	if (!flow)
+    	rte_exit(EXIT_FAILURE,
+        	"flow rule create failed: %s\n error type %u %s\n",
+        	rte_strerror(rte_errno), err.type, err.message);
 
-// 	if (cmd == DRV_NAME) {
-// 		*argpptr = (void *)dev_info->driver_name;
-// 		return 0;
-// 	}
-	
-// 	iph = (struct iphdr *)argp;
-// 	dpc = (struct dpdk_private_context *)ctx->io_private_context;
-// 	len_of_mbuf = dpc->wmbufs[nif].len;
-// 	rss_i = NULL;
+	return flow;
+}
+/*----------------------------------------------------------------------------*/
+static inline struct rte_flow *
+offload_drop(uint16_t portid, rte_be32_t saddr, rte_be32_t daddr,
+			 rte_be16_t sport, rte_be16_t dport, uint8_t proto)
+{
+	struct rte_flow_error err;
+	struct rte_flow *flow;
+	struct rte_flow_attr attr = {
+		.group = 1,
+		/* 
+		 * DROP rule has higher priority (smaller is higher)
+		 * than BYPASS rule
+		 */
+		.priority = 0,
+    	.ingress = 1,
+	};
+	struct rte_flow_item_ipv4 ipv4_spec = {
+    	.hdr.src_addr = saddr,
+    	.hdr.dst_addr = daddr,
+	};
+	struct rte_flow_item_tcp tcp_spec = {
+    	.hdr.src_port = sport,
+    	.hdr.dst_port = dport,
+	};
+	struct rte_flow_item patterns[] = {
+		{
+			.type = RTE_FLOW_ITEM_TYPE_IPV4,
+			.spec = &ipv4_spec,
+			.mask = &rte_flow_item_ipv4_mask,
+		},
+		{
+			.type = RTE_FLOW_ITEM_TYPE_TCP,
+			.spec = &tcp_spec,
+			.mask = &rte_flow_item_tcp_mask,
+		},
+		/* should be terminated with END pattern item */
+		{.type = RTE_FLOW_ITEM_TYPE_END}
+	};
+	struct rte_flow_action actions[] = {
+    	{
+			.type = RTE_FLOW_ACTION_TYPE_DROP,
+		},
+		/* should be terminated with END action */
+    	{.type = RTE_FLOW_ACTION_TYPE_END}
+	};
+	printf("offload_drop called\n");
+	if (rte_flow_validate(portid, &attr, patterns, actions, &err) < 0)
+    	rte_exit(EXIT_FAILURE,
+        	"flow rule validate failed: %s\n error type %u %s\n",
+        	rte_strerror(rte_errno), err.type, err.message);
+	flow = rte_flow_create(portid, &attr, patterns, actions, &err);
+	if (!flow)
+    	rte_exit(EXIT_FAILURE,
+        	"flow rule create failed: %s\n error type %u %s\n",
+        	rte_strerror(rte_errno), err.type, err.message);
 
-// 	switch (cmd) {
-// 	case PKT_TX_IP_CSUM:
-// 		m = dpc->wmbufs[nif].m_table[len_of_mbuf - 1];
-// 		m->ol_flags |= PKT_TX_IP_CKSUM | PKT_TX_IPV4;
-// #if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
-// 		m->l2_len = sizeof(struct rte_ether_hdr);
-// #else
-// 		m->l2_len = sizeof(struct ether_hdr);
-// #endif
-// 		m->l3_len = (iph->ihl<<2);
-// 		break;
-// 	case PKT_TX_TCP_CSUM:
-// 		m = dpc->wmbufs[nif].m_table[len_of_mbuf - 1];
-// 		tcph = (struct tcphdr *)((unsigned char *)iph + (iph->ihl<<2));
-// 		m->ol_flags |= PKT_TX_TCP_CKSUM;
-// #if RTE_VERSION > RTE_VERSION_NUM(20, 0, 0, 0)
-// 		tcph->check = rte_ipv4_phdr_cksum((struct rte_ipv4_hdr *)iph, m->ol_flags);
-// #else
-// 		tcph->check = rte_ipv4_phdr_cksum((struct ipv4_hdr *)iph, m->ol_flags);
-// #endif
-// 		break;
-// 	case PKT_RX_RSS:
-// 		rss_i = (RssInfo *)argp;
-// 		m = dpc->pkts_burst[rss_i->pktidx];
-// 		rss_i->hash_value = m->hash.rss;
-// 		break;
-// 	default:
-// 		goto dev_ioctl_err;
-// 	}
+	return flow;
+}
+/*----------------------------------------------------------------------------*/
+void *
+dpdk_offload_ctl(int nif, int cmd, void *argp)
+{
+	struct rte_ether_hdr *ethh = (struct rte_ether_hdr *)argp;
+	struct rte_ipv4_hdr *iph = (struct rte_ipv4_hdr *)(ethh + 1);
+	struct rte_tcp_hdr *tcph = (struct rte_tcp_hdr *)
+		((unsigned char *)iph + ((iph->version_ihl & 0x0f) << 2));
 
-// 	return 0;
-//  dev_ioctl_err:
-// 	return -1;
-// }
+	if (cmd == OFFLOAD_DROP)
+		return offload_drop(nif, iph->src_addr, iph->dst_addr,
+			tcph->src_port, tcph->dst_port, iph->next_proto_id);
+	if (cmd == OFFLOAD_BYPASS)
+		return offload_bypass(nif,
+			ethh->dst_addr.addr_bytes, ethh->src_addr.addr_bytes,
+			iph->src_addr, iph->dst_addr,
+			tcph->src_port, tcph->dst_port, iph->next_proto_id);
+	printf("Not supported cmd yet!\n");
+
+	return NULL;
+}
+/*----------------------------------------------------------------------------*/
+int
+dpdk_onload_ctl(int nif, void *flow)
+{
+	printf("onload called\n");
+	struct rte_flow_error err;
+	int ret = rte_flow_destroy(nif, (struct rte_flow *)flow, &err);
+	if (ret < 0)
+    	rte_exit(EXIT_FAILURE,
+        	"flow rule remove failed: %s\n error type %u %s\n",
+        	rte_strerror(rte_errno), err.type, err.message);
+
+	return ret;
+}
 /*----------------------------------------------------------------------------*/
 #if LEADER_ISOLATION
 void
 data_flow_configure(uint16_t portid, uint16_t numq)
 {
-	printf("[port %u] Configuring TCP flow RSS among queues\n",
-		   (unsigned) portid);
 	uint16_t rss_queues[MAX_CPUS];
 	struct rte_flow_attr attr = {
-		.group = 0,
-		.priority = 2,
+		.group = 1,
+		.priority = 1,
     	.ingress = 1,
 	};
-	struct rte_flow_item_ipv4 ipv4_spec = {
-    	.hdr.next_proto_id = IPPROTO_TCP,
-	};
-	static const struct rte_flow_item_ipv4 ipv4_mask = {
-    	.hdr.next_proto_id = 0xff,
-	};
-	struct rte_flow_item patterns[2] = {
+	struct rte_flow_item patterns[] = {
 		{
 			.type = RTE_FLOW_ITEM_TYPE_IPV4,
-			.spec = &ipv4_spec,
-			.mask = &ipv4_mask,
+			.spec = &(struct rte_flow_item_ipv4) {
+				.hdr.next_proto_id = IPPROTO_TCP,
+			},
+			.mask = &(struct rte_flow_item_ipv4) {
+				.hdr.next_proto_id = 0xff,
+			},
 		},
-	};
-    struct rte_flow_action_rss action = {
-		.types = ETH_RSS_TCP | ETH_RSS_UDP | ETH_RSS_IP,
-		.key_len = sizeof(g_key),
-		.queue_num = numq - 1,
-		.key = g_key,
-		.queue = rss_queues,
+    	{.type = RTE_FLOW_ITEM_TYPE_END}
 	};
 	struct rte_flow_action actions[] = {
-    	{ .type = RTE_FLOW_ACTION_TYPE_VOID },
-    	{ .type = RTE_FLOW_ACTION_TYPE_END  },
+		{
+			.type = RTE_FLOW_ACTION_TYPE_RSS,
+			.conf = &(struct rte_flow_action_rss) {
+				.types = ETH_RSS_TCP | ETH_RSS_UDP | ETH_RSS_IP,
+				.key_len = sizeof(g_key),
+				.queue_num = numq - 1,
+				.key = g_key,
+				.queue = rss_queues,
+			},
+		}
+    	{.type = RTE_FLOW_ACTION_TYPE_END},
 	};
 	struct rte_flow_error err;
 	
+	/* Do RSS over N queues using the default RSS key */
+	printf("[port %u] Configuring TCP flow RSS among queues\n",
+		   (unsigned) portid);
 	for (uint16_t i = 0; i < numq - 1; i++) {
 		/* queue 0 --> core 1, queue 1 --> core 2, and so on */
 		rss_queues[i] = i + 1;
 		printf("rss_queues[%d]: %d\n", i, i + 1);
 	}
-
-	/* Do RSS over N queues using the default RSS key */
-	actions[0] = (struct rte_flow_action) {
-		.type = RTE_FLOW_ACTION_TYPE_RSS,
-		.conf = &action,
-	};
 
 	if (!rte_flow_create(portid, &attr, patterns, actions, &err))
     	rte_exit(EXIT_FAILURE,
@@ -927,39 +962,34 @@ data_flow_configure(uint16_t portid, uint16_t numq)
 void
 key_flow_configure(uint16_t portid, uint16_t numq)
 {
-	printf("[port %u] Configuring key flow\n",
-		   (unsigned) portid);
 	struct rte_flow_attr attr = {
-		.group = 0,
-		.priority = 1,
+		.group = 1,
+		.priority = 0,
     	.ingress = 1,
 	};
-	struct rte_flow_item_ipv4 ipv4_spec = {
-		.hdr.type_of_service = 0xff,
-	};
-	static const struct rte_flow_item_ipv4 ipv4_mask = {
-		.hdr.type_of_service = 0xff,
-	};
-	struct rte_flow_item patterns[2] = {
+	struct rte_flow_item patterns[] = {
 		{
 			.type = RTE_FLOW_ITEM_TYPE_IPV4,
-			.spec = &ipv4_spec,
-			.mask = &ipv4_mask,
+			.spec = &(struct rte_flow_item_ipv4) {
+				.hdr.type_of_service = 0xff
+			},
+			.mask = &(struct rte_flow_item_ipv4) {
+				.hdr.type_of_service = 0xff
+			}
 		},
+    	{.type = RTE_FLOW_ITEM_TYPE_END}
 	};
-    struct rte_flow_action_queue action;
 	struct rte_flow_action actions[] = {
-    	{ .type = RTE_FLOW_ACTION_TYPE_VOID },
-    	{ .type = RTE_FLOW_ACTION_TYPE_END  },
+		{
+			.type = RTE_FLOW_ACTION_TYPE_QUEUE,
+			.conf = &(struct rte_flow_action_queue) {.index = 0},
+		}
+    	{.type = RTE_FLOW_ACTION_TYPE_END},
 	};
 	struct rte_flow_error err;
-	action.index = 0;
-	printf("key_queue: 0");
-	actions[0] = (struct rte_flow_action) {
-		.type = RTE_FLOW_ACTION_TYPE_QUEUE,
-		.conf = &action,
-	};
 
+	printf("[port %u] Configuring key flow to queue 0\n",
+		   (unsigned) portid);
 	if (!rte_flow_create(portid, &attr, patterns, actions, &err))
     	rte_exit(EXIT_FAILURE,
         	"key flow create failed: %s\n error type %u %s\n",
@@ -971,52 +1001,47 @@ key_flow_configure(uint16_t portid, uint16_t numq)
 void
 data_flow_configure(uint16_t portid, uint16_t numq)
 {
-	printf("[port %u] Configuring session data RSS among 0 ~ %d queues\n",
-		   (unsigned) portid, numq - 1);
-	uint16_t tcp_rss_queues[MAX_CPUS];
+	uint16_t data_rss_queues[MAX_CPUS];
 	struct rte_flow_attr attr = {
 		.group = 0,
-		.priority = 2,
+		.priority = 1,
     	.ingress = 1,
 	};
-	struct rte_flow_item_ipv4 ipv4_spec = {
-    	.hdr.next_proto_id = IPPROTO_TCP,
-	};
-	static const struct rte_flow_item_ipv4 ipv4_mask = {
-    	.hdr.next_proto_id = 0xff,
-	};
-	struct rte_flow_item patterns[2] = {
+	struct rte_flow_item patterns[] = {
 		{
 			.type = RTE_FLOW_ITEM_TYPE_IPV4,
-			.spec = &ipv4_spec,
-			.mask = &ipv4_mask,
+			.spec = &(struct rte_flow_item_ipv4) {
+				.hdr.next_proto_id = IPPROTO_TCP
+			},
+			.mask = &(struct rte_flow_item_ipv4) {
+				.hdr.next_proto_id = 0xff
+			},
 		},
-	};
-    struct rte_flow_action_rss action = {
-		.types = ETH_RSS_TCP | ETH_RSS_UDP | ETH_RSS_IP,
-		.key_len = sizeof(g_key),
-		.queue_num = numq,
-		.key = g_key,
-		.queue = tcp_rss_queues,
+    	{.type = RTE_FLOW_ITEM_TYPE_END}
 	};
 	struct rte_flow_action actions[] = {
-    	{ .type = RTE_FLOW_ACTION_TYPE_VOID },
-    	{ .type = RTE_FLOW_ACTION_TYPE_END  },
+		{
+			.type = RTE_FLOW_ACTION_TYPE_RSS,
+			.conf = &(struct rte_flow_action_rss) {
+				.types = RTE_ETH_RSS_TCP | RTE_ETH_RSS_UDP | RTE_ETH_RSS_IP,
+				.key_len = sizeof(g_key),
+				.queue_num = numq,
+				.key = g_key,
+				.queue = data_rss_queues,
+			}
+		},
+    	{.type = RTE_FLOW_ACTION_TYPE_END},
 	};
 	struct rte_flow_error err;
-	
-	printf("Session data RSS queues\n");
+
+	/* Do RSS for session data over N queues using the default RSS key */
+	printf("[port %u] Configuring session data RSS among %d ~ %d queues\n",
+		   (unsigned) portid, numq, numq);
 	for (uint16_t i = 0; i < numq; i++) {
 		/* queue 0 --> core 0, queue 1 --> core 1, and so on */
-		tcp_rss_queues[i] = i;
+		data_rss_queues[i] = i;
 		printf("[queue %d] --> [core %d]\n", i, i);
 	}
-
-	/* Do RSS over N queues using the default RSS key */
-	actions[0] = (struct rte_flow_action) {
-		.type = RTE_FLOW_ACTION_TYPE_RSS,
-		.conf = &action,
-	};
 
 	if (!rte_flow_create(portid, &attr, patterns, actions, &err))
     	rte_exit(EXIT_FAILURE,
@@ -1027,52 +1052,49 @@ data_flow_configure(uint16_t portid, uint16_t numq)
 void
 key_flow_configure(uint16_t portid, uint16_t numq)
 {
-	printf("[port %u] Configuring session key RSS among %d ~ %d queues\n",
-		   (unsigned) portid, numq, numq * 2 - 1);
 	uint16_t key_rss_queues[MAX_CPUS];
 	struct rte_flow_attr attr = {
 		.group = 0,
-		.priority = 2,
+		.priority = 0,
     	.ingress = 1,
 	};
-	struct rte_flow_item_ipv4 ipv4_spec = {
-		.hdr.type_of_service = 0xff,
-	};
-	static const struct rte_flow_item_ipv4 ipv4_mask = {
-		.hdr.type_of_service = 0xff,
-	};
-	struct rte_flow_item patterns[2] = {
+	struct rte_flow_item patterns[] = {
 		{
 			.type = RTE_FLOW_ITEM_TYPE_IPV4,
-			.spec = &ipv4_spec,
-			.mask = &ipv4_mask,
+			.spec = &(struct rte_flow_item_ipv4) {
+				.hdr.next_proto_id = IPPROTO_UDP,
+				.hdr.type_of_service = 0xff
+			},
+			.mask = &(struct rte_flow_item_ipv4) {
+				.hdr.next_proto_id = 0xff,
+				.hdr.type_of_service = 0xff
+			},
 		},
-	};
-    struct rte_flow_action_rss action = {
-		.types = ETH_RSS_TCP | ETH_RSS_UDP | ETH_RSS_IP,
-		.key_len = sizeof(g_key),
-		.queue_num = numq,
-		.key = g_key,
-		.queue = key_rss_queues,
+    	{.type = RTE_FLOW_ITEM_TYPE_END}
 	};
 	struct rte_flow_action actions[] = {
-    	{ .type = RTE_FLOW_ACTION_TYPE_VOID },
-    	{ .type = RTE_FLOW_ACTION_TYPE_END  },
+		{
+			.type = RTE_FLOW_ACTION_TYPE_RSS,
+			.conf = &(struct rte_flow_action_rss) {
+				.types = RTE_ETH_RSS_TCP | RTE_ETH_RSS_UDP | RTE_ETH_RSS_IP,
+				.key_len = sizeof(g_key),
+				.queue_num = numq,
+				.key = g_key,
+				.queue = key_rss_queues,
+			}
+		},
+    	{.type = RTE_FLOW_ACTION_TYPE_END},
 	};
 	struct rte_flow_error err;
 
-	printf("Session key RSS queues\n");
+	/* Do RSS for session key over N queues using the default RSS key */
+	printf("[port %u] Configuring session key RSS among %d ~ %d queues\n",
+		   (unsigned) portid, numq, numq * 2 - 1);
 	for (uint16_t i = 0; i < numq; i++) {
 		/* queue 0 --> core 16, queue 1 --> core 17, and so on */
 		key_rss_queues[i] = i + numq;
 		printf("[queue %d] --> [core %d]\n", i + numq, i);
 	}
-
-	/* Do RSS over N queues using the default RSS key */
-	actions[0] = (struct rte_flow_action) {
-		.type = RTE_FLOW_ACTION_TYPE_RSS,
-		.conf = &action,
-	};
 
 	if (!rte_flow_create(portid, &attr, patterns, actions, &err))
     	rte_exit(EXIT_FAILURE,
@@ -1080,6 +1102,43 @@ key_flow_configure(uint16_t portid, uint16_t numq)
         	rte_strerror(rte_errno), err.type, err.message);
 }
 #endif
+/*----------------------------------------------------------------------------*/
+void
+bypass_configure(uint16_t portid)
+{
+	printf("[port %u] Configuring bypass rule\n", (unsigned) portid);
+	struct rte_flow_attr attr = {
+		.group = 1,
+		.priority = 3,
+    	// .egress = 1,
+		.transfer = 1,
+	};
+	struct rte_flow_item patterns[] = {
+		{
+			.type = RTE_FLOW_ITEM_TYPE_IPV4,
+			.spec = &(struct rte_flow_item_ipv4){.hdr.next_proto_id = IPPROTO_TCP},
+			.mask = &(struct rte_flow_item_ipv4){.hdr.next_proto_id = 0xff},
+		},
+    	{.type = RTE_FLOW_ITEM_TYPE_END}
+	};
+	struct rte_flow_action actions[] = {
+		{
+			.type = RTE_FLOW_ACTION_TYPE_PORT_ID,
+			.conf = &(struct rte_flow_action_port_id) {
+				.original = 1,
+				.reserved = 0,
+				.id = portid
+			}
+		},
+    	{.type = RTE_FLOW_ACTION_TYPE_END},
+	};
+	struct rte_flow_error err;
+
+	if (!rte_flow_create(portid, &attr, patterns, actions, &err))
+    	rte_exit(EXIT_FAILURE,
+        	"bypass rule create failed: %s\n error type %u %s\n",
+        	rte_strerror(rte_errno), err.type, err.message);
+}
 /*----------------------------------------------------------------------------*/
 void
 dpdk_load_module_upper_half(void)
@@ -1090,19 +1149,11 @@ dpdk_load_module_upper_half(void)
 	char mem_channels[5];
 
 	/* set the log level */
-#if RTE_VERSION < RTE_VERSION_NUM(17, 5, 0, 0)
-	rte_set_log_type(RTE_LOGTYPE_PMD, 0);
-	rte_set_log_type(RTE_LOGTYPE_MALLOC, 0);
-	rte_set_log_type(RTE_LOGTYPE_MEMPOOL, 0);
-	rte_set_log_type(RTE_LOGTYPE_RING, 0);
-	rte_set_log_level(RTE_LOG_WARNING);
-#else
 	rte_log_set_level(RTE_LOGTYPE_PMD, 0);
 	rte_log_set_level(RTE_LOGTYPE_MALLOC, 0);
 	rte_log_set_level(RTE_LOGTYPE_MEMPOOL, 0);
 	rte_log_set_level(RTE_LOGTYPE_RING, 0);
 	rte_log_set_level(RTE_LOG_WARNING, 0);
-#endif	
 	/* get the cpu mask */
 	for (ret = 0; ret < cpu; ret++)
 		cpumask = (cpumask | (1 << ret));
@@ -1123,7 +1174,11 @@ dpdk_load_module_upper_half(void)
 			cpumaskbuf, 
 			"-n", 
 			mem_channels,
-			"--proc-type=primary"
+			"--proc-type=primary",
+			// "-a",
+			// "0000:18:00.0,representor=pf0",
+			// "-a",
+			// "0000:18:00.1,representor=pf1"
 	};
 	/* const int argc = 7; */
 	const int argc = 7;
@@ -1205,11 +1260,23 @@ dpdk_load_module_lower_half(void)
 			
 			/* check port capabilities */
 			rte_eth_dev_info_get(portid, &dev_info[portid]);
+			printf("dev_flags: %d\n", *dev_info[portid].dev_flags);
+			printf("name of switch in port %d: %s\n", portid, dev_info[portid].switch_info.name);
+			printf("domainid of switch in port %d: %d\n", portid, dev_info[portid].switch_info.domain_id);
+			printf("portid of switch in port %d: %d\n", portid, dev_info[portid].switch_info.port_id);
+			printf("rx domain of switch in port %d: %d\n", portid, dev_info[portid].switch_info.rx_domain);
+			// *dev_info[portid].dev_flags |= RTE_ETH_DEV_REPRESENTOR;
 
-#if RTE_VERSION >= RTE_VERSION_NUM(18, 2, 0, 0)
+			// struct rte_eth_representor_info info;
+			// ret = rte_eth_representor_info_get(portid, &info);
+			// if (ret < 0)
+			// 	rte_exit(EXIT_FAILURE, "Cannot get representor info of device:"
+			// 						   "err=%d, port=%u\n",
+			// 						   ret, (unsigned) portid);
+			// printf("pf id: %d\n", info.pf);
+
 			/* re-adjust rss_hf */
 			port_conf.rx_adv_conf.rss_conf.rss_hf &= dev_info[portid].flow_type_rss_offloads;
-#endif
 			assert(num_queue == g_config.mos->num_cores);
 			/* set 'num_queues' (used for GetRSSCPUCore() in util.c) */
 			num_queues = num_queue;
@@ -1284,6 +1351,11 @@ dpdk_load_module_lower_half(void)
 
 			printf("done: \n");
 			rte_eth_promiscuous_enable(portid);
+			struct rte_flow_error err;
+			ret = rte_flow_flush(portid, &err);
+			if (ret < 0)
+				rte_exit(EXIT_FAILURE, "rte_flow_flush:err=%d, port=%u\n",
+										ret, (unsigned) portid);
 #if LEADER_ISOLATION
 			if (num_queue > 1) {
 				/* data packets to follower cores (core id: 1 ~ 15) */
@@ -1295,10 +1367,44 @@ dpdk_load_module_lower_half(void)
 #if KEY_MAPPING
 			if (portid == 0) {
 				/* data packets to queues with pktmbuf_pool 0 ~ 15 (core id: 0 ~ 15) */
+				// bypass_configure(portid);
 				data_flow_configure(portid, num_queue);
 				/* key packets to queues with pktmbuf_pool 16 ~ 31 (core id: 0 ~ 15) */
 				key_flow_configure(portid, num_queue);
 			}
+#endif
+			// bypass_configure(portid);
+
+#if 0
+			static struct rte_flow_port_attr flow_port_attr[MAX_ETHPORTS];
+			static struct rte_flow_port_info flow_port[MAX_ETHPORTS];
+			struct rte_flow_queue_attr flow_queue_attr;
+			struct rte_flow_queue_info flow_queue;
+			struct rte_flow_error err;
+			ret = rte_flow_info_get(portid, &flow_port[portid], &flow_queue, &err);
+			if (ret < 0)
+				rte_exit(EXIT_FAILURE, "rte_flow_info_get: port=%u, err_type=%d, err_msg=%s\n",
+									   (unsigned) portid, err.type, err.message);
+			flow_port_attr[portid] =
+				*(struct rte_flow_port_attr *)(&flow_port[portid].max_nb_counters);
+			flow_queue_attr = 
+				*(struct rte_flow_queue_attr *)(&flow_queue);
+			printf("max_nb_counters: %d\n"
+					"max_nb_aging: %d\n"
+					"max_nb_meters: %d\n"
+					"max_nb_conntrack: %d\n"
+					"flags: %d\n"
+					"max_size_of_each_queue: %d\n",
+					flow_port_attr[portid].nb_counters,
+					flow_port_attr[portid].nb_aging_objects,
+					flow_port_attr[portid].nb_meters,
+					flow_port_attr[portid].nb_conn_tracks,
+					flow_port_attr[portid].flags,
+					flow_queue.max_size);
+			ret = rte_flow_configure(portid, &flow_port_attr[portid], num_queue, &flow_queue_attr, &err);
+			if (ret < 0)
+				rte_exit(EXIT_FAILURE, "rte_flow_configure: port=%u, err_type=%d, err_msg=%s\n",
+									   (unsigned) portid, err.type, err.message);
 #endif
 
 			/* retrieve current flow control settings per port */
@@ -1309,7 +1415,7 @@ dpdk_load_module_lower_half(void)
 			}
 
 			/* and just disable the rx/tx flow control */
-			fc_conf.mode = RTE_FC_NONE;
+			fc_conf.mode = RTE_ETH_FC_NONE;
 			ret = rte_eth_dev_flow_ctrl_set(portid, &fc_conf);
 			if (ret != 0) {
 				rte_exit(EXIT_FAILURE, "Failed to set flow control info!: errno: %d\n",
@@ -1353,23 +1459,598 @@ io_module_func dpdk_module_func = {
 	.init_handle		   = dpdk_init_handle,
 	.link_devices		   = NULL,
 	.release_pkt		   = NULL,
-	.send_pkts		   = dpdk_send_pkts,
 #if USE_LRO
 	.get_wptr   		   = dpdk_get_wptr_tso,
+	.set_wptr		   = dpdk_set_wptr_tso,
 #else
 	.get_wptr   		   = dpdk_get_wptr,
+	.set_wptr		   = dpdk_set_wptr,
 #endif
-	.recv_pkts		   = dpdk_recv_pkts,
+	.send_pkts		   = dpdk_send_pkts,
 	.get_rptr	   	   = dpdk_get_rptr,
 	.get_nif		   = dpdk_get_nif,
+	.recv_pkts		   = dpdk_recv_pkts,
 	.select			   = dpdk_select,
 	.destroy_handle		   = dpdk_destroy_handle,
 	// .dev_ioctl		   = dpdk_dev_ioctl,
-#if USE_LRO
-	.set_wptr		   = dpdk_set_wptr_tso,
-#else
-	.set_wptr		   = dpdk_set_wptr,
-#endif
+	.offload		   = dpdk_offload_ctl,
+	.onload		   = dpdk_onload_ctl,
 };
 /*----------------------------------------------------------------------------*/
 
+#if 0 // this is reference for hairpin
+
+#include <stdint.h>
+#include <rte_ethdev.h>
+#include <rte_net.h>
+#include <rte_gtp.h>
+
+/* Layer names, to be used inorder to access the relevent item. */
+enum layer_name {
+	L2,
+	L3,
+	L4,
+	TUNNEL,
+	L2_INNER,
+	L3_INNER,
+	L4_INNER,
+	END
+};
+
+static struct rte_flow_item pattern[] = {
+	[L2] = { /* ETH type is set since we always start from ETH. */
+		.type = RTE_FLOW_ITEM_TYPE_ETH,
+		.spec = NULL,
+		.mask = NULL,
+		.last = NULL },
+	[L3] = {
+		.type = RTE_FLOW_ITEM_TYPE_VOID,
+		.spec = NULL,
+		.mask = NULL,
+		.last = NULL },
+	[L4] = {
+		.type = RTE_FLOW_ITEM_TYPE_VOID,
+		.spec = NULL,
+		.mask = NULL,
+		.last = NULL },
+	[TUNNEL] = {
+		.type = RTE_FLOW_ITEM_TYPE_VOID,
+		.spec = NULL,
+		.mask = NULL,
+		.last = NULL },
+	[L2_INNER] = {
+		.type = RTE_FLOW_ITEM_TYPE_VOID,
+		.spec = NULL,
+		.mask = NULL,
+		.last = NULL },
+	[L3_INNER] = {
+		.type = RTE_FLOW_ITEM_TYPE_VOID,
+		.spec = NULL,
+		.mask = NULL,
+		.last = NULL },
+	[L4_INNER] = {
+		.type = RTE_FLOW_ITEM_TYPE_VOID,
+		.spec = NULL,
+		.mask = NULL,
+		.last = NULL },
+	[END] = {
+		.type = RTE_FLOW_ITEM_TYPE_END,
+		.spec = NULL,
+		.mask = NULL,
+		.last = NULL },
+};
+
+
+static int
+hairpin_port_unbind(uint16_t port_id)
+{
+	uint16_t pair_port_list[MAX_ETHPORTS];
+	int pair_port_num, i;
+
+	/* unbind current port's hairpin TX queues. */
+	rte_eth_hairpin_unbind(port_id, MAX_ETHPORTS);
+	/* find all peer TX queues bind to current ports' RX queues. */
+	pair_port_num = rte_eth_hairpin_get_peer_ports(port_id,
+			pair_port_list, MAX_ETHPORTS, 0);
+	if (pair_port_num < 0)
+		return pair_port_num;
+
+	for (i = 0; i < pair_port_num; i++) {
+		if (!rte_eth_devices[i].data->dev_started)
+			continue;
+		rte_eth_hairpin_unbind(pair_port_list[i], port_id);
+	}
+	return 0;
+}
+
+static int
+hairpin_port_bind(uint16_t port_id, int direction)
+{
+	int i, ret = 0;
+	uint16_t peer_ports[MAX_ETHPORTS];
+	int peer_ports_num = 0;
+
+	peer_ports_num = rte_eth_hairpin_get_peer_ports(port_id,
+			peer_ports, MAX_ETHPORTS, direction);
+	if (peer_ports_num < 0 )
+		return peer_ports_num; /* errno. */
+	for (i = 0; i < peer_ports_num; i++) {
+		if (!rte_eth_devices[i].data->dev_started)
+			continue;
+		ret = rte_eth_hairpin_bind(port_id, peer_ports[i]);
+		if (ret)
+			return ret;
+	}
+	return ret;
+}
+
+
+static int
+setup_hairpin_queues(uint16_t port_id, uint16_t prev_port_id,
+		uint16_t port_num, uint64_t nr_hairpin_queues)
+{
+	/*
+	 * Configure hairpin queue with so called port pair mode,
+	 * which pair two consequece port together:
+	 * P0 <-> P1, P2 <-> P3, etc
+	 */
+	uint16_t peer_port_id = MAX_ETHPORTS;
+	uint32_t hairpin_queue, peer_hairpin_queue, nr_queues = 0;
+	int ret = 0;
+	struct rte_eth_hairpin_conf hairpin_conf = {
+		.peer_count = 1,
+		.manual_bind = 1,
+		.tx_explicit = 1,
+	};
+	struct rte_eth_dev_info dev_info = { 0 };
+	struct rte_eth_dev_info peer_dev_info = { 0 };
+	struct rte_eth_rxq_info rxq_info = { 0 };
+	struct rte_eth_txq_info txq_info = { 0 };
+	uint16_t nr_std_rxq, nr_std_txq, peer_nr_std_rxq, peer_nr_std_txq;
+
+	ret = rte_eth_dev_info_get(port_id, &dev_info);
+	if (ret)
+		rte_exit(EXIT_FAILURE, "Error: can't get device info, port id:"
+				" %u\n", port_id);
+	nr_std_rxq = dev_info.nb_rx_queues - nr_hairpin_queues;
+	nr_std_txq = dev_info.nb_tx_queues - nr_hairpin_queues;
+	nr_queues = dev_info.nb_rx_queues;
+	/* only get first q info. */
+	rte_eth_rx_queue_info_get(port_id, 0, &rxq_info);
+	rte_eth_tx_queue_info_get(port_id, 0, &txq_info);
+	if (port_num & 0x1) {
+		peer_port_id = prev_port_id;
+	}
+	else {
+		peer_port_id = rte_eth_find_next_owned_by(port_id + 1,
+				RTE_ETH_DEV_NO_OWNER);
+		if (peer_port_id >= MAX_ETHPORTS)
+			peer_port_id = port_id;
+	}
+	ret = rte_eth_dev_info_get(peer_port_id, &peer_dev_info);
+	if (ret)
+		rte_exit(EXIT_FAILURE, "Error: can't get peer device info, "
+				"peer port id: %u", peer_port_id);
+	peer_nr_std_rxq = peer_dev_info.nb_rx_queues - nr_hairpin_queues;
+	peer_nr_std_txq = peer_dev_info.nb_tx_queues - nr_hairpin_queues;
+	for (hairpin_queue = nr_std_rxq, peer_hairpin_queue = peer_nr_std_txq;
+			hairpin_queue < nr_queues;
+			hairpin_queue++, peer_hairpin_queue++) {
+		hairpin_conf.peers[0].port = peer_port_id;
+		hairpin_conf.peers[0].queue = peer_hairpin_queue;
+		ret = rte_eth_rx_hairpin_queue_setup(
+				port_id, hairpin_queue,
+				rxq_info.nb_desc, &hairpin_conf);
+		if (ret != 0)
+			return ret;
+	}
+	for (hairpin_queue = nr_std_txq, peer_hairpin_queue = peer_nr_std_rxq;
+			hairpin_queue < nr_queues;
+			hairpin_queue++, peer_hairpin_queue++) {
+		hairpin_conf.peers[0].port = peer_port_id;
+		hairpin_conf.peers[0].queue = peer_hairpin_queue;
+		ret = rte_eth_tx_hairpin_queue_setup(
+				port_id, hairpin_queue,
+				txq_info.nb_desc, &hairpin_conf);
+		if (ret != 0)
+			return ret;
+	}
+	return ret;
+}
+
+int
+hairpin_one_port_setup(uint16_t port_id, uint64_t nr_hairpin_queues)
+{
+	int ret;
+	struct rte_eth_hairpin_conf hairpin_conf = {
+		.peer_count = 1,
+		.manual_bind = 0,
+		.tx_explicit = 0,
+	};
+	struct rte_eth_dev_info dev_info = { 0 };
+	uint16_t nr_std_rxq, nr_std_txq, nr_queues;
+	uint16_t hairpin_rx_queue, hairpin_tx_queue;
+	struct rte_eth_rxq_info rxq_info = { 0 };
+	struct rte_eth_txq_info txq_info = { 0 };
+
+	ret = rte_eth_dev_info_get(port_id, &dev_info);
+	if (ret)
+		rte_exit(EXIT_FAILURE, "Error: can't get device info, port id:"
+				" %u\n", port_id);
+	nr_std_rxq = dev_info.nb_rx_queues - nr_hairpin_queues;
+	nr_std_txq = dev_info.nb_tx_queues - nr_hairpin_queues;
+	nr_queues = dev_info.nb_rx_queues;
+	/* only get first q info. */
+	rte_eth_rx_queue_info_get(port_id, 0, &rxq_info);
+	rte_eth_tx_queue_info_get(port_id, 0, &txq_info);
+	for (hairpin_rx_queue = nr_std_rxq, hairpin_tx_queue = nr_std_txq; /* start from self TX queue. */
+			hairpin_rx_queue < nr_queues;
+			hairpin_rx_queue++, hairpin_tx_queue++) {
+		hairpin_conf.peers[0].port = port_id; /* one port hairpin, peer is self. */
+		hairpin_conf.peers[0].queue = hairpin_tx_queue;
+		ret = rte_eth_rx_hairpin_queue_setup(
+				port_id, hairpin_rx_queue,
+				rxq_info.nb_desc, &hairpin_conf);
+		if (ret != 0)
+			return ret;
+	}
+	for (hairpin_tx_queue = nr_std_txq, hairpin_rx_queue = nr_std_rxq;
+			hairpin_tx_queue < nr_queues;
+			hairpin_tx_queue++, hairpin_rx_queue++) {
+		hairpin_conf.peers[0].port = port_id;
+		hairpin_conf.peers[0].queue = hairpin_rx_queue;
+		ret = rte_eth_tx_hairpin_queue_setup(
+				port_id, hairpin_tx_queue,
+				txq_info.nb_desc, &hairpin_conf);
+		if (ret != 0)
+			return ret;
+	}
+
+	return 0;
+}
+
+int
+hairpin_two_ports_setup(uint64_t nr_hairpin_queue)
+{
+	uint16_t port_id, prev_port_id = MAX_ETHPORTS;
+	uint16_t port_num = 0;
+	int ret = 0;
+
+	RTE_ETH_FOREACH_DEV(port_id) {
+		ret = setup_hairpin_queues(port_id, prev_port_id,
+				port_num, nr_hairpin_queue);
+		if (ret)
+			rte_exit(EXIT_FAILURE, "Error to setup hairpin queues"
+					" on port: %u", port_id);
+		port_num++;
+		prev_port_id = port_id;
+	}
+	return 0;
+}
+
+int
+hairpin_two_ports_bind(void)
+{
+	int ret = 0;
+	uint16_t port_id;
+
+	RTE_ETH_FOREACH_DEV(port_id) {
+		/* Let's find our peer RX ports, TXQ -> RXQ. */
+		ret = hairpin_port_bind(port_id, 1);
+		if (ret)
+			return ret;
+		/* Let's find our peer TX ports, RXQ -> TXQ. */
+		ret = hairpin_port_bind(port_id, 0);
+		if (ret)
+			return ret;
+	}
+	return ret;
+}
+
+int
+hairpin_two_ports_unbind(void)
+{
+	uint16_t port_id;
+	int ret, error = 0;
+
+	RTE_ETH_FOREACH_DEV(port_id) {
+		ret = hairpin_port_unbind(port_id);
+		if (ret) {
+			printf("Error on unbind hairpin port: %u\n", port_id);
+			error = ret;
+		}
+	}
+	return error;
+}
+
+/*
+ * create flows for two ports hairpin.
+ * The corresponding testpmd commands:
+ * start testpmd with one rxq, one txq, two ports, and hairpin-mode=0x12:
+ * > sudo build/app/dpdk-testpmd -n 4 -w 0000:af:00.0 -w 0000:af:00.1 -- \
+ *   -i --rxq=1 --txq=1 --flow-isolate-all --forward-mode=io \
+ *   --hairpinq=1 --hairpin-mode=0x12
+ * 
+ * testpmd> set raw_decap 0 eth / end_set
+ * testpmd> set raw_encap 0 eth src is 06:05:04:03:02:01
+ *          dst is 01:02:03:04:05:06 type is 0x0800 /
+ *          ipv4 src is 160.160.160.160 dst is 161.161.160.160 ttl is 20 /
+ *          udp dst is 2152 /
+ *          gtp teid is 0x1234 msg_type is 0xFF v_pt_rsv_flags is 0x30 / end_set
+ * testpmd> flow create 0 group 0 ingress pattern eth / ipv4 src is 10.10.10.10 /
+ *          tcp / end actions queue index 1 / end
+ * testpmd> flow create 1 group 0 egress pattern eth / ipv4 src is 10.10.10.10 /
+ *          tcp / end actions raw_decap index 0 / raw_encap index 0 / end
+ */
+struct rte_flow *
+hairpin_two_ports_flows_create(void)
+{
+	struct rte_flow *flow;
+	struct rte_flow_error error;
+	struct rte_flow_attr attr = { /* Holds the flow attributes. */
+				.group = 0, /* set the rule on the main group. */
+				.ingress = 1,/* Rx flow. */
+				.priority = 0, }; /* add priority to rule
+				to give the Decap rule higher priority since
+				it is more specific than RSS */
+	/* Create the items that will be needed for the decap. */
+	struct rte_ether_hdr eth = {
+		.ether_type = RTE_BE16(RTE_ETHER_TYPE_IPV4),
+		.dst_addr.addr_bytes = "\x01\x02\x03\x04\x05\x06",
+		.src_addr.addr_bytes = "\x06\x05\x04\x03\x02\01",
+	};
+	struct rte_ipv4_hdr ipv4 = {
+		.dst_addr = RTE_BE32(0xA0A0A0A0),
+		.src_addr = RTE_BE32(0xA1A1A0A0),
+		.time_to_live = 20,
+		.next_proto_id = 17,
+		.version_ihl = 0x45,
+	};
+	struct rte_udp_hdr udp = {
+		.dst_port = RTE_BE16(RTE_GTPU_UDP_PORT),
+	};
+	struct rte_gtp_hdr gtp = {
+		.teid = RTE_BE32(0x1234),
+		.msg_type = 0xFF,
+		.gtp_hdr_info = 0x30,
+	};
+	struct rte_flow_item_ipv4 ipv4_inner = {
+			.hdr = {
+				.src_addr = rte_cpu_to_be_32(0x0A0A0A0A),
+				/* Match on 10.10.10.10 src address */
+				.next_proto_id = IPPROTO_TCP }};
+	struct rte_flow_item_ipv4 ipv4_mask = {
+			.hdr = {
+				.src_addr = RTE_BE32(0xffffffff)}};
+
+	size_t encap_size = sizeof(eth) + sizeof(ipv4) + sizeof(udp) +
+			sizeof(gtp);
+	size_t decap_size = sizeof(eth);
+	uint8_t decap_buf[decap_size];
+	uint8_t encap_buf[encap_size];
+	uint8_t *bptr; /* Used to copy the headers to the buffer. */
+	/* Since GTP is L3 tunnel type (no inner L2) it means that we need to
+	 * first decap the outer header, and secondly encap the
+	 * remaining packet with ETH header.
+	 */
+	struct rte_flow_action_raw_decap decap = {
+			.size = decap_size ,
+			.data = decap_buf };
+	struct rte_flow_action_raw_encap encap = {
+			.size = encap_size ,
+			.data = encap_buf };
+	/* Configure the buffer for the decap action.
+	   The important part is the size of the buffer*/
+	bptr = encap_buf;
+	rte_memcpy(bptr, &eth, sizeof(eth));
+	bptr += sizeof(eth);
+	rte_memcpy(bptr, &ipv4, sizeof(ipv4));
+	bptr += sizeof(ipv4);
+	rte_memcpy(bptr, &udp, sizeof(udp));
+	bptr += sizeof(udp);
+	rte_memcpy(bptr, &gtp, sizeof(gtp));
+	bptr += sizeof(gtp);
+	/* Configure the buffer for the encap action. needs to add L2. */
+	bptr = decap_buf;
+	rte_memcpy(bptr, &eth, sizeof(eth));
+
+	/* create flow on first port and first hairpin queue. */
+	uint16_t port_id = rte_eth_find_next_owned_by(0, RTE_ETH_DEV_NO_OWNER);
+	RTE_ASSERT(port_id != MAX_ETHPORTS);
+	struct rte_eth_dev_info dev_info;
+	int ret = rte_eth_dev_info_get(port_id, &dev_info);
+	if (ret)
+		rte_exit(EXIT_FAILURE, "Cannot get device info");
+	uint16_t qi;
+	for (qi = 0; qi < dev_info.nb_rx_queues; qi++) {
+		struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+		if (rte_eth_dev_is_rx_hairpin_queue(dev, qi))
+			break;
+	}
+	struct rte_flow_action_queue queue;
+	struct rte_flow_action actions[] = {
+		[0] = {
+			.type = RTE_FLOW_ACTION_TYPE_QUEUE,
+			.conf = &queue,
+		},
+		[1] = {
+			.type = RTE_FLOW_ACTION_TYPE_END,
+		},
+		[2] = {
+			.type = RTE_FLOW_ACTION_TYPE_END,
+		},
+	};
+	queue.index = qi; /* rx hairpin queue index. */
+	pattern[L3].type = RTE_FLOW_ITEM_TYPE_IPV4;
+	pattern[L3].spec = &ipv4_inner;
+	pattern[L3].mask = &ipv4_mask;
+	pattern[L4].type = RTE_FLOW_ITEM_TYPE_TCP;
+	flow = rte_flow_create(port_id, &attr, pattern, actions, &error);
+	if (!flow)
+		printf("Can't create hairpin flows on port: %u\n", port_id);
+	/* get peer port id. */
+	uint16_t pair_port_list[MAX_ETHPORTS];
+	int pair_port_num = rte_eth_hairpin_get_peer_ports(port_id,
+			pair_port_list, MAX_ETHPORTS, 0);
+	if (pair_port_num < 0)
+		rte_exit(EXIT_FAILURE, "Can't get pair port !");
+	RTE_ASSERT(pair_port_num == 1);
+	/* create pattern to match hairpin flow from hairpin RX queue. */
+	pattern[L2].type = RTE_FLOW_ITEM_TYPE_ETH;
+	pattern[L2].spec = NULL;
+	pattern[L3].type = RTE_FLOW_ITEM_TYPE_IPV4;
+	pattern[L3].spec = &ipv4_inner;
+	pattern[L3].mask = &ipv4_mask;
+	pattern[L4].type = RTE_FLOW_ITEM_TYPE_TCP;
+	pattern[L4].spec = NULL;
+	pattern[END].type = RTE_FLOW_ITEM_TYPE_END;
+	/* create actions. */
+	actions[0].type = RTE_FLOW_ACTION_TYPE_RAW_DECAP;
+	actions[0].conf = &decap;
+	actions[1].type = RTE_FLOW_ACTION_TYPE_RAW_ENCAP;
+	actions[1].conf = &encap;
+	actions[2].type = RTE_FLOW_ACTION_TYPE_END;
+	attr.egress = 1;
+	attr.ingress = 0;
+	flow = rte_flow_create(pair_port_list[0], &attr, pattern, actions,
+			&error);
+	if (!flow)
+		printf("Can't create hairpin flows on pair port: %u, "
+			"error: %s\n", pair_port_list[0], error.message);
+	return flow;
+}
+
+/*
+ * create flows for one port hairpin.
+ * The corresponding testpmd commands:
+ * start testpmd with one rxq, one txq, one ports:
+ * > sudo build/app/dpdk-testpmd -n 4 -w 0000:af:00.0 -- \
+ *   -i --rxq=1 --txq=1 --flow-isolate-all --forward-mode=io \
+ *   --hairpinq=1
+ * 
+ * testpmd> set raw_decap 0 eth / end_set
+ * testpmd> set raw_encap 0 eth src is 06:05:04:03:02:01
+ *          dst is 01:02:03:04:05:06 type is 0x0800 /
+ *          ipv4 src is 160.160.160.160 dst is 161.161.160.160 ttl is 20 /
+ *          udp dst is 2152 /
+ *          gtp teid is 0x1234 msg_type is 0xFF v_pt_rsv_flags is 0x30 / end_set
+ * testpmd> flow create 0 group 0 ingress pattern eth / ipv4 src is 10.10.10.10 /
+ *          tcp / end actions raw_decap index 0 / raw_encap index 0 /
+ *          queue index 1 / end
+ */
+struct rte_flow *
+hairpin_one_port_flows_create(void)
+{
+	struct rte_flow *flow;
+	struct rte_flow_error error;
+	struct rte_flow_attr attr = { /* Holds the flow attributes. */
+				.group = 0, /* set the rule on the main group. */
+				.ingress = 1,/* Rx flow. */
+				.priority = 0, }; /* add priority to rule
+				to give the Decap rule higher priority since
+				it is more specific than RSS */
+	/* Create the items that will be needed for the decap. */
+	struct rte_ether_hdr eth = {
+		.ether_type = RTE_BE16(RTE_ETHER_TYPE_IPV4),
+		.d_addr.addr_bytes = "\x01\x02\x03\x04\x05\x06",
+		.s_addr.addr_bytes = "\x06\x05\x04\x03\x02\01",
+	};
+	struct rte_ipv4_hdr ipv4 = {
+		.dst_addr = RTE_BE32(0xA0A0A0A0),
+		.src_addr = RTE_BE32(0xA1A1A0A0),
+		.time_to_live = 20,
+		.next_proto_id = 17,
+		.version_ihl = 0x45,
+	};
+	struct rte_udp_hdr udp = {
+		.dst_port = RTE_BE16(RTE_GTPU_UDP_PORT),
+	};
+	struct rte_gtp_hdr gtp = {
+		.teid = RTE_BE32(0x1234),
+		.msg_type = 0xFF,
+		.gtp_hdr_info = 0x30,
+	};
+	struct rte_flow_item_ipv4 ipv4_inner = {
+			.hdr = {
+				.src_addr = rte_cpu_to_be_32(0x0A0A0A0A),
+				/* Match on 10.10.10.10 src address */
+				.next_proto_id = IPPROTO_TCP }};
+	struct rte_flow_item_ipv4 ipv4_mask = {
+			.hdr = {
+				.src_addr = RTE_BE32(0xffffffff)}};
+
+	size_t encap_size = sizeof(eth) + sizeof(ipv4) + sizeof(udp) +
+			sizeof(gtp);
+	size_t decap_size = sizeof(eth);
+	uint8_t decap_buf[decap_size];
+	uint8_t encap_buf[encap_size];
+	uint8_t *bptr; /* Used to copy the headers to the buffer. */
+	/* Since GTP is L3 tunnel type (no inner L2) it means that we need to
+	 * first decap the outer header, and secondly encap the
+	 * remaining packet with ETH header.
+	 */
+	struct rte_flow_action_raw_decap decap = {
+			.size = decap_size ,
+			.data = decap_buf };
+	struct rte_flow_action_raw_encap encap = {
+			.size = encap_size ,
+			.data = encap_buf };
+	/* Configure the buffer for the decap action.
+	   The important part is the size of the buffer*/
+	bptr = encap_buf;
+	rte_memcpy(bptr, &eth, sizeof(eth));
+	bptr += sizeof(eth);
+	rte_memcpy(bptr, &ipv4, sizeof(ipv4));
+	bptr += sizeof(ipv4);
+	rte_memcpy(bptr, &udp, sizeof(udp));
+	bptr += sizeof(udp);
+	rte_memcpy(bptr, &gtp, sizeof(gtp));
+	bptr += sizeof(gtp);
+	/* Configure the buffer for the encap action. needs to add L2. */
+	bptr = decap_buf;
+	rte_memcpy(bptr, &eth, sizeof(eth));
+
+	/* create flow on first port and first hairpin queue. */
+	uint16_t port_id = rte_eth_find_next_owned_by(0, RTE_ETH_DEV_NO_OWNER);
+	RTE_ASSERT(port_id != MAX_ETHPORTS);
+	struct rte_eth_dev_info dev_info;
+	int ret = rte_eth_dev_info_get(port_id, &dev_info);
+	if (ret)
+		rte_exit(EXIT_FAILURE, "Cannot get device info");
+	uint16_t qi;
+	for (qi = 0; qi < dev_info.nb_rx_queues; qi++) {
+		struct rte_eth_dev *dev = &rte_eth_devices[port_id];
+		if (rte_eth_dev_is_rx_hairpin_queue(dev, qi))
+			break;
+	}
+	struct rte_flow_action_queue queue;
+	struct rte_flow_action actions[] = {
+		[0] = {
+			.type = RTE_FLOW_ACTION_TYPE_RAW_DECAP,
+			.conf = &decap,
+		},
+		[1] = {
+			.type = RTE_FLOW_ACTION_TYPE_RAW_ENCAP,
+			.conf = &encap,
+		},
+		[2] = {
+			.type = RTE_FLOW_ACTION_TYPE_QUEUE,
+			.conf = &queue,
+		},
+		[3] = {
+			.type = RTE_FLOW_ACTION_TYPE_END,
+		},
+	};
+	pattern[L2].type = RTE_FLOW_ITEM_TYPE_ETH;
+	pattern[L2].spec = NULL;
+	pattern[L3].type = RTE_FLOW_ITEM_TYPE_IPV4;
+	pattern[L3].spec = &ipv4_inner;
+	pattern[L3].mask = &ipv4_mask;
+	pattern[L4].type = RTE_FLOW_ITEM_TYPE_TCP;
+	queue.index = qi; /* rx hairpin queue index. */
+	flow = rte_flow_create(port_id, &attr, pattern, actions, &error);
+	if (!flow)
+		printf("Can't create hairpin flows on port: %u\n", port_id);
+	return flow;
+}
+#endif

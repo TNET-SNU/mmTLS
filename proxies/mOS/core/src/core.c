@@ -1153,12 +1153,14 @@ InitializeMTCPManager(struct mtcp_thread_context* ctx)
 		return NULL;
 	}
 
-	// mtcp->rbm_snd = SBManagerCreate(g_config.mos->wmem_size, g_config.mos->no_ring_buffers, 
-	// 				g_config.mos->max_concurrency);
-	// if (!mtcp->rbm_snd) {
-	// 	CTRACE_ERROR("Failed to create send ring buffer.\n");
-	// 	return NULL;
-	// }
+#if 0
+	mtcp->rbm_snd = SBManagerCreate(g_config.mos->wmem_size, g_config.mos->no_ring_buffers, 
+					g_config.mos->max_concurrency);
+	if (!mtcp->rbm_snd) {
+		CTRACE_ERROR("Failed to create send ring buffer.\n");
+		return NULL;
+	}
+#endif
 
 	mtcp->smap = (socket_map_t)calloc(g_config.mos->max_concurrency, sizeof(struct socket_map));
 	if (!mtcp->smap) {
@@ -1430,11 +1432,11 @@ mtcp_create_context(int cpu)
 #ifdef ENABLE_DPDK
 	/* Wake up mTCP threads (wake up I/O threads) */
 	if (current_iomodule_func == &dpdk_module_func) {
-		int master;
-		master = rte_get_master_lcore();
-		if (master == cpu) {
-			/* lcore_config[master].ret = 0; */
-			/* lcore_config[master].state = FINISHED; */
+		int main;
+		main = rte_get_main_lcore();
+		if (main == cpu) {
+			/* lcore_config[main].ret = 0; */
+			/* lcore_config[main].state = FINISHED; */
 			if (pthread_create(&g_thread[cpu], 
 					   NULL, MTCPRunThread, (void *)mctx) != 0) {
 				TRACE_ERROR("pthread_create of mtcp thread failed!\n");
@@ -1516,8 +1518,8 @@ mtcp_free_context(mctx_t mctx)
 
 #ifdef ENABLE_DPDK
 	if (current_iomodule_func == &dpdk_module_func) {
-		int master = rte_get_master_lcore();
-		if (master == mctx->cpu)
+		int main = rte_get_main_lcore();
+		if (main == mctx->cpu)
 			pthread_join(g_thread[mctx->cpu], NULL);
 		else
 			rte_eal_wait_lcore(mctx->cpu);

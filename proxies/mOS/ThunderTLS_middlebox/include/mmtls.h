@@ -8,20 +8,19 @@
 #include <mos_api.h>
 #include <time.h>
 
-#define MAX_BUF_LEN 16800 /* > 16K */ /* 2097152 */
-#define MAX_BUF_LEN_SVR 1024 /* 1K */
-#define MAX_RECORD_LEN 8192 /* 16K + 1 */
+#define ZERO_COPY
+#define MAX_BUF_LEN 16448 /* align64(16K + TLS_HEADER_LEN) */
 #define MAX_RAW_PKT_NUM 10
-#define MAX_FILE_NAME_LEN	64
+#define MAX_FILE_NAME_LEN 64
 
 #define TLS_HANDSHAKE_HEADER_LEN 4
-#define TLS_RECORD_TYPE_LEN      1
+#define TLS_RECORD_TYPE_LEN 1
+#define TLS_PORT_NUM 443
 #define TLS_1_2_VERSION 0x0303
 #define TLS_1_3_VERSION 0x0304
 #define TLS_CLIENT_RANDOM_LEN 32
 #define TLS_SERVER_RANDOM_LEN 32
 #define TLS_MAX_SNI_LEN 64
-#define NUM_MMTLS_CALLBACK 8
 
 #define MAX_KEY_INFO_SIZE (EVP_MAX_KEY_LENGTH + EVP_MAX_IV_LENGTH + EVP_MAX_MD_SIZE)
 #define LOWER_8BITS (0x000000FF)
@@ -30,12 +29,17 @@
 #define VERBOSE_WARNING 1
 #define VERBOSE_ERROR 1
 
+#define OFFLOAD_BYPASS 0x04
+#define OFFLOAD_DROP 0x05
+#define ONLOAD 0x06
+
 /* Print message coloring */
 #define PRINT (stderr)
 #define ANSI_COLOR_YELLOW "\x1b[33m"
 #define ANSI_COLOR_GREEN "\x1b[32m"
 #define ANSI_COLOR_RED "\x1b[31m"
 #define ANSI_COLOR_RESET "\x1b[0m"
+
 #if VERBOSE_INFO
 #define INFO_PRINT(fmt, args...) \
 	fprintf(stdout, ANSI_COLOR_GREEN "[Info] " fmt "\n" ANSI_COLOR_RESET, ##args)
@@ -49,31 +53,40 @@
 #define WARNING_PRINT(fmt, args...) (void)0
 #endif
 #if VERBOSE_ERROR
-#define ERROR_PRINT(fmt, args...) \
-	fprintf(PRINT, ANSI_COLOR_RED "[Error] [%10s:%4d] errno: %u\n" \
-			fmt "\n" ANSI_COLOR_RESET, \
+#define ERROR_PRINT(fmt, args...)                                                             \
+	fprintf(PRINT, ANSI_COLOR_RED "[Error] [%10s:%4d] errno: %u\n" fmt "\n" ANSI_COLOR_RESET, \
 			__FUNCTION__, __LINE__, errno, ##args);
 #else
 #define ERROR_PRINT(fmt, args...) (void)0
 #endif
-#define EXIT_WITH_ERROR(fmt, args...) { \
-	ERROR_PRINT(fmt, ##args); \
-	exit(EXIT_FAILURE); \
-}
-struct mmtls_context {
+#define EXIT_WITH_ERROR(fmt, args...) \
+	{                                 \
+		ERROR_PRINT(fmt, ##args);     \
+		exit(EXIT_FAILURE);           \
+	}
+struct mmtls_context
+{
 	int cpu;
 };
-typedef struct mmtls_context *mmtls_t;
-typedef void (*mmtls_cb)(mmtls_t mmctx, int cid, int side);
-struct mmtls_manager {
-	mctx_t mctx;
-	mmtls_t mmctx;
-	mmtls_cb cb[NUM_MMTLS_CALLBACK];
-};
+typedef struct mmtls_context *mmctx_t;
+typedef void (*mmtls_cb)(mmctx_t mmctx, int cid, int side);
+typedef int (*crypto_cb)(EVP_CIPHER_CTX *evp_ctx,
+						 const EVP_CIPHER *evp_cipher,
+						 const EVP_MD *evp_md,
+						 uint8_t *data,
+						 uint8_t *plain,
+						 uint8_t *key_info,
+						 uint64_t tls_seq,
+						 uint16_t cipher_len);
 
 /*---------------------------------------------------------------------------*/
 /** Definition of monitor side */
-enum {MMTLS_SIDE_CLI=0, MMTLS_SIDE_SVR, MMTLS_SIDE_BOTH};
+enum
+{
+	MMTLS_SIDE_CLI = MOS_SIDE_CLI,
+	MMTLS_SIDE_SVR = MOS_SIDE_SVR,
+	MMTLS_SIDE_BOTH = MOS_SIDE_BOTH,
+};
 
 /** events provided by mmTLS */
 enum mmtls_event_type
@@ -83,45 +96,56 @@ enum mmtls_event_type
 	ON_TLS_HANDSHAKE_START,
 	ON_TLS_HANDSHAKE_END,
 	ON_TLS_NEW_RECORD,
-	ON_TLS_ABNORMAL,
+	ON_TLS_ERROR,
+	/*------------------------------------*/
+	/* below are for inner-usage */
 	ON_TLS_STALL,
 	ON_TLS_RECV_KEY,
+	NUM_MMTLS_CALLBACK,
+};
+
+struct mmtls_manager
+{
+	mctx_t mctx;
+	mmctx_t mmctx;
+	/* move callback to each session one day */
+	mmtls_cb cb[NUM_MMTLS_CALLBACK];
 };
 
 enum tls_cipher_suite
 {
 	TLS_RSA_WITH_AES_128_CBC_SHA256 = 0x003c,
 	TLS_RSA_WITH_AES_256_CBC_SHA256,
-    TLS_DH_DSS_WITH_AES_128_CBC_SHA256,
-    TLS_DH_RSA_WITH_AES_128_CBC_SHA256,
-    TLS_DHE_DSS_WITH_AES_128_CBC_SHA256,
-    TLS_DHE_RSA_WITH_AES_128_CBC_SHA256 = 0x0067,
-    TLS_DH_DSS_WITH_AES_256_CBC_SHA256,
-    TLS_DH_RSA_WITH_AES_256_CBC_SHA256,
-    TLS_DHE_DSS_WITH_AES_256_CBC_SHA256,
-    TLS_DHE_RSA_WITH_AES_256_CBC_SHA256,
-    TLS_DH_anon_WITH_AES_128_CBC_SHA256,
-    TLS_DH_anon_WITH_AES_256_CBC_SHA256,
-    TLS_RSA_WITH_AES_128_GCM_SHA256 = 0x009C,
-    TLS_RSA_WITH_AES_256_GCM_SHA384,
-    TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,
-    TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,
-    TLS_DH_RSA_WITH_AES_128_GCM_SHA256,
-    TLS_DH_RSA_WITH_AES_256_GCM_SHA384,
-    TLS_DHE_DSS_WITH_AES_128_GCM_SHA256,
-    TLS_DHE_DSS_WITH_AES_256_GCM_SHA384,
-    TLS_DH_DSS_WITH_AES_128_GCM_SHA256,
-    TLS_DH_DSS_WITH_AES_256_GCM_SHA384,
-    TLS_DH_anon_WITH_AES_128_GCM_SHA256,
-    TLS_DH_anon_WITH_AES_256_GCM_SHA384,
-    TLS_PSK_WITH_AES_128_GCM_SHA256,
-    TLS_PSK_WITH_AES_256_GCM_SHA384,
-    TLS_DHE_PSK_WITH_AES_128_GCM_SHA256,
-    TLS_DHE_PSK_WITH_AES_256_GCM_SHA384,
-    TLS_RSA_PSK_WITH_AES_128_GCM_SHA256,
-    TLS_RSA_PSK_WITH_AES_256_GCM_SHA384,
-    TLS_PSK_WITH_AES_128_CBC_SHA256,
-    TLS_PSK_WITH_AES_256_CBC_SHA384,
+	TLS_DH_DSS_WITH_AES_128_CBC_SHA256,
+	TLS_DH_RSA_WITH_AES_128_CBC_SHA256,
+	TLS_DHE_DSS_WITH_AES_128_CBC_SHA256,
+	TLS_DHE_RSA_WITH_AES_128_CBC_SHA256 = 0x0067,
+	TLS_DH_DSS_WITH_AES_256_CBC_SHA256,
+	TLS_DH_RSA_WITH_AES_256_CBC_SHA256,
+	TLS_DHE_DSS_WITH_AES_256_CBC_SHA256,
+	TLS_DHE_RSA_WITH_AES_256_CBC_SHA256,
+	TLS_DH_anon_WITH_AES_128_CBC_SHA256,
+	TLS_DH_anon_WITH_AES_256_CBC_SHA256,
+	TLS_RSA_WITH_AES_128_GCM_SHA256 = 0x009C,
+	TLS_RSA_WITH_AES_256_GCM_SHA384,
+	TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,
+	TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,
+	TLS_DH_RSA_WITH_AES_128_GCM_SHA256,
+	TLS_DH_RSA_WITH_AES_256_GCM_SHA384,
+	TLS_DHE_DSS_WITH_AES_128_GCM_SHA256,
+	TLS_DHE_DSS_WITH_AES_256_GCM_SHA384,
+	TLS_DH_DSS_WITH_AES_128_GCM_SHA256,
+	TLS_DH_DSS_WITH_AES_256_GCM_SHA384,
+	TLS_DH_anon_WITH_AES_128_GCM_SHA256,
+	TLS_DH_anon_WITH_AES_256_GCM_SHA384,
+	TLS_PSK_WITH_AES_128_GCM_SHA256,
+	TLS_PSK_WITH_AES_256_GCM_SHA384,
+	TLS_DHE_PSK_WITH_AES_128_GCM_SHA256,
+	TLS_DHE_PSK_WITH_AES_256_GCM_SHA384,
+	TLS_RSA_PSK_WITH_AES_128_GCM_SHA256,
+	TLS_RSA_PSK_WITH_AES_256_GCM_SHA384,
+	TLS_PSK_WITH_AES_128_CBC_SHA256,
+	TLS_PSK_WITH_AES_256_CBC_SHA384,
 	/* tls1.3 start */
 	TLS_AES_128_GCM_SHA256 = 0x1301,
 	TLS_AES_256_GCM_SHA384,
@@ -145,7 +169,7 @@ enum tls_cipher_suite
 	TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384, // 0xc030
 	TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256,
 	TLS_ECDH_RSA_WITH_AES_256_GCM_SHA384,
-};
+}; // IANA name format
 
 enum monlevel
 {
@@ -173,6 +197,7 @@ enum tlsstate
 	INITIAL_STATE,
 	RECV_CH,
 	RECV_SH,
+	RECV_SERVER_HS_DONE,
 	TLS_ESTABLISHED,
 	TO_BE_DESTROYED,
 }; // tls_state_type
@@ -183,20 +208,19 @@ enum ercode
 	DECRYPT_ERR,
 	ORPHAN_ERR,
 	EARLY_FIN,
-	NOT_SUPPORTED,
+	INVALID_VERSION,
+	INVALID_CIPHER_SUITE,
+	INVALID_RECORD_LEN,
+	WRONG_USAGE,
 	MISSING_KEY = -1,
-/*------------------------------------*/
+	/*------------------------------------*/
+	/* 
+	 * below are not error,
+	 * but NO_KEY might raise MISSING_KEY
+	 * when NO_KEY raised many times
+	 */
 	NO_KEY = 0,
 }; // custom error code
-
-typedef struct tls_buffer
-{
-	uint8_t *buf;
-	uint32_t chead;
-	uint32_t ctail;
-	uint32_t phead;
-	uint32_t ptail;
-} tls_buffer;
 
 typedef struct pkt_vec
 {
@@ -204,86 +228,120 @@ typedef struct pkt_vec
 	uint16_t len;
 } pkt_vec;
 
-typedef struct tls_crypto_info
+typedef struct session_ctx
 {
-	uint8_t data[MAX_KEY_INFO_SIZE];
-} tls_crypto_info;
+	uint8_t key_info[MAX_KEY_INFO_SIZE];
+	uint64_t tls_seq;
+	uint8_t *buf;
+#ifndef ZERO_COPY
+	uint32_t head;
+	uint32_t tail;
+	uint8_t record_type;
+#endif
+	uint16_t record_len; /* TLS header not included */
+} session_ctx;
 
-typedef struct tls_context
+typedef struct session_info
 {
-	uint8_t tc_key_info[MAX_KEY_INFO_SIZE];
-	uint64_t tc_tls_seq; /* = tls_seq */
-	tls_buffer tc_cipher;
-	// tls_buffer tc_plain;
-} tls_context;
+	/* cipher */
+	uint16_t version;
+	uint16_t cipher_suite;
+	/* sockaddr */
+	int sock;
+	uint32_t cli_ip;
+	uint32_t svr_ip;
+	uint16_t cli_port;
+	uint16_t svr_port;
+	/* randoms */
+	uint8_t client_random[TLS_CLIENT_RANDOM_LEN];
+	uint8_t server_random[TLS_SERVER_RANDOM_LEN];
+	/* server name indicator */
+	uint8_t sni_len;
+	uint8_t sni_type;
+	uint8_t sni[TLS_MAX_SNI_LEN];
+	/* something related to cert, not implemented yet */
+	void *certificate;
+} session_info;
 
-typedef struct conn_info
+enum info_mask
 {
-	void *ci_uctx;
-	int ci_mon_state[2];
-	int ci_tls_state; /* TLS state */
-	int ci_has_key;
-	int ci_err_code;
-	uint8_t ci_client_random[TLS_CLIENT_RANDOM_LEN];
-	uint8_t ci_server_random[TLS_SERVER_RANDOM_LEN];
-	uint16_t ci_tls_version;
-	uint16_t ci_cipher_suite;
-	uint8_t ci_sni_type;
-	uint8_t ci_sni[TLS_MAX_SNI_LEN];
-	const EVP_CIPHER *ci_evp_cipher;
-	const EVP_MD *ci_evp_md;
-	tls_context ci_tls_ctx[2];
+	VERSION = 1,
+	CIPHER_SUITE = 1 << 1,
+	SOCK_ADDR = 1 << 2,
+	SNI = 1 << 3,
+	CLIENT_RANDOM = 1 << 4,
+	SERVER_RANDOM = 1 << 5,
+	// not implemented yet, need to modify structures
+	CLIENT_KEY = 1 << 6,
+	SERVER_KEY = 1 << 7,
+	CLIENT_IV = 1 << 8,
+	SERVER_IV = 1 << 9,
+	CLIENT_MAC_KEY = 1 << 10,
+	SERVER_MAC_KEY = 1 << 11,
+	// not implemented yet, need to decrypt handshake record
+	CERTIFICATE = 1 << 12,
+};
+
+typedef struct session
+{
+	void *uctx;
+	uint8_t has_key : 1;
+	uint8_t drop : 1;
+	uint8_t bypass : 1;
+	uint8_t unused: 2;
+	uint8_t tls_state : 3; /* TLS state */
+	int err_code;
+
+	session_info sess_info;
+	session_ctx sess_ctx[2];
+
+	const EVP_CIPHER *evp_cipher;
+	const EVP_MD *evp_md;
+	void *offload_flow;
+	int stop_len[2];
 
 	/* below are for packet stall */
-	pkt_vec ci_raw_pkt[MAX_RAW_PKT_NUM]; /* raw packet buffer */
-	uint32_t ci_raw_len;
-	uint8_t ci_raw_cnt;
-} conn_info;
-
-typedef struct keytable
-{
-	/* key pair <client_random, key> table */
-	uint8_t kt_client_random[TLS_CLIENT_RANDOM_LEN];
-	tls_crypto_info kt_key_info[2];
-	int kt_valid;
-} keytable;
+	pkt_vec raw_pkt[MAX_RAW_PKT_NUM]; /* raw packet buffer */
+	uint32_t raw_len;
+	uint8_t raw_cnt;
+} session;
 
 /*---------------------------------------------------------------------------*/
 int mmtls_init(const char *fname, int num_cpus);
 /*---------------------------------------------------------------------------*/
-void mmtls_app_join(mmtls_t mmctx);
+void mmtls_app_join(mmctx_t mmctx);
 /*---------------------------------------------------------------------------*/
 int mmtls_destroy();
 /*---------------------------------------------------------------------------*/
-mmtls_t mmtls_create_context(int cpu);
+mmctx_t mmtls_create_context(int cpu);
 /*---------------------------------------------------------------------------*/
-int mmtls_register_callback(mmtls_t mmctx, event_t event, mmtls_cb cb);
+int mmtls_register_callback(mmctx_t mmctx, event_t event, mmtls_cb cb);
 /*---------------------------------------------------------------------------*/
-int mmtls_deregister_callback(mmtls_t mmctx, event_t event);
+int mmtls_deregister_callback(mmctx_t mmctx, event_t event);
 /*---------------------------------------------------------------------------*/
-int mmtls_get_record(mmtls_t mmctx, int cid, int side, uint8_t *buf, int *len);
+int mmtls_pause_monitor(mmctx_t mmctx, int cid, int side, int len);
 /*---------------------------------------------------------------------------*/
-void mmtls_drop_packet(mmtls_t mmctx, int cid, int side);
+int mmtls_resume_monitor(mmctx_t mmctx, int cid, int side);
 /*---------------------------------------------------------------------------*/
-void mmtls_reset_conn(mmtls_t mmctx, int cid, int side);
+int mmtls_get_record(mmctx_t mmctx, int cid, int side,
+					 char *buf, int *len, uint8_t *type);
 /*---------------------------------------------------------------------------*/
-int mmtls_get_err(mmtls_t mmctx, int cid, int side);
+int mmtls_set_uctx(mmctx_t mmctx, int cid, void *uctx);
 /*---------------------------------------------------------------------------*/
-uint8_t *mmtls_get_random(mmtls_t mmctx, int cid, int side);
+void *mmtls_get_uctx(mmctx_t mmctx, int cid);
 /*---------------------------------------------------------------------------*/
-uint16_t mmtls_get_version(mmtls_t mmctx, int cid, int side);
+int mmtls_reset_conn(mmctx_t mmctx, int cid);
 /*---------------------------------------------------------------------------*/
-uint16_t mmtls_get_cipher(mmtls_t mmctx, int cid, int side);
+/* in development */
+int mmtls_offload_ctl(mmctx_t mmctx, int cid, int side, int cmd);
 /*---------------------------------------------------------------------------*/
-int mmtls_get_monopt(mmtls_t mmctx, int cid, int side);
+int mmtls_get_error(mmctx_t mmctx, int cid);
 /*---------------------------------------------------------------------------*/
-int mmtls_set_monopt(mmtls_t mmctx, int cid, int side, int optval);
+int mmtls_get_tls_info(mmctx_t mmctx, int cid,
+					   session_info *info, uint16_t bitmask);
 /*---------------------------------------------------------------------------*/
-int mmtls_get_stallcnt(mmtls_t mmctx, int cid, int side);
-/*---------------------------------------------------------------------------*/
-void mmtls_set_uctx(mmtls_t mmctx, int cid, void *uctx);
-/*---------------------------------------------------------------------------*/
-void *mmtls_get_uctx(mmtls_t mmctx, int cid);
+/* only for inner usage */
+int mmtls_get_stallcnt(mmctx_t mmctx, int cid);
 /*---------------------------------------------------------------------------*/
 
 #endif /* __TLS_H__ */

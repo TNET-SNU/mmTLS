@@ -249,11 +249,7 @@ main(int argc, char **argv)
 
 	fprintf(stderr, "\033[32m done. \033[0m \n");
 	
-#if RTE_VERSION < RTE_VERSION_NUM(17, 05, 0, 16)
-	rte_set_log_level(RTE_LOG_EMERG);
-#else
 	rte_log_set_global_level(RTE_LOG_EMERG);
-#endif
 
 	fprintf(stderr, "Scanning the system for dpdk-compatible devices...");
 	/* initialize the rte env first */

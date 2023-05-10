@@ -214,8 +214,6 @@ enum mos_socket_opts {
 	MOS_SEQ_REMAP		= 0x0b, /* supressed (not used) */
 	MOS_FRAG_CLIBUF   	= 0x0d, /* supressed (not used) */
 	MOS_FRAG_SVRBUF   	= 0x0e, /* supressed (not used) */
-
-	MOS_TLS_SP          = 0xf1,	/* Store/get TLS key */
 };
 
 /**
@@ -413,24 +411,24 @@ mtcp_raise_event(mctx_t mctx, event_t event);
 /** Set user-level context
  * (e.g., to store any per-flow user-defined meatadata)
  * @param [in] mctx: mtcp context
- * @param [in] sock: the monitor socket id
+ * @param [in] msock: the monitor socket id
  * @param [in] uctx: user-level context
  */
 void
-mtcp_set_uctx(mctx_t mctx, int sock, void *uctx);
+mtcp_set_uctx(mctx_t mctx, int msock, void *uctx);
 
 /** Get user-level context
  * (e.g., to retrieve user-defined metadata stored in mtcp_set_uctx())
  * @param [in] mctx: mtcp context
- * @param [in] sock: the monitor socket id
+ * @param [in] msock: the monitor socket id
  * @return user-level context for input flow_ocntext
  */
 void *
-mtcp_get_uctx(mctx_t mctx, int sock);
+mtcp_get_uctx(mctx_t mctx, int msock);
 
 /** Peeking bytestream from flow_context
  * @param [in] mctx: mtcp context
- * @param [in] sock: monitoring stream socket id
+ * @param [in] msock: monitoring stream socket id
  * @param [in] side: side of monitoring (client side, server side or both)
  * @param [in] buf: buffer for read byte stream
  * @param [in] len: requested length
@@ -439,8 +437,24 @@ mtcp_get_uctx(mctx_t mctx, int sock);
  * It will return -1 if there is an error
 */
 ssize_t
-mtcp_peek(mctx_t mctx, int sock, int side,
-	     char *buf, size_t len);
+mtcp_peek(mctx_t mctx, int msock, int side, char *buf, size_t len);
+
+/** Peeking record from flow_context
+ * @param [in] mctx: mtcp context
+ * @param [in] msock: monitoring stream socket id
+ * @param [in] side: side of monitoring (client side, server side or both)
+ * @param [out] outlen: returned length of record including header
+ *
+ * It will return pointer to record
+ * Or, return pointer to temporary buffer filled by copy of record
+ * when peek offset reach rightmost edge of ring
+ * It will return NULL if there is an error
+*/
+uint8_t *
+mtcp_get_record(mctx_t mctx, int msock, int side, int *outlen);
+
+int 
+mtcp_move_poff(mctx_t mctx, int msock, int side, int len);
 
 /**
  * The mtcp_ppeek() function reads up to count bytes from the TCP ring
@@ -462,8 +476,9 @@ mtcp_peek(mctx_t mctx, int sock, int side,
  * @param [in] seq_num: byte offset of the TCP bytestream (absolute offset: offset 0 = init_seq_num)
  * @return # of bytes actually read on success, -1 for error
  */
-ssize_t mtcp_ppeek(mctx_t mctx, int sock, int side, 
-			  char *buf, size_t count, uint64_t off);
+ssize_t
+mtcp_ppeek(mctx_t mctx, int sock, int side,
+		   char *buf, size_t count, uint64_t off);
 
 /* Use this macro to copy packets when mtcp_getlastpkt is called */
 // #define MTCP_CB_GETCURPKT_CREATE_COPY
@@ -503,6 +518,18 @@ mtcp_cb_stop(mctx_t mctx, int sock, int side);
  */
 int
 mtcp_reset_conn(mctx_t mctx, int sock);
+
+/**
+ * Create offload rule for the flow
+ */
+void *
+mtcp_offload_flow(mctx_t mctx, int sock, int side, int cmd);
+
+/**
+ * Remove offload rule for the flow
+ */
+int
+mtcp_onload_flow(mctx_t mctx, int sock, int side, void *flow);
 
 /** A sibling function to mtcp_settimer that returns
  * the current timestamp of the machine in microseconds.

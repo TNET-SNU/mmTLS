@@ -75,6 +75,8 @@ typedef struct io_module_func {
 	int32_t	  (*select)(struct mtcp_thread_context *ctx);
 	void	  (*destroy_handle)(struct mtcp_thread_context *ctx);
 	int32_t	  (*dev_ioctl)(struct mtcp_thread_context *ctx, int nif, int cmd, void *argp);
+	void *	  (*offload)(int nif, int cmd, void *argp);
+	int		  (*onload)(int nif, void *argp);
 } io_module_func __attribute__((aligned(__WORDSIZE)));
 /*----------------------------------------------------------------------------*/
 io_module_func *current_iomodule_func;
@@ -92,6 +94,11 @@ typedef struct {
 #define PKT_TX_IP_CSUM		0x01
 #define PKT_TX_TCP_CSUM		0x02
 #define PKT_RX_RSS		0x03
+/* e-switch offload related macros */
+#define OFFLOAD_BYPASS		0x04
+#define OFFLOAD_DROP		0x05
+#define ONLOAD		0x06
+
 #define DRV_NAME		0x08
 
 /* enable shared RX/TX buffers */

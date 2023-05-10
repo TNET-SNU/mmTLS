@@ -348,6 +348,7 @@ SendTCPPacket(struct mtcp_manager *mtcp, tcp_stream *cur_stream,
 					  pctx.out_ifidx,
 					  PKT_TX_TCP_CSUM,
 					  pctx.p.iph);
+	/* otherwise calculate TCP checksum in S/W */
 	if (rc == -1)
 		tcph->check = TCPCalcChecksum((uint16_t *)tcph, 
 					      TCP_HEADER_LEN + 

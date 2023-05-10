@@ -7,7 +7,8 @@
 #include "include/thash.h"
 
 #ifdef LEADER_FOLLOWER
-/* ToDo: remove client random and sock number from conn_info */
+/* Below are deprecated..
+ * mmtls no longer uses its own hash table */
 /*---------------------------------------------------------------------------*/
 ct_hashtable *
 ct_create(void)
@@ -35,7 +36,8 @@ ct_search_int(ct_hashtable *ht, uint8_t *crandom)
 	ct_hash_bucket_head *head = &ht->ht_table[*(unsigned short *)crandom];
 
 	TAILQ_FOREACH(walk, head, ct_link) {
-		if (memcmp(walk->ct_ci->ci_client_random, crandom, TLS_1_3_CLIENT_RANDOM_LEN) == 0) 
+		if (memcmp(walk->ct_sess->sess_info.client_random,
+					crandom, TLS_1_3_CLIENT_RANDOM_LEN) == 0) 
 			return walk;
 	}
 
@@ -43,7 +45,7 @@ ct_search_int(ct_hashtable *ht, uint8_t *crandom)
 }
 /*----------------------------------------------------------------------------*/
 int 
-ct_insert(ct_hashtable *ht, uint8_t *crandom, conn_info *c, mem_pool_t pool)
+ct_insert(ct_hashtable *ht, uint8_t *crandom, mmtls *c, mem_pool_t pool)
 {
 	ct_element *item;
 
@@ -55,7 +57,7 @@ ct_insert(ct_hashtable *ht, uint8_t *crandom, conn_info *c, mem_pool_t pool)
 
 	/* MPAlloc needs memset */
 	memset(item, 0, sizeof(ct_element));
-	item->ct_ci = c;
+	item->ct_sess = c;
 
 	TAILQ_INSERT_TAIL(&ht->ht_table[*(unsigned short *)crandom], item, ct_link);
 	ht->ht_count++;
@@ -63,7 +65,7 @@ ct_insert(ct_hashtable *ht, uint8_t *crandom, conn_info *c, mem_pool_t pool)
 	return 1;
 }
 /*----------------------------------------------------------------------------*/
-conn_info *
+session *
 ct_search(ct_hashtable *ht, uint8_t *crandom)
 {
 	ct_element *item;
@@ -71,7 +73,7 @@ ct_search(ct_hashtable *ht, uint8_t *crandom)
 	if (!(item = ct_search_int(ht, crandom)))
 		return NULL;
 
-	return item->ct_ci;
+	return item->ct_sess;
 }
 /*----------------------------------------------------------------------------*/
 int
@@ -119,7 +121,7 @@ st_search_int(st_hashtable *ht, int sock)
 	st_hash_bucket_head *head = &ht->ht_table[sock & LOWER_16BITS];
 
 	TAILQ_FOREACH(walk, head, st_link) {
-		if (walk->st_ci->ci_sock == sock) 
+		if (walk->st_sess->sess_info.sock == sock) 
 			return walk;
 	}
 
@@ -127,7 +129,7 @@ st_search_int(st_hashtable *ht, int sock)
 }
 /*----------------------------------------------------------------------------*/
 int 
-st_insert(st_hashtable *ht, int sock, conn_info *c, mem_pool_t pool)
+st_insert(st_hashtable *ht, int sock, session *c, mem_pool_t pool)
 {
 	st_element *item;
 
@@ -135,7 +137,7 @@ st_insert(st_hashtable *ht, int sock, conn_info *c, mem_pool_t pool)
 		return -1;
 	/* MPAlloc needs memset */
 	memset(item, 0, sizeof(st_element));
-	item->st_ci = c;
+	item->st_sess = c;
 
 	TAILQ_INSERT_TAIL(&ht->ht_table[sock & LOWER_16BITS], item, st_link);
 	ht->ht_count++;
@@ -143,7 +145,7 @@ st_insert(st_hashtable *ht, int sock, conn_info *c, mem_pool_t pool)
 	return 1;
 }
 /*----------------------------------------------------------------------------*/
-conn_info * 
+session * 
 st_search(st_hashtable *ht, int sock)
 {
 	st_element *item;
@@ -151,7 +153,7 @@ st_search(st_hashtable *ht, int sock)
 	if (!(item = st_search_int(ht, sock)))
 		return NULL;
 
-	return item->st_ci;
+	return item->st_sess;
 }
 /*----------------------------------------------------------------------------*/
 int

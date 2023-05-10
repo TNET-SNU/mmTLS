@@ -283,44 +283,20 @@ buf_try_resize(tcprb_t *rb, int len, loff_t data, int datalen)
 }
 /*--------------------------------------------------------------------------*/
 /* TODO: We do not have tailing anymore. simplify these functions */
+/* Junghan: simplified (20230404) */
 static inline void
 buf_read(tcprb_t *rb, uint8_t *buf, int len, loff_t off)
 {
-	tcpbufseg_t *bufseg = NULL;
-	assert(rb);
-
 	boff_t from = loff2boff(rb, off);
 	boff_t to = loff2boff(rb, off + len);
 	tcpbufseg_t *bufseg_from = buf_getbuf(rb, from);
 	tcpbufseg_t *bufseg_to = buf_getbuf(rb, to);
 
-	if (from > to) {
-		off = UNITBUFSIZE - (from % UNITBUFSIZE);
-		memcpy(buf, bufseg_from->buf + from % UNITBUFSIZE, off);
-		for (bufseg = buf_next(rb, bufseg_from);
-			 bufseg && (bufseg != bufseg_to);
-			 bufseg = buf_next(rb, bufseg)) {
-			memcpy(buf + off, bufseg->buf, UNITBUFSIZE);
-			off += UNITBUFSIZE;
-		}
-		for (bufseg = buf_first(rb);
-			 bufseg && (bufseg != bufseg_to);
-			 bufseg = buf_next(rb, bufseg)) {
-			memcpy(buf + off, bufseg->buf, UNITBUFSIZE);
-			off += UNITBUFSIZE;
-		}
-		memcpy(buf + off, bufseg_to->buf, to % UNITBUFSIZE);
-	} else if (bufseg_from == bufseg_to) {
+	if ((from <= to) && (bufseg_from == bufseg_to))
 		memcpy(buf, bufseg_from->buf + from % UNITBUFSIZE, len);
-	} else {
+	else {
 		off = UNITBUFSIZE - (from % UNITBUFSIZE);
 		memcpy(buf, bufseg_from->buf + from % UNITBUFSIZE, off);
-		for (bufseg = buf_next(rb, bufseg_from);
-			 bufseg && (bufseg != bufseg_to);
-			 bufseg = buf_next(rb, bufseg)) {
-			memcpy(buf + off, bufseg->buf, UNITBUFSIZE);
-			off += UNITBUFSIZE;
-		}
 		memcpy(buf + off, bufseg_to->buf, to % UNITBUFSIZE);
 	}
 }
@@ -328,41 +304,16 @@ buf_read(tcprb_t *rb, uint8_t *buf, int len, loff_t off)
 static inline void
 buf_write(tcprb_t *rb, uint8_t *buf, int len, loff_t off)
 {
-	tcpbufseg_t *bufseg = NULL;
-	assert(rb);
-
 	boff_t from = loff2boff(rb, off);
 	boff_t to = loff2boff(rb, off + len);
 	tcpbufseg_t *bufseg_from = buf_getbuf(rb, from);
 	tcpbufseg_t *bufseg_to = buf_getbuf(rb, to);
 
-	if (from > to) {
-		off = UNITBUFSIZE - (from % UNITBUFSIZE);
-		memcpy(bufseg_from->buf + from % UNITBUFSIZE, buf, off);
-		for (bufseg = buf_next(rb, bufseg_from);
-			 bufseg && (bufseg != bufseg_to);
-			 bufseg = buf_next(rb, bufseg)) {
-			memcpy(bufseg->buf, buf + off, UNITBUFSIZE);
-			off += UNITBUFSIZE;
-		}
-		for (bufseg = buf_first(rb);
-			 bufseg && (bufseg != bufseg_to);
-			 bufseg = buf_next(rb, bufseg)) {
-			memcpy(bufseg->buf, buf + off, UNITBUFSIZE);
-			off += UNITBUFSIZE;
-		}
-		memcpy(bufseg_to->buf, buf + off, to % UNITBUFSIZE);
-	} else if (bufseg_from == bufseg_to) {
+	if ((from <= to) && (bufseg_from == bufseg_to))
 		memcpy(bufseg_from->buf + from % UNITBUFSIZE, buf, len);
-	} else {
+	else {
 		off = UNITBUFSIZE - (from % UNITBUFSIZE);
 		memcpy(bufseg_from->buf + from % UNITBUFSIZE, buf, off);
-		for (bufseg = buf_next(rb, bufseg_from);
-			 bufseg && (bufseg != bufseg_to);
-			 bufseg = buf_next(rb, bufseg)) {
-			memcpy(bufseg->buf, buf + off, UNITBUFSIZE);
-			off += UNITBUFSIZE;
-		}
 		memcpy(bufseg_to->buf, buf + off, to % UNITBUFSIZE);
 	}
 }
@@ -416,6 +367,14 @@ tcprb_new(mem_pool_t mp, int len, unsigned buf_mgmt)
 
 	return rb;
 }
+/*--------------------------------------------------------------------------*/
+// inline tcprb_t *
+// tcprb_resync(tcprb_t *rb, unsigned buf_mgmt)
+// {
+// 	TAILQ_INIT(&rb->frags);
+
+// 	return rb;
+// }
 /*--------------------------------------------------------------------------*/
 inline int
 tcprb_del(tcprb_t *rb)
@@ -635,6 +594,7 @@ inline int
 tcprb_ppeek(tcprb_t *rb, uint8_t *buf, int len, loff_t off)
 {
 	struct _tcpfrag_t *f;
+	int plen;
 
 	if (!rb || rb->buf_mgmt != BUFMGMT_FULL || !buf || len < 0)
 		return -1;
@@ -649,13 +609,80 @@ tcprb_ppeek(tcprb_t *rb, uint8_t *buf, int len, loff_t off)
 		}
 
 	if (!f) /* No proper fragment found */
-		return -2;
+		return -1;
 
-	int plen = MIN(len, f->tail - off);
+	plen = MIN(len, f->tail - off);
 
 	buf_read(rb, buf, plen, off);
 
 	return plen;
+}
+/*--------------------------------------------------------------------------*/
+static __thread uint8_t local_record[TLS_RECORD_BUF_SIZE];
+inline uint8_t *
+tcprb_get_record(tcprb_t *rb, loff_t off, int *outlen)
+{
+	struct _tcpfrag_t *f;
+	boff_t from, to;
+	uint8_t *ptr;
+	uint16_t record_len;
+	loff_t len;
+	tcpbufseg_t *bufseg;
+
+	if (!rb || rb->buf_mgmt != BUFMGMT_FULL)
+		return NULL;
+
+	TAILQ_FOREACH(f, &rb->frags, link)
+		if (off >= f->head && off < f->tail) {
+			if (f->empty)
+				f = NULL;
+			break;
+		}
+
+	if (!f) /* No proper fragment found */
+		return NULL;
+
+	/* not completely received even record header */
+	if (f->tail - off < TLS_HEADER_LEN)
+		return NULL;
+	
+	from = loff2boff(rb, off);
+	bufseg = buf_getbuf(rb, from);
+	ptr = bufseg->buf + from % UNITBUFSIZE;
+	to = loff2boff(rb, off + TLS_HEADER_LEN);
+	if ((from > to) &&
+		((len = UNITBUFSIZE - from % UNITBUFSIZE) < TLS_HEADER_LEN)) {
+			/* reached rightmost edge of ring buffer */
+			if (len == 4)
+				record_len = *(bufseg->buf) + (*(ptr + 3) << 8);
+			else if (len <= 3)
+				record_len = ntohs(*(uint16_t *)(bufseg->buf + 3 - len));
+	}
+	else
+		record_len = ntohs(*(uint16_t *)(ptr + 3));
+
+	/* record length cannot exceed 16KB */
+	if (record_len > TLS_RECORD_BUF_SIZE) {
+		*outlen = TLS_HEADER_LEN + record_len;
+		return NULL;
+	}
+
+	/* not completely received total record */
+	if (f->tail - off < TLS_HEADER_LEN + record_len)
+		return NULL;
+
+	*outlen = TLS_HEADER_LEN + record_len;
+
+	to = loff2boff(rb, off + *outlen);
+	if (from > to) {
+		/* reached rightmost edge of ring buffer */
+		len = UNITBUFSIZE - (from % UNITBUFSIZE);
+		memcpy(local_record, ptr, len);
+		memcpy(local_record + len, bufseg->buf, to % UNITBUFSIZE);
+		return local_record;
+	}
+
+	return ptr;
 }
 /*--------------------------------------------------------------------------*/
 inline int
@@ -785,8 +812,7 @@ tcprb_pwrite(tcprb_t *rb, uint8_t *buf, int len, loff_t off)
 		}
 
 		/* copy data */
-		if ((rb->overlap == MOS_OVERLAP_POLICY_LAST || !skip)
-			&& rb->buf_mgmt)
+		if ((rb->overlap == MOS_OVERLAP_POLICY_LAST || !skip) && rb->buf_mgmt)
 			buf_write(rb, buf + uoff, wrlen, off + uoff);
 		uoff += wrlen;
 	}

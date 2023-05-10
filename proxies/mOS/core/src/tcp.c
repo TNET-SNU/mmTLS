@@ -313,7 +313,7 @@ UpdateMonitor(mtcp_manager_t mtcp, struct tcp_stream *sendside_stream,
 			SOCKQ_FOREACH_REVERSE(walk, &sendside_stream->msocks) {
 				HandleCallback(mtcp, MOS_HK_SND, walk, sendside_stream->side,
 					       pctx, sendside_stream->cb_events);
-			} SOCKQ_FOREACH_END;			
+			} SOCKQ_FOREACH_END;
 		}
 		sendside_stream->allow_pkt_modification = false;
 	}
@@ -345,7 +345,7 @@ UpdateMonitor(mtcp_manager_t mtcp, struct tcp_stream *sendside_stream,
 		recvside_stream->cb_events = MOS_ON_PKT_IN;
 
 		/* Predict events which may be raised prior to performing TCP processing */
-		PreRecvTCPEventPrediction(mtcp, pctx, recvside_stream);
+		// PreRecvTCPEventPrediction(mtcp, pctx, recvside_stream);
 		
 		/* retransmitted packet should avoid event simulation */
 		//if ((recvside_stream->cb_events & MOS_ON_REXMIT) == 0)

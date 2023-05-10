@@ -12,7 +12,7 @@
 /* Keep in mind about inc/dec buffer */
 /* FYI, I hate current tcp ring buffer implementation with memmove() */
 
-#define UNITBUFSIZE /*1024*//*131072*//*262144*/1048576/*1310720*/
+#define UNITBUFSIZE /*1024*//*131072*//*262144*/1048576/*1310720*//*2097152*/
 #if UNITBUFSIZE < 2
 #error UNITBUFSIZE cannot be smaller than 2
 #endif
@@ -20,6 +20,10 @@
 #define BUFMGMT_FULL    2
 #define BUFMGMT_FRAGS   1
 #define BUFMGMT_OFF     0
+
+#define MAX_TLS_RECORD_SIZE 16384
+#define TLS_RECORD_BUF_SIZE (MAX_TLS_RECORD_SIZE + 64) /* align64(16K + TLS_HEADER_LEN) */
+#define TLS_HEADER_LEN 5
 
 // #define DISABLE_DYN_RESIZE
 
@@ -96,6 +100,9 @@ tcprb_fflen(tcprb_t *rb, uint8_t *buf, int len, loff_t off);
 
 extern inline int
 tcprb_ppeek(tcprb_t *rb, uint8_t *buf, int len, loff_t off);
+
+extern inline uint8_t *
+tcprb_get_record(tcprb_t *rb, loff_t off, int *outlen);
 
 extern inline int
 tcprb_pwrite(tcprb_t *rb, uint8_t *buf, int len, loff_t off);

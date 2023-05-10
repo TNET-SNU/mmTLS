@@ -15,6 +15,7 @@
 
 #define ETH_P_IP_FRAG   0xF800
 #define ETH_P_IPV6_FRAG 0xF6DD
+#define DNS_PORT 443
 
 
 /*----------------------------------------------------------------------------*/
@@ -36,6 +37,7 @@ ProcessInIPv4Packet(mtcp_manager_t mtcp, struct pkt_ctx *pctx)
 	/* check and process IPv4 packets */
 	struct iphdr* iph =
 		(struct iphdr *)((char *)pctx->p.ethh + sizeof(struct ethhdr));
+	struct udphdr *udph;
 	int ip_len = ntohs(iph->tot_len);
 
 	/* drop the packet shorter than ip header */
@@ -51,6 +53,14 @@ ProcessInIPv4Packet(mtcp_manager_t mtcp, struct pkt_ctx *pctx)
 	}
 
 	FillInPacketIPContext(pctx, iph, ip_len);
+
+#if 0
+	printf("dip: %d.%d.%d.%d\n",
+			*(uint8_t *)&iph->daddr,
+			*((uint8_t *)&iph->daddr + 1),
+			*((uint8_t *)&iph->daddr + 2),
+			*((uint8_t *)&iph->daddr + 3));
+#endif
 
 	/* callback for monitor raw socket */
 	TAILQ_FOREACH(walk, &mtcp->monitors, link)
@@ -80,20 +90,30 @@ ProcessInIPv4Packet(mtcp_manager_t mtcp, struct pkt_ctx *pctx)
 #endif
 
 	switch (iph->protocol) {
-		case IPPROTO_TCP:
-			return ProcessInTCPPacket(mtcp, pctx);
-		case IPPROTO_ICMP:
-			if (ProcessICMPPacket(mtcp, pctx))
-				return TRUE;
-		default:
-			/* forward other protocols without any processing */
-			if (!mtcp->num_msp || !pctx->forward)
-				release = true;
-			else
-				ForwardIPPacket(mtcp, pctx);
-			
-			ret = FALSE;
-			goto __return;
+	  case IPPROTO_TCP:
+		return ProcessInTCPPacket(mtcp, pctx);
+	  case IPPROTO_UDP:
+		udph = (struct udphdr *)((char *)iph + (pctx->p.iph->ihl << 2));
+		if ((ntohs(udph->source) == DNS_PORT) ||
+			(ntohs(udph->dest) == DNS_PORT))
+			// printf("DNS detected\n");
+			;
+	  case IPPROTO_ICMP:
+		// printf("ICMP detected\n");
+		/* true when destined to me */
+		if (ProcessICMPPacket(mtcp, pctx))
+			return TRUE;
+	  default:
+		/* forward without any processing */
+		if (!mtcp->num_msp || !pctx->forward)
+			release = true;
+		else {
+			pctx->forward = 2;
+			ForwardIPPacket(mtcp, pctx);
+		}
+		
+		ret = FALSE;
+		goto __return;
 	}
 
 __return:

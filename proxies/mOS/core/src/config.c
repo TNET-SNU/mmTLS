@@ -347,6 +347,7 @@ FeedRouteConfLine(struct conf_block *blk, char *line, int len)
 	ent->ip = inet_addr(address);
 	ent->mask = htonl((prefix == 0) ? 0 : ((-1) << (32 - prefix)));
 	ent->masked_ip = ent->mask & ent->ip;
+	printf("masked_ip: %d\n", ent->masked_ip);
 	ent->prefix = prefix;
 	ent->nif = -1;
 	strcpy(ent->dev_name, dev_name);

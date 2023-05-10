@@ -17,7 +17,7 @@ MTCP_HDR = mtcp_api.h mos_api.h mtcp_epoll.h mtcp_util.h
 
 ### GCC ###
 GCC = @CC@
-GCC_OPT = -m64 -Wall -fPIC -DNEWEV -fgnu89-inline -Werror
+GCC_OPT = -m64 -Wall -fPIC -DNEWEV -fgnu89-inline -Werror -fcommon
 
 #DBG_OPT = -DDBGMSG -DDBGFUNC -DSTREAM -DSTATE -DTSTAT -DAPP -DEPOLL
 #DBG_OPT = -DDBGMSG -DDBGFUNC -DSTREAM -DSTATE
@@ -50,13 +50,12 @@ LIBS += -lnuma
 endif
 
 ifeq ($(ENABLE_DPDK), 1)
-# DPDK LIBRARY and HEADER
-DPDK_INC=$(RTE_SDK)/$(RTE_TARGET)/include
-DPDK_LIB=$(RTE_SDK)/$(RTE_TARGET)/lib/
-# CFLAGS for DPDK-related compilation
-include $(RTE_SDK)/mk/rte.vars.mk
-INC += -DENABLE_DPDK -I${DPDK_INC} -include $(DPDK_INC)/rte_config.h
-LIBS += -export-dynamic -L$(DPDK_LIB)
+PKGCONF = pkg-config
+DPDK_CFLAGS = $(shell $(PKGCONF) --cflags libdpdk)
+DPDK_LDFLAGS += $(shell $(PKGCONF) --libs libdpdk)
+INC += $(DPDK_CFLAGS) -DENABLE_DPDK
+LDFLAGS += $(DPDK_LDFLAGS)
+LIBS += -export-dynamic
 endif
 
 ifeq ($(ENABLE_PCAP), 1)

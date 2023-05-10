@@ -41,7 +41,7 @@ ForwardIPPacket(mtcp_manager_t mtcp, struct pkt_ctx *pctx)
 {
 	unsigned char * haddr;
 	struct iphdr *iph;
-	uint32_t daddr = 0;
+	uint32_t *daddr;
 
 	if (g_config.mos->nic_forward_table != NULL) {
 		pctx->out_ifidx = 
@@ -53,35 +53,37 @@ ForwardIPPacket(mtcp_manager_t mtcp, struct pkt_ctx *pctx)
 	}
 
 	/* set daddr for easy code writing */
-	daddr = pctx->p.iph->daddr;		
+	daddr = &pctx->p.iph->daddr;		
 
 	if (pctx->out_ifidx < 0) {
-		pctx->out_ifidx = GetOutputInterface(pctx->p.iph->daddr);
+		pctx->out_ifidx = GetOutputInterface(*daddr);
 		if (pctx->out_ifidx < 0) {
+			/* use the input interface */
+			pctx->out_ifidx = pctx->p.in_ifidx;
 			return;
 		}
 	}
 
-	haddr = GetDestinationHWaddr(daddr);
+	haddr = GetDestinationHWaddr(*daddr);
 	if (!haddr) {
 #ifdef RUN_ARP
 		/* ARP requests will not be created if it's a standalone middlebox */
 		if (!pctx->forward)
-			RequestARP(mtcp, daddr,
+			RequestARP(mtcp, *daddr,
 				   pctx->out_ifidx, pctx->p.cur_ts);
 #else
-		uint8_t *da = (uint8_t *)&(pctx->p.iph->daddr);
+		uint8_t *da = (uint8_t *)daddr;
 		TRACE_INFO("[WARNING] The destination IP %u.%u.%u.%u "
 			  "is not in ARP table!\n",
 			  da[0], da[1], da[2], da[3]);
 #endif
 		return;
 	}
-
+	if (pctx->forward == 2)
+		goto fast_tx;
 #ifdef SHARE_IO_BUFFER
 	if (likely(mtcp->iom->set_wptr != NULL)) {
-		int i;
-		for (i = 0; i < ETH_ALEN; i++) {
+		for (int i = 0; i < ETH_ALEN; i++) {
 			pctx->p.ethh->h_source[i] = g_config.mos->netdev_table->ent[pctx->out_ifidx]->haddr[i];
 			pctx->p.ethh->h_dest[i] = haddr[i];
 		}
@@ -165,8 +167,8 @@ IPOutputStandalone(struct mtcp_manager *mtcp,
 	iph->daddr = daddr;
 	iph->check = 0;
 	
-	/* offload IP checkum if possible */
-#if 0
+	/* offload IP checksum if possible */
+#if 0 // already turned on offload by default
 	int rc = -1;
 	if (likely(mtcp->iom->dev_ioctl != NULL))
 		rc = mtcp->iom->dev_ioctl(mtcp->ctx, nif, PKT_TX_IP_CSUM, iph);

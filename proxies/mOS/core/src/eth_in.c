@@ -32,7 +32,14 @@ ProcessPacket(mtcp_manager_t mtcp, const int ifidx, const int index,
 	struct ethhdr *ethh = (struct ethhdr *)pkt_data;
 	int ret = -1;
 	u_short h_proto = ntohs(ethh->h_proto);
-
+	
+	if (ethh->h_dest[0] == 0x08 &&
+		ethh->h_dest[1] == 0xc0 &&
+		ethh->h_dest[2] == 0xeb &&
+		ethh->h_dest[3] == 0x62 &&
+		ethh->h_dest[4] == 0x45 &&
+		ethh->h_dest[5] == 0x04)
+		printf("/*********************************************/\n");
 	memset(&pctx, 0, sizeof(pctx));
 
 	/* for debugging */
@@ -64,29 +71,35 @@ ProcessPacket(mtcp_manager_t mtcp, const int ifidx, const int index,
 
 	FillInPacketEthContext(&pctx, cur_ts, ifidx, index, ethh, len);
 
-	if (h_proto == ETH_P_IP) {
+	switch (h_proto) {
+	  case ETH_P_IP:
 		/* process ipv4 packet */
 		ret = ProcessInIPv4Packet(mtcp, &pctx);
-	}
-	else {
-
-		/* drop the packet if forwarding is off */
-		if (!mtcp->num_msp || !pctx.forward) {
+		break;
+	  case ETH_P_IPV6:
+		// printf("IPv6 detected\n");
+		goto Forward;
+	  case ETH_P_ARP:
 #ifdef RUN_ARP
-			if (h_proto == ETH_P_ARP) {
-				ret = ProcessARPPacket(mtcp, cur_ts, ifidx, pkt_data, len);
-				return TRUE;
-			} else 
-#endif
-				{
-					DumpPacket(mtcp, (char *)pkt_data, len, "??", ifidx);
-					if (mtcp->iom->release_pkt)
-						mtcp->iom->release_pkt(mtcp->ctx, ifidx, pkt_data, len);
-				}
-		} else { /* else forward */
-			ForwardEthernetFrame(mtcp, &pctx);
+		/* process ARP packet if forwarding is off */
+		if (!mtcp->num_msp || !pctx.forward) {
+			ret = ProcessARPPacket(mtcp, cur_ts, ifidx, pkt_data, len);
 			return TRUE;
 		}
+#endif
+		goto Forward;
+	  case ETH_P_LLDP:
+		// printf("LLDP detected\n");
+	  	goto Forward;
+	  default:
+		/* drop the packet if forwarding is off */
+		if (!mtcp->num_msp || !pctx.forward) {
+			DumpPacket(mtcp, (char *)pkt_data, len, "??", ifidx);
+			if (mtcp->iom->release_pkt)
+				mtcp->iom->release_pkt(mtcp->ctx, ifidx, pkt_data, len);
+			break;
+		}
+		goto Forward;
 	}
 	
 #ifdef NETSTAT
@@ -96,5 +109,9 @@ ProcessPacket(mtcp_manager_t mtcp, const int ifidx, const int index,
 #endif
 
 	return ret;
+
+Forward:
+	ForwardEthernetFrame(mtcp, &pctx);
+	return TRUE;
 }
 /*----------------------------------------------------------------------------*/

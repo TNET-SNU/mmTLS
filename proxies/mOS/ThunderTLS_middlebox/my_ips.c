@@ -12,7 +12,7 @@
 #include <endian.h>
 #include "include/mmtls.h"
 #include "cpu.h"
-#include "memory_mgt.h"
+#include "../core/src/include/memory_mgt.h"
 
 #define MAX_CPUS 16
 #define MAX_PATH_LEN	32
@@ -24,15 +24,18 @@
 typedef struct uctx
 {
 	FILE *fp[2];
-
-	/* below are for debugging, remove when eval */
-	uint64_t payload_len[2];
 	uint64_t monitor_len[2];
 
 	/* below are for delay eval */
 	clock_t clock_stall;
 	clock_t clock_resend;
 	clock_t key_delay;
+
+	clock_t session_start;
+	clock_t page_load_time;
+
+	/* below are for debugging, remove when eval */
+	uint64_t payload_len[2];
 } uctx;
 /*---------------------------------------------------------------------------*/
 struct debug_cnt {
@@ -48,11 +51,11 @@ int g_write_all = 0;
 int g_cnt_conn = 0;
 FILE *g_delay_fp;
 char g_path[MAX_PATH_LEN] = FILE_PATH;
-mmtls_t g_mmctx[MAX_CPUS];
+mmctx_t g_mmctx[MAX_CPUS];
 mem_pool_t g_uctx_pool[MAX_CPUS] = {NULL};
 /*---------------------------------------------------------------------------*/
 static inline void
-print_conn_stat(mmtls_t mmctx, uctx *c)
+print_conn_stat(mmctx_t mmctx, uctx *c)
 {
 	if (g_measure_delay)
 		fprintf(g_delay_fp,
@@ -84,10 +87,10 @@ print_conn_stat(mmtls_t mmctx, uctx *c)
 			"key cnt: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n"
 			"Total key: %d\n",
 			mmctx->cpu,
-			c->payload_len[MOS_SIDE_CLI],
 			c->monitor_len[MOS_SIDE_CLI],
-			c->payload_len[MOS_SIDE_SVR],
+			c->payload_len[MOS_SIDE_CLI],
 			c->monitor_len[MOS_SIDE_SVR],
+			c->payload_len[MOS_SIDE_SVR],
 			/* master core: num of keys */
 			g_cnt[0].ins, g_cnt[1].ins, g_cnt[2].ins, g_cnt[3].ins,
 			g_cnt[4].ins, g_cnt[5].ins, g_cnt[6].ins, g_cnt[7].ins,
@@ -104,48 +107,45 @@ print_conn_stat(mmtls_t mmctx, uctx *c)
 			g_cnt[8].key, g_cnt[9].key, g_cnt[10].key, g_cnt[11].key,
 			g_cnt[12].key, g_cnt[13].key, g_cnt[14].key, g_cnt[15].key,
 			sum.key);
+	printf("page load time: %lf\n",
+			(double)(c->page_load_time - c->session_start) / CLOCKS_PER_SEC);
 }
 /*---------------------------------------------------------------------------*/
 static void
-cb_session_start(mmtls_t mmctx, int cid, int side)
+cb_session_start(mmctx_t mmctx, int cid, int side)
 {
 	char destfile[MAX_FILE_NAME_LEN];
 	uctx *c;
-	if (side != MMTLS_SIDE_CLI)
-		return;
     if ((c = mmtls_get_uctx(mmctx, cid)))
 		/* already inserted session, might be caused by duplicated SYN */
 		return;
 	if (!(c = MPAllocateChunk(g_uctx_pool[mmctx->cpu])))
 		EXIT_WITH_ERROR("uctx pool alloc failed");
+	memset(c, 0, sizeof(uctx));
 	if (g_write_all) {
-		sprintf(destfile, "%score%dconn%dside%d", g_path, mmctx->cpu, cid, side);
-		if ((c->fp[side] = fopen(destfile, "a+w")) < 0)
+		sprintf(destfile, "%score%dconn%d", g_path, mmctx->cpu, cid);
+		if ((c->fp[MOS_SIDE_CLI] = fopen(destfile, "a+w")) < 0)
 			EXIT_WITH_ERROR("fopen() failed");
 	}
-    mmtls_set_uctx(mmctx, cid, c);
-	/* turn on decrypt to detect HTTP request */
-	if (mmtls_set_monopt(mmctx, cid, MMTLS_SIDE_SVR, DO_DECRYPT) == -1)
-		EXIT_WITH_ERROR("mmtls_set_monopt() failed");
+	c->session_start = clock();
+    if (mmtls_set_uctx(mmctx, cid, c) == -1)
+		EXIT_WITH_ERROR("mmtls_set_uctx failed");
 	if (!g_cnt_conn)
 		return;
 	g_cnt[mmctx->cpu].ins++;
 }
 /*---------------------------------------------------------------------------*/
 static void
-cb_session_end(mmtls_t mmctx, int cid, int side)
+cb_session_end(mmctx_t mmctx, int cid, int side)
 {
 	uctx *c;
-	if (side != MMTLS_SIDE_CLI) 
-		return;
     if (!(c = mmtls_get_uctx(mmctx, cid)))
 		/* already removed session */
 		return;
-	if (g_write_all)
-		if (c->fp[side]) {
-			if (fclose(c->fp[side]) < 0)
-				EXIT_WITH_ERROR("fclose() failed");
-		}
+	if (g_write_all) {
+		if (fclose(c->fp[MOS_SIDE_CLI]) < 0)
+			EXIT_WITH_ERROR("fclose() failed");
+	}
 	print_conn_stat(mmctx, c);
 	MPFreeChunk(g_uctx_pool[mmctx->cpu], c);
 	if (!g_cnt_conn)
@@ -154,30 +154,26 @@ cb_session_end(mmtls_t mmctx, int cid, int side)
 }
 /*---------------------------------------------------------------------------*/
 static void
-cb_handshake_end(mmtls_t mmctx, int cid, int side)
+cb_handshake_end(mmctx_t mmctx, int cid, int side)
 {
 	uctx *c;
-	uint16_t cipher_suite;
-	uint16_t version;
-	uint8_t *random;
+	session_info info;
 	if (side != MMTLS_SIDE_CLI) 
 		return;
     if (!(c = mmtls_get_uctx(mmctx, cid)))
 		/* already removed session */
 		return;
-	random = mmtls_get_random(mmctx, cid, side);
-	version = mmtls_get_version(mmctx, cid, side);
-	cipher_suite = mmtls_get_cipher(mmctx, cid, side);
-	printf("version: %d\n"
-			"cipher_suite: %d\n"
-			"random: %p\n",
-			version,
-			cipher_suite,
-			random);
+	if (mmtls_get_tls_info(mmctx, cid, &info, VERSION | CIPHER_SUITE) == -1)
+		EXIT_WITH_ERROR("mmtls_get_info failed");
+	printf("TLS %02X%02X, %02X%02X\n",
+		*((uint8_t *)&info.version + 1),
+		*(uint8_t *)&info.version,
+		*((uint8_t *)&info.cipher_suite + 1),
+		*(uint8_t *)&info.cipher_suite);
 }
 /*---------------------------------------------------------------------------*/
 static void
-cb_stall(mmtls_t mmctx, int cid, int side)
+cb_stall(mmctx_t mmctx, int cid, int side)
 {
 	uctx *c;
     if (!(c = mmtls_get_uctx(mmctx, cid)))
@@ -188,7 +184,7 @@ cb_stall(mmtls_t mmctx, int cid, int side)
 }
 /*---------------------------------------------------------------------------*/
 static void
-cb_recv_key(mmtls_t mmctx, int cid, int side)
+cb_recv_key(mmctx_t mmctx, int cid, int side)
 {
 	uctx *c;
 	int cnt;
@@ -201,9 +197,10 @@ cb_recv_key(mmtls_t mmctx, int cid, int side)
 	}
 	if (!g_cnt_conn)
 		return;
-	cnt = mmtls_get_stallcnt(mmctx, cid, side);
+	if ((cnt = mmtls_get_stallcnt(mmctx, cid)) == -1)
+		EXIT_WITH_ERROR("mmtls_get_stallcnt failed");
 	printf("\n--------------------------------------------------\n"
-			"[%s] core: %d, cid: %u\nsent %d stalled pkts\n",
+			"[%s] core: %d, cid: %u, stall_cnt: %d\n",
 			__FUNCTION__, mmctx->cpu, cid, cnt);
 	g_cnt[mmctx->cpu].key++;
 	printf("key found: %d\n",
@@ -214,49 +211,76 @@ cb_recv_key(mmtls_t mmctx, int cid, int side)
 }
 /*---------------------------------------------------------------------------*/
 static void
-cb_new_record(mmtls_t mmctx, int cid, int side)
+cb_new_record(mmctx_t mmctx, int cid, int side)
 {
 	uctx *c;
-	uint8_t buf[MAX_BUF_LEN];
-	int len = MAX_BUF_LEN;
-	if (side == MMTLS_SIDE_SVR) {
-		/* client request */
-		if (mmtls_get_record(mmctx, cid, side, buf, &len) == -1)
-			EXIT_WITH_ERROR("mmtls_get_record failed");
-		if (!len)
-			return;
-		/* if new request detected, turn on decrypt for the following response */
-		if (strstr((char *)buf, "GET "))
-			mmtls_set_monopt(mmctx, cid, MMTLS_SIDE_CLI, DO_DECRYPT);
-		return;
-	}
-	if (mmtls_get_record(mmctx, cid, side, buf, &len) == -1)
-		EXIT_WITH_ERROR("mmtls_get_record failed");
-	if (!len)
-		return;
+	char buf[MAX_BUF_LEN];
+	int len;
+	int err;
     if (!(c = mmtls_get_uctx(mmctx, cid)))
 		EXIT_WITH_ERROR("uctx_search() failed");
-	c->payload_len[side] += len; // for debugging
-	if (strstr((char *)buf, "HTTP/")) {
-		c->monitor_len[side] = len;
-		goto Log;
+
+	// if (mmtls_offload_ctl(mmctx, cid, side, OFFLOAD_BYPASS) < 0)
+	// 	printf("offload failed!\n");
+	// printf("[CORE: %d]\nCLIENT: %lu\n", mmctx->cpu, c->monitor_len[side]);
+	// return;
+
+	/* decrypt only 10KB for each response */
+	if ((side == MMTLS_SIDE_CLI) &&
+		(c->monitor_len[side] > 10000)) {
+		// mmtls_offload_ctl(mmctx, cid, side, OFFLOAD_BYPASS);
+		// printf("[CORE: %d]\nCLIENT: %lu\n", mmctx->cpu, c->monitor_len[side]);
+		mmtls_pause_monitor(mmctx, cid, side, 64000);
+		printf("paused!\n");
+	}
+
+	/* get plaintext */
+	if (mmtls_get_record(mmctx, cid, side, buf, &len, NULL) == -1) {
+		err = mmtls_get_error(mmctx, cid);
+		printf("err: %d\n", err);
+		if (err == INTEGRITY_ERR) {
+			if (mmtls_reset_conn(mmctx, cid) == -1)
+				EXIT_WITH_ERROR("mmtls_reset_conn failed");
+			cb_session_end(mmctx, cid, side);
+		}
+		return;
 	}
 	c->monitor_len[side] += len;
-	if (c->monitor_len[side] > 1000000)
-		/* decrypt only 1MB for each response */
-		mmtls_set_monopt(mmctx, cid, MMTLS_SIDE_CLI, NO_DECRYPT);
-Log:
-	if (g_write_all)
-		if (fwrite((const void *)buf, 1, len, c->fp[side]) == -1)
+
+	if (side == MMTLS_SIDE_SVR) {
+		/* if new request from client detected, reset */
+		if (strstr(buf, "GET ")) {
+			// mmtls_offload_ctl(mmctx, cid, side, ONLOAD);
+			c->monitor_len[MMTLS_SIDE_CLI] = 0;
+			mmtls_resume_monitor(mmctx, cid, MMTLS_SIDE_CLI);
+			printf("resumed!\n");
+		}
+		return;
+	}
+	if (g_write_all) {
+		if (fwrite((const void *)buf, 1, len, c->fp[MOS_SIDE_CLI]) == -1)
 			EXIT_WITH_ERROR("fwrite failed");
+	}
+	c->page_load_time = clock();
 }
 /*---------------------------------------------------------------------------*/
 static void
-cb_abnormal(mmtls_t mmctx, int cid, int side)
+cb_abnormal(mmctx_t mmctx, int cid, int side)
 {
-    WARNING_PRINT("Warning! err code: %d", mmtls_get_err(mmctx, cid, side));
-	mmtls_drop_packet(mmctx, cid, side);
-	mmtls_reset_conn(mmctx, cid, side);
+	int err = mmtls_get_error(mmctx, cid);
+    WARNING_PRINT("Warning! err code: %d", err);
+	if ((err == INVALID_VERSION) ||
+		(err == INVALID_CIPHER_SUITE) ||
+		(err == INVALID_RECORD_LEN) ||
+		(err == MISSING_KEY)) {
+		if (mmtls_reset_conn(mmctx, cid) == -1)
+			EXIT_WITH_ERROR("mmtls_reset_conn failed");
+		cb_session_end(mmctx, cid, side);
+		// if (mmtls_offload_ctl(mmctx, cid, side, OFFLOAD_BYPASS) == -1)
+		// 	EXIT_WITH_ERROR("mmtls_offload_flow failed");
+		// if (mmtls_offload_ctl(mmctx, cid, side, OFFLOAD_DROP) == -1)
+		// 	EXIT_WITH_ERROR("mmtls_offload_flow failed");
+	}
 }
 /*---------------------------------------------------------------------------*/
 int main(int argc, char **argv)
@@ -268,7 +292,7 @@ int main(int argc, char **argv)
 	/* get the total # of cpu cores */
 	int core_num = GetNumCPUs();
 
-	while ((opt = getopt(argc, argv, "c:def:")) != -1)
+	while ((opt = getopt(argc, argv, "c:def")) != -1)
 		switch (opt) {
 		case 'c':
 			if ((rc = atoi(optarg)) > core_num)
@@ -296,7 +320,7 @@ int main(int argc, char **argv)
 
 	/* Run mmTLS for each core */
 	for (i = 0; i < core_num; i++) {
-		if (!(g_uctx_pool[i] = MPCreate(sizeof(uctx), sizeof(uctx) * 1000, 0)))
+		if (!(g_uctx_pool[i] = MPCreate(sizeof(uctx), sizeof(uctx) * 8000, 0)))
 			EXIT_WITH_ERROR("MPCreate failed");
 		if (!(g_mmctx[i] = mmtls_create_context(i)))
 			EXIT_WITH_ERROR("mmtls_create_context failed");
@@ -312,7 +336,7 @@ int main(int argc, char **argv)
 			EXIT_WITH_ERROR("mmtls_register_callback failed");
 		if (mmtls_register_callback(g_mmctx[i], ON_TLS_RECV_KEY, cb_recv_key))
 			EXIT_WITH_ERROR("mmtls_register_callback failed");
-		if (mmtls_register_callback(g_mmctx[i], ON_TLS_ABNORMAL, cb_abnormal))
+		if (mmtls_register_callback(g_mmctx[i], ON_TLS_ERROR, cb_abnormal))
 			EXIT_WITH_ERROR("mmtls_register_callback failed");
 		INFO_PRINT("[core %d] thread created and callback registered", i);
 	}
