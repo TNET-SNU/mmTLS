@@ -89,16 +89,12 @@
 #include <time.h>
 #include <netdb.h>
 
-#define MAX_CPU 16
 #define KEY_SERVER_ADDR "10.1.90.100"
 #define TLS_PORT 443
 #define BUF_SIZE   256
 #define MAX_DATA_LEN 512
-#define CLIENT_RANDOM_LEN   32
-#define SERVER_RANDOM_LEN   32
-#define TRAFFIC_SECRET_LEN  48
-#define MASTER_SECRET_LEN 48
-#define SEED_LEN (13 + CLIENT_RANDOM_LEN + SERVER_RANDOM_LEN)
+#define MAX_RANDOM_LEN 32
+#define MAX_SECRET_LEN 48
 #define CUSTOM_APP_INDEX 10
 
 struct key_chan {
@@ -123,22 +119,28 @@ read_hex(uint8_t *dst, const char *src, int max)
   return len;
 }
 /*---------------------------------------------------------------------------*/
+static inline void
+hexdump(const char *title, uint8_t *buf, size_t len)
+{
+	if (title)
+		fprintf(stdout, "%s\n", title);
+	for (size_t i = 0; i < len; i++)
+		fprintf(stdout, "%02X%c", buf[i], ((i + 1) % 16 ? ' ' : '\n'));
+	fprintf(stdout, "\n");
+}
+/*---------------------------------------------------------------------------*/
 static inline unsigned char *
 HKDF_expand(const EVP_MD *evp_md,
             const unsigned char *prk, size_t prk_len,
             const char *label,
             unsigned char *okm, size_t okm_len)
 {
-  HMAC_CTX *hmac;
+  HMAC_CTX *hmac = HMAC_CTX_new();
   unsigned char *ret = NULL, ctr, prev[EVP_MAX_MD_SIZE] = {0}, data[MAX_DATA_LEN];
-  size_t label_len = strlen(label), done_len = 0, dig_len = EVP_MD_size(evp_md), len = 0;
-  size_t n = okm_len / dig_len, copy_len;
+  size_t label_len = strlen(label), done_len = 0, md_len = EVP_MD_size(evp_md);
+  size_t N = (okm_len - 1) / md_len + 1, len = 0, copy_len;
 
-  if (okm_len % dig_len) 
-    n++;
-  if (n > 255 || okm == NULL) 
-    return NULL;
-  if ((hmac = HMAC_CTX_new()) == NULL)
+  if (N > 255 || okm == NULL || prk == NULL || hmac == NULL)
     return NULL;
   if (!HMAC_Init(hmac, prk, prk_len, evp_md))
     goto err;
@@ -152,14 +154,14 @@ HKDF_expand(const EVP_MD *evp_md,
 	*(data + len) = '\0';
 	len += sizeof(uint8_t);
 	
-  for (unsigned int i = 1; i <= n; i++) {
+  for (unsigned int i = 1; i <= N; i++) {
     ctr = i;
     if (i > 1) {	
       fprintf(stderr,"[%s] Not implemented now\n", __FUNCTION__);
       goto err;
       // if (!HMAC_Init(hmac, NULL, 0, NULL))
       //   goto err;
-      // if (!HMAC_Update(hmac, prev, dig_len))
+      // if (!HMAC_Update(hmac, prev, md_len))
       //   goto err;
       // data[len - 1] = ctr;
     }
@@ -169,7 +171,7 @@ HKDF_expand(const EVP_MD *evp_md,
         goto err;
     if (!HMAC_Final(hmac, prev, NULL))
         goto err;
-    copy_len = (dig_len > okm_len - done_len) ? okm_len - done_len : dig_len;
+    copy_len = (md_len > okm_len - done_len) ? okm_len - done_len : md_len;
     memcpy(okm + done_len, prev, copy_len);
     done_len += copy_len;
   }
@@ -183,39 +185,42 @@ err:
 }
 /*---------------------------------------------------------------------------*/
 static inline void
-hexdump(const char *title, uint8_t *buf, size_t len)
+get_write_key_iv_13(const EVP_AEAD *evp_aead, const EVP_MD *evp_md,
+                    uint8_t *secret, int secret_len,
+                    uint8_t *key_out, uint8_t *iv_out)
 {
-	if (title)
-		fprintf(stdout, "%s\n", title);
-	for (size_t i = 0; i < len; i++)
-		fprintf(stdout, "%02X%c", buf[i], ((i + 1) % 16 ? ' ' : '\n'));
-	fprintf(stdout, "\n");
+	HKDF_expand(evp_md, (const uint8_t*)secret, secret_len,
+              "tls13 key", key_out, EVP_AEAD_key_length(evp_aead));
+	HKDF_expand(evp_md, (const uint8_t*)secret, secret_len,
+              "tls13 iv", iv_out, EVP_AEAD_nonce_length(evp_aead));
 }
 /*---------------------------------------------------------------------------*/
 static inline void
-get_write_key_iv_12_gcm(const EVP_CIPHER *evp_cipher, const EVP_MD *evp_md,
-                        uint8_t* crand, uint8_t* srand, uint8_t* msecret,
-                        uint8_t* c_key, uint8_t* s_key,
-                        uint8_t* c_iv, uint8_t* s_iv)
+get_write_key_iv_12_aead(const EVP_AEAD *evp_aead, const EVP_MD *evp_md,
+                         uint8_t* crand, uint8_t* srand, int random_len,
+                         uint8_t* msecret, int secret_len,
+                         uint8_t* c_key, uint8_t* s_key,
+                         uint8_t* c_iv, uint8_t* s_iv)
 {
-  int key_len = EVP_CIPHER_key_length(evp_cipher);
-  // int iv_len = EVP_CIPHER_iv_length(evp_cipher);
+  int key_len = EVP_AEAD_key_length(evp_aead);
+  // int iv_len = EVP_AEAD_nonce_length(evp_aead);
   int md_len = EVP_MD_size(evp_md);
-  uint8_t p[BUF_SIZE], seed[SEED_LEN],
-          a1[EVP_MAX_MD_SIZE + SEED_LEN], a2[EVP_MAX_MD_SIZE + SEED_LEN];
+  uint8_t p[BUF_SIZE], seed[BUF_SIZE];
+  uint8_t a1[BUF_SIZE], a2[BUF_SIZE];
+  int seed_len = strlen("key expansion") + 2 * random_len;
 
   memcpy(seed, "key expansion", strlen("key expansion"));
-  memcpy(seed + strlen("key expansion"), srand, CLIENT_RANDOM_LEN);
-  memcpy(seed + strlen("key expansion") + CLIENT_RANDOM_LEN, crand, CLIENT_RANDOM_LEN);
+  memcpy(seed + strlen("key expansion"), srand, random_len);
+  memcpy(seed + strlen("key expansion") + random_len, crand, random_len);
 
-  HMAC(evp_md, msecret, MASTER_SECRET_LEN, seed, SEED_LEN, a1, NULL);
-  HMAC(evp_md, msecret, MASTER_SECRET_LEN, a1, md_len, a2, NULL);
+  HMAC(evp_md, msecret, secret_len, seed, seed_len, a1, NULL);
+  HMAC(evp_md, msecret, secret_len, a1, md_len, a2, NULL);
 
-  memcpy(a1 + md_len, seed, SEED_LEN);
-  HMAC(evp_md, msecret, MASTER_SECRET_LEN, a1, SEED_LEN + md_len, p, NULL);
+  memcpy(a1 + md_len, seed, seed_len);
+  HMAC(evp_md, msecret, secret_len, a1, seed_len + md_len, p, NULL);
 
-  memcpy(a2 + md_len, seed, SEED_LEN);
-  HMAC(evp_md, msecret, MASTER_SECRET_LEN, a2, SEED_LEN + md_len, p + md_len, NULL);
+  memcpy(a2 + md_len, seed, seed_len);
+  HMAC(evp_md, msecret, secret_len, a2, seed_len + md_len, p + md_len, NULL);
 
   memcpy(c_key, p, key_len);
   memcpy(s_key, p + key_len, key_len);
@@ -225,7 +230,8 @@ get_write_key_iv_12_gcm(const EVP_CIPHER *evp_cipher, const EVP_MD *evp_md,
 /*---------------------------------------------------------------------------*/
 static inline void
 get_write_key_iv_12_cbc(const EVP_CIPHER *evp_cipher, const EVP_MD *evp_md,
-                        uint8_t* crand, uint8_t* srand, uint8_t* msecret,
+                        uint8_t* crand, uint8_t* srand, int random_len,
+                        uint8_t* msecret, int secret_len,
                         uint8_t* c_mac, uint8_t* s_mac,
                         uint8_t* c_key, uint8_t* s_key,
                         uint8_t* c_iv, uint8_t* s_iv)
@@ -233,34 +239,34 @@ get_write_key_iv_12_cbc(const EVP_CIPHER *evp_cipher, const EVP_MD *evp_md,
   int key_len = EVP_CIPHER_key_length(evp_cipher);
   int iv_len = EVP_CIPHER_iv_length(evp_cipher);
   int md_len = EVP_MD_size(evp_md);
-  uint8_t p[BUF_SIZE], seed[SEED_LEN], a1[EVP_MAX_MD_SIZE + SEED_LEN],
-          a2[EVP_MAX_MD_SIZE + SEED_LEN], a3[EVP_MAX_MD_SIZE + SEED_LEN],
-          a4[EVP_MAX_MD_SIZE + SEED_LEN], a5[EVP_MAX_MD_SIZE + SEED_LEN];
+  uint8_t p[BUF_SIZE], seed[BUF_SIZE];
+  uint8_t a1[BUF_SIZE], a2[BUF_SIZE], a3[BUF_SIZE], a4[BUF_SIZE], a5[BUF_SIZE];
+  int seed_len = strlen("key expansion") + 2 * random_len;
 
   memcpy(seed, "key expansion", strlen("key expansion"));
-  memcpy(seed + strlen("key expansion"), srand, CLIENT_RANDOM_LEN);
-  memcpy(seed + strlen("key expansion") + CLIENT_RANDOM_LEN, crand, CLIENT_RANDOM_LEN);
+  memcpy(seed + strlen("key expansion"), srand, random_len);
+  memcpy(seed + strlen("key expansion") + random_len, crand, random_len);
 
-  HMAC(evp_md, msecret, MASTER_SECRET_LEN, seed, SEED_LEN, a1, NULL);
-  HMAC(evp_md, msecret, MASTER_SECRET_LEN, a1, md_len, a2, NULL);
-  HMAC(evp_md, msecret, MASTER_SECRET_LEN, a2, md_len, a3, NULL);
-  HMAC(evp_md, msecret, MASTER_SECRET_LEN, a3, md_len, a4, NULL);
-  HMAC(evp_md, msecret, MASTER_SECRET_LEN, a4, md_len, a5, NULL);
+  HMAC(evp_md, msecret, secret_len, seed, seed_len, a1, NULL);
+  HMAC(evp_md, msecret, secret_len, a1, md_len, a2, NULL);
+  HMAC(evp_md, msecret, secret_len, a2, md_len, a3, NULL);
+  HMAC(evp_md, msecret, secret_len, a3, md_len, a4, NULL);
+  HMAC(evp_md, msecret, secret_len, a4, md_len, a5, NULL);
 
-  memcpy(a1 + md_len, seed, SEED_LEN);
-  HMAC(evp_md, msecret, MASTER_SECRET_LEN, a1, SEED_LEN + md_len, p, NULL);
+  memcpy(a1 + md_len, seed, seed_len);
+  HMAC(evp_md, msecret, secret_len, a1, seed_len + md_len, p, NULL);
 
-  memcpy(a2 + md_len, seed, SEED_LEN);
-  HMAC(evp_md, msecret, MASTER_SECRET_LEN, a2, SEED_LEN + md_len, p + md_len, NULL);
+  memcpy(a2 + md_len, seed, seed_len);
+  HMAC(evp_md, msecret, secret_len, a2, seed_len + md_len, p + md_len, NULL);
 
-  memcpy(a3 + md_len, seed, SEED_LEN);
-  HMAC(evp_md, msecret, MASTER_SECRET_LEN, a3, SEED_LEN + md_len, p + md_len + md_len, NULL);
+  memcpy(a3 + md_len, seed, seed_len);
+  HMAC(evp_md, msecret, secret_len, a3, seed_len + md_len, p + md_len + md_len, NULL);
 
-  memcpy(a4 + md_len, seed, SEED_LEN);
-  HMAC(evp_md, msecret, MASTER_SECRET_LEN, a4, SEED_LEN + md_len, p + md_len + md_len + md_len, NULL);
+  memcpy(a4 + md_len, seed, seed_len);
+  HMAC(evp_md, msecret, secret_len, a4, seed_len + md_len, p + md_len + md_len + md_len, NULL);
 
-  memcpy(a5 + md_len, seed, SEED_LEN);
-  HMAC(evp_md, msecret, MASTER_SECRET_LEN, a5, SEED_LEN + md_len, p + md_len + md_len + md_len + md_len, NULL);
+  memcpy(a5 + md_len, seed, seed_len);
+  HMAC(evp_md, msecret, secret_len, a5, seed_len + md_len, p + md_len + md_len + md_len + md_len, NULL);
 
   memcpy(c_mac, p, md_len);
   memcpy(s_mac, p + md_len, md_len);
@@ -271,18 +277,9 @@ get_write_key_iv_12_cbc(const EVP_CIPHER *evp_cipher, const EVP_MD *evp_md,
 }
 /*---------------------------------------------------------------------------*/
 static inline void
-get_write_key_iv_13(const EVP_CIPHER *evp_cipher, const EVP_MD *evp_md,
-                    uint8_t *secret, uint8_t *key_out, uint8_t *iv_out)
-{
-	HKDF_expand(evp_md, (const uint8_t*)secret, TRAFFIC_SECRET_LEN,
-              "tls13 key", key_out, EVP_CIPHER_key_length(evp_cipher));
-	HKDF_expand(evp_md, (const uint8_t*)secret, TRAFFIC_SECRET_LEN,
-              "tls13 iv", iv_out, EVP_CIPHER_iv_length(evp_cipher));
-}
-/*---------------------------------------------------------------------------*/
-static inline void
 destroy_key_channel(SSL_CTX *ssl_ctx)
 {
+  printf("destroy_key_channl\n");
   int key_chan_sd;
   SSL_CTX *key_ctx = NULL;
   SSL *key_ssl = NULL;
@@ -308,6 +305,7 @@ destroy_key_channel(SSL_CTX *ssl_ctx)
 static inline int
 init_key_channel(SSL_CTX *ssl_ctx)
 {
+  printf("init_key_channel!\n");
   int key_chan_sd;
   struct key_chan *channel = NULL;
   SSL_CTX *key_ctx = NULL;
@@ -383,7 +381,7 @@ keysend_callback(const SSL *ssl, const char *line)
 {
   SSL_CTX *ssl_ctx;
   struct key_chan *channel;
-  int res, bytes, offset = 0;
+  int random_len, secret_len, res, bytes, offset = 0;
   struct sockaddr_in *cliaddr, *svraddr;
 	uint8_t *ptr;
 	uint8_t payload[BUF_SIZE];
@@ -392,17 +390,18 @@ keysend_callback(const SSL *ssl, const char *line)
   uint8_t flag;
   enum {CLIENT_SIDE = 1, SERVER_SIDE = 2, TLS12 = 3};
   struct pair_secret {
-    uint8_t traffic_secret[TRAFFIC_SECRET_LEN];
+    uint8_t traffic_secret[MAX_SECRET_LEN];
     uint8_t flag;
   } *ps;
   char secret_buf[BUF_SIZE], crandom_buf[BUF_SIZE];
-  uint8_t crandom[CLIENT_RANDOM_LEN], srandom[CLIENT_RANDOM_LEN], secret[MASTER_SECRET_LEN];
+  uint8_t crandom[MAX_RANDOM_LEN], srandom[MAX_RANDOM_LEN], secret[MAX_SECRET_LEN];
   
   /* TLS parameter */
   const SSL_CIPHER *ssl_cipher;
   const char *IANA_cipher_name;
   const EVP_MD *evp_md;
-  const EVP_CIPHER *evp_cipher;
+  const EVP_CIPHER *evp_cipher = NULL;
+  const EVP_AEAD *evp_aead = NULL;
   int key_len, iv_len, mac_key_len = 0;
 
   /* key and iv */
@@ -424,117 +423,155 @@ keysend_callback(const SSL *ssl, const char *line)
 		return; /* irrelevant lines */
   if (res != 2) {
 		fprintf(stderr, "wrong line format, line = %s\n", line);
-		exit(EXIT_FAILURE);
+    return;
 	}
-  read_hex(crandom, (const char *)crandom_buf, BUF_SIZE);
-	read_hex(secret, (const char *)secret_buf, BUF_SIZE);
+  random_len = read_hex(crandom, (const char *)crandom_buf, BUF_SIZE);
+	secret_len = read_hex(secret, (const char *)secret_buf, BUF_SIZE);
 
   /* if TLS13, find pair */
   // if (flag != TLS12 && !(ps = (struct pair_secret *)SSL_get_app_data(ssl))) {
-  if (flag != TLS12 && !(ps = (struct pair_secret *)SSL_get_ex_data(ssl, CUSTOM_APP_INDEX + 2))) {
-    /* not found, insert */
-    if (!(ps = (struct pair_secret *)calloc(1, sizeof(struct pair_secret))))
-      perror("calloc failed");
-    // if (SSL_set_app_data((SSL *)ssl, ps) <= 0)
-    if (SSL_set_ex_data((SSL *)ssl, CUSTOM_APP_INDEX + 2, ps) <= 0)
-      fprintf(stderr, "Error: SSL_set_app_data failed\n");
-    memcpy(ps->traffic_secret, secret, TRAFFIC_SECRET_LEN);
-    ps->flag = flag;
-    return;
+  if (flag != TLS12) {
+    ps = (struct pair_secret *)SSL_get_ex_data(ssl, CUSTOM_APP_INDEX + 1);
+    if (!ps) {
+      /* not found, insert */
+      if (!(ps = (struct pair_secret *)calloc(1, sizeof(struct pair_secret))))
+        perror("calloc failed");
+      // if (SSL_set_app_data((SSL *)ssl, ps) <= 0)
+      if (SSL_set_ex_data((SSL *)ssl, CUSTOM_APP_INDEX + 1, ps) <= 0)
+        fprintf(stderr, "Error: SSL_set_app_data failed\n");
+      memcpy(ps->traffic_secret, secret, secret_len);
+      ps->flag = flag;
+      return;
+    }
   }
 
   /* get parameters */
-  if (!(ssl_cipher = SSL_get_current_cipher(ssl))) {
-		fprintf(stderr, "SSL_get_current_cipher failed");
-		exit(EXIT_FAILURE);
-	}
-  IANA_cipher_name = SSL_CIPHER_standard_name(ssl_cipher);
+  if (!(ssl_cipher = SSL_get_current_cipher(ssl)) ||
+      !(IANA_cipher_name = SSL_CIPHER_standard_name(ssl_cipher)))
+    return;
   if (strstr(IANA_cipher_name, "_GCM_")) {
     if (strstr(IANA_cipher_name, "AES_256")) {
-      evp_cipher = EVP_aes_256_gcm();
+      evp_aead = EVP_aead_aes_256_gcm();
       evp_md = EVP_sha384();
     }
     else if (strstr(IANA_cipher_name, "AES_128")) {
-      evp_cipher = EVP_aes_128_gcm();
+      evp_aead = EVP_aead_aes_128_gcm();
       evp_md = EVP_sha256();
     }
     else {
-      fprintf(stderr, "Not supported cipher suite\n");
-      exit(EXIT_FAILURE);
+      fprintf(stderr, "Not supported cipher suite: %s\n", IANA_cipher_name);
+      return;
     }
   }
+	else if (strstr(IANA_cipher_name, "_CHACHA20_")) {
+		evp_aead = EVP_aead_chacha20_poly1305();
+		evp_md = EVP_sha256();
+	}
   else if (strstr(IANA_cipher_name, "_CBC_")) {
     if (strstr(IANA_cipher_name, "AES_256"))
       evp_cipher = EVP_aes_256_cbc();
     else if (strstr(IANA_cipher_name, "AES_128"))
       evp_cipher = EVP_aes_128_cbc();
     else {
-      fprintf(stderr, "Not supported cipher suite\n");
+      fprintf(stderr, "Not supported cipher suite: %s\n", IANA_cipher_name);
+      return;
+    }
+    if (strstr(IANA_cipher_name, "SHA256"))
+      evp_md = EVP_sha256();
+    else if (strstr(IANA_cipher_name, "SHA384"))
+      evp_md = EVP_sha384();
+    else if (strstr(IANA_cipher_name, "SHA"))
+      evp_md = EVP_sha1();
+    else {
+      fprintf(stderr, "Not supported cipher suite: %s\n", IANA_cipher_name);
+      return;
+    }
+    mac_key_len = EVP_MD_size(evp_md);
+  }
+#if CCM_SUPPORT
+  else if (strstr(IANA_cipher_name, "_CCM_")) {
+    if (strstr(IANA_cipher_name, "AES_256"))
+      evp_aead = EVP_aead_aes_256_ccm();
+    else if (strstr(IANA_cipher_name, "AES_128"))
+      evp_aead = EVP_aead_aes_128_ccm();
+    else {
+      fprintf(stderr, "Not supported cipher suite: %s\n", IANA_cipher_name);
       exit(EXIT_FAILURE);
     }
     if (strstr(IANA_cipher_name, "SHA256"))
       evp_md = EVP_sha256();
     else if (strstr(IANA_cipher_name, "SHA384"))
       evp_md = EVP_sha384();
+    else if (strstr(IANA_cipher_name, "SHA"))
+      evp_md = EVP_sha1();
     else {
-      fprintf(stderr, "Not supported cipher suite\n");
+      fprintf(stderr, "Not supported cipher suite: %s\n", IANA_cipher_name);
       exit(EXIT_FAILURE);
     }
-    mac_key_len = EVP_MD_size(evp_md);
+  }
+#endif
+  else {
+    fprintf(stderr, "Not supported mode: %s\n", IANA_cipher_name);
+      return;
+  }
+  if (evp_aead) {
+    key_len = EVP_AEAD_key_length(evp_aead);
+    iv_len = EVP_AEAD_nonce_length(evp_aead);
   }
   else {
-    fprintf(stderr, "Not supported mode\n");
-    exit(EXIT_FAILURE);
+    key_len = EVP_CIPHER_key_length(evp_cipher);
+    iv_len = EVP_CIPHER_iv_length(evp_cipher);
   }
-  key_len = EVP_CIPHER_key_length(evp_cipher);
-  iv_len = EVP_CIPHER_iv_length(evp_cipher);
   // printf("IANA_cipher_name: %s\n"
   //       "key_len: %d, iv_len: %d, tag_len: %d, mac_key_len: %d\n",
   //       IANA_cipher_name, key_len, iv_len, mac_key_len, mac_key_len);
   
   /* get key and iv */
   if (flag != TLS12) {
-    get_write_key_iv_13(evp_cipher, evp_md, secret,
+    /* TLSv1.3 cipher suites are all AEAD */
+    get_write_key_iv_13(evp_aead, evp_md, secret, secret_len,
       (flag == CLIENT_SIDE)?client_write_key:server_write_key,
       (flag == CLIENT_SIDE)?client_write_iv:server_write_iv);
-    get_write_key_iv_13(evp_cipher, evp_md, ps->traffic_secret,
+    get_write_key_iv_13(evp_aead, evp_md, ps->traffic_secret, secret_len,
       (ps->flag == CLIENT_SIDE)?client_write_key:server_write_key,
       (ps->flag == CLIENT_SIDE)?client_write_iv:server_write_iv);
     free(ps);
   }
   else {
-    SSL_get_server_random(ssl, srandom, CLIENT_RANDOM_LEN);
+    SSL_get_server_random(ssl, srandom, random_len);
     if (mac_key_len)
       /* cbc only supported */
       get_write_key_iv_12_cbc(evp_cipher, evp_md,
-                              crandom, srandom, secret,
+                              crandom, srandom, random_len,
+                              secret, secret_len,
                               client_mac_key, server_mac_key,
                               client_write_key, server_write_key,
                               client_write_iv, server_write_iv);
     else
       /* gcm only supported */
-      get_write_key_iv_12_gcm(evp_cipher, evp_md,
-                              crandom, srandom, secret,
-                              client_write_key, server_write_key,
-                              client_write_iv, server_write_iv);
+      get_write_key_iv_12_aead(evp_aead, evp_md,
+                               crandom, srandom, random_len,
+                               secret, secret_len,
+                               client_write_key, server_write_key,
+                               client_write_iv, server_write_iv);
   }
 
   /* get 4-tuple */
   cliaddr = (struct sockaddr_in *)SSL_get_ex_data(ssl, CUSTOM_APP_INDEX);
-  svraddr = (struct sockaddr_in *)SSL_get_ex_data(ssl, CUSTOM_APP_INDEX + 1);
-  printf("sip: %d.%d.%d.%d, sp: %d, dip: %d.%d.%d.%d, dp: %d\n",
-        *(uint8_t *)&cliaddr->sin_addr, *((uint8_t *)&cliaddr->sin_addr + 1),
-        *((uint8_t *)&cliaddr->sin_addr + 2), *((uint8_t *)&cliaddr->sin_addr + 3),
-        ntohs(cliaddr->sin_port),
-        *(uint8_t *)&svraddr->sin_addr, *((uint8_t *)&svraddr->sin_addr + 1),
-        *((uint8_t *)&svraddr->sin_addr + 2), *((uint8_t *)&svraddr->sin_addr + 3),
-        ntohs(svraddr->sin_port));
+  svraddr = cliaddr + 1;
+  // printf("sip: %d.%d.%d.%d, sp: %d, dip: %d.%d.%d.%d, dp: %d\n",
+  //       *(uint8_t *)&cliaddr->sin_addr, *((uint8_t *)&cliaddr->sin_addr + 1),
+  //       *((uint8_t *)&cliaddr->sin_addr + 2), *((uint8_t *)&cliaddr->sin_addr + 3),
+  //       ntohs(cliaddr->sin_port),
+  //       *(uint8_t *)&svraddr->sin_addr, *((uint8_t *)&svraddr->sin_addr + 1),
+  //       *((uint8_t *)&svraddr->sin_addr + 2), *((uint8_t *)&svraddr->sin_addr + 3),
+  //       ntohs(svraddr->sin_port));
 
   /* make key msg */
   ptr = payload;
   /* clientrandom | TLSversion | ciphersuite | infosize | keyinfo | 4-tuple */
-  memcpy(ptr, crandom, CLIENT_RANDOM_LEN);
-  ptr += CLIENT_RANDOM_LEN;
+  memcpy(ptr, crandom, random_len);
+  ptr += random_len;
   *(uint16_t *)ptr = htons(SSL_version(ssl));
   ptr += sizeof(uint16_t);
   *(uint16_t *)ptr = htons(SSL_CIPHER_get_protocol_id(ssl_cipher));
@@ -562,7 +599,6 @@ keysend_callback(const SSL *ssl, const char *line)
   memcpy(ptr, &svraddr->sin_port, sizeof(uint16_t)); /* dst port */
   ptr += sizeof(uint16_t);
   free(cliaddr);
-  free(svraddr);
   // hexdump("client key", client_write_key, key_len);
   // hexdump("client iv", client_write_iv, iv_len);
   // hexdump("client mac key", client_mac_key, mac_key_len);
@@ -580,7 +616,7 @@ keysend_callback(const SSL *ssl, const char *line)
   channel = (key_chan *)SSL_CTX_get_app_data(ssl_ctx);
   if (!channel) {
     ERR_print_errors_fp(stderr);
-    exit(EXIT_FAILURE);
+    return;
   }
   pthread_mutex_lock(&channel->mutex);
   /* critical section init */
@@ -594,11 +630,11 @@ keysend_callback(const SSL *ssl, const char *line)
   pthread_mutex_unlock(&channel->mutex);
   if (offset > BUF_SIZE) {
     ERR_print_errors_fp(stderr);
-    exit(EXIT_FAILURE);
+    return;
   }
 
-  static int cnt = 0;
-  printf("sent key! %d\n", ++cnt);
+  // static int cnt = 0;
+  // printf("sent key! %d\n", ++cnt);
 }
 #endif
 
@@ -770,18 +806,6 @@ RSAKeyUsage CheckRSAKeyUsage(const X509Certificate* cert,
                                 : RSAKeyUsage::kMissingDigitalSignature;
 }
 
-// IsCECPQ2Host returns true if the given host is eligible for CECPQ2. This is
-// used to implement a gradual rollout as the larger TLS messages may cause
-// middlebox issues.
-bool IsCECPQ2Host(const std::string& host) {
-  // Currently only eTLD+1s that start with "aa" are included, for example
-  // aardvark.com or aaron.com.
-  return registry_controlled_domains::GetDomainAndRegistry(
-             host, registry_controlled_domains::PrivateRegistryFilter::
-                       EXCLUDE_PRIVATE_REGISTRIES)
-             .find(features::kPostQuantumCECPQ2Prefix.Get()) == 0;
-}
-
 bool HostIsIPAddressNoBrackets(base::StringPiece host) {
   // Note this cannot directly call url::HostIsIPAddress, because that function
   // expects bracketed IPv6 literals. By the time hosts reach SSLClientSocket,
@@ -814,10 +838,6 @@ class SSLClientSocketImpl::SSLContext {
 
   void SetSSLKeyLogger(std::unique_ptr<SSLKeyLogger> logger) {
   #if MMTLS_SUPPORT
-    if (init_key_channel(ssl_ctx_.get()) < 0) {
-      perror("init_key_channel");
-      exit(EXIT_FAILURE);
-    }
     SSL_CTX_set_keylog_callback(ssl_ctx_.get(), keysend_callback);
   #else
     net::SSLKeyLoggerManager::SetSSLKeyLogger(std::move(logger));
@@ -848,6 +868,9 @@ class SSLClientSocketImpl::SSLContext {
     SSL_CTX_set_session_cache_mode(
         ssl_ctx_.get(), SSL_SESS_CACHE_CLIENT | SSL_SESS_CACHE_NO_INTERNAL);
     SSL_CTX_sess_set_new_cb(ssl_ctx_.get(), NewSessionCallback);
+    // SSL_CTX_set_session_cache_mode(
+    //     ssl_ctx_.get(), SSL_SESS_CACHE_OFF);
+    // SSL_CTX_set_options(ssl_ctx_.get(), SSL_OP_NO_TICKET);
     SSL_CTX_set_timeout(ssl_ctx_.get(), 1 * 60 * 60 /* one hour */);
 
     SSL_CTX_set_grease_enabled(ssl_ctx_.get(), 1);
@@ -858,6 +881,16 @@ class SSLClientSocketImpl::SSLContext {
     SSL_CTX_set_msg_callback(ssl_ctx_.get(), MessageCallback);
 
     ConfigureCertificateCompression(ssl_ctx_.get());
+
+#if MMTLS_SUPPORT
+    if (init_key_channel(ssl_ctx_.get()) < 0) {
+      perror("init_key_channel");
+      exit(EXIT_FAILURE);
+    }
+  }
+  ~SSLContext() {
+    destroy_key_channel(ssl_ctx_.get());
+#endif
   }
 
   static int ClientCertRequestCallback(SSL* ssl, void* arg) {
@@ -990,34 +1023,25 @@ int SSLClientSocketImpl::Connect(CompletionOnceCallback callback) {
   // Set SSL to client mode. Handshake happens in the loop below.
   SSL_set_connect_state(ssl_.get());
 #if MMTLS_SUPPORT
-  IPEndPoint cliaddr;
-  GetLocalAddress(&cliaddr);
-  struct sockaddr_in *clisock = (struct sockaddr_in *)calloc(1, sizeof(struct sockaddr_in));
-  if (!clisock) {
-    perror("calloc failed");
-    return -1;
-  }
+  IPEndPoint addr;
   socklen_t socklen = sizeof(struct sockaddr_in);
-  if (!cliaddr.ToSockAddr((sockaddr *)clisock, &socklen)) {
-    perror("sockaddr failed");
-    return -1;
-  }
-  if (SSL_set_ex_data(ssl_.get(), CUSTOM_APP_INDEX, clisock) <= 0)
-    fprintf(stderr, "Error: SSL_set_app_data failed\n");
-  IPEndPoint svraddr;
-  GetPeerAddress(&svraddr);
-  struct sockaddr_in *svrsock = (struct sockaddr_in *)calloc(1, sizeof(struct sockaddr_in));
-  if (!svrsock) {
+  struct sockaddr_in *sock = (struct sockaddr_in *)calloc(2, sizeof(struct sockaddr_in));
+  if (!sock) {
     perror("calloc failed");
     return -1;
   }
-  socklen = sizeof(struct sockaddr_in);
-  if (!svraddr.ToSockAddr((sockaddr *)svrsock, &socklen)) {
-    perror("sockaddr failed");
+  if (SSL_set_ex_data(ssl_.get(), CUSTOM_APP_INDEX, sock) <= 0)
+    fprintf(stderr, "Error: SSL_set_app_data failed\n");
+  if (GetLocalAddress(&addr) ||
+      !addr.ToSockAddr((sockaddr *)sock, &socklen)) {
+    perror("getsockaddr failed");
     return -1;
   }
-  if (SSL_set_ex_data(ssl_.get(), CUSTOM_APP_INDEX + 1, svrsock) <= 0)
-    fprintf(stderr, "Error: SSL_set_app_data failed\n");
+  if (GetPeerAddress(&addr) ||
+      !addr.ToSockAddr((sockaddr *)(sock + 1), &socklen)) {
+    perror("getpeeraddr failed");
+    return -1;
+  }
 #endif
   next_handshake_state_ = STATE_HANDSHAKE;
   rv = DoHandshakeLoop(OK);
@@ -1210,8 +1234,16 @@ void SSLClientSocketImpl::GetSSLCertRequestInfo(
   size_t num_client_cert_types =
       SSL_get0_certificate_types(ssl_.get(), &client_cert_types);
   for (size_t i = 0; i < num_client_cert_types; i++) {
-    cert_request_info->cert_key_types.push_back(
-        static_cast<SSLClientCertType>(client_cert_types[i]));
+    switch (client_cert_types[i]) {
+      case static_cast<uint8_t>(SSLClientCertType::kRsaSign):
+      case static_cast<uint8_t>(SSLClientCertType::kEcdsaSign):
+        cert_request_info->cert_key_types.push_back(
+            static_cast<SSLClientCertType>(client_cert_types[i]));
+        break;
+      default:
+        // Unknown client certificate types are ignored.
+        break;
+    }
   }
 }
 
@@ -1327,20 +1359,10 @@ int SSLClientSocketImpl::Init() {
     return ERR_UNEXPECTED;
   }
 
-  if (base::FeatureList::IsEnabled(features::kPostQuantumKyber)) {
+  if (context_->config().post_quantum_enabled &&
+      base::FeatureList::IsEnabled(features::kPostQuantumKyber)) {
     static const int kCurves[] = {NID_X25519Kyber768, NID_X25519,
-                                  NID_P256Kyber768, NID_X9_62_prime256v1,
-                                  NID_secp384r1};
-    if (!SSL_set1_curves(ssl_.get(), kCurves, std::size(kCurves))) {
-      return ERR_UNEXPECTED;
-    }
-  } else if (context_->config().cecpq2_enabled &&
-      (base::FeatureList::IsEnabled(features::kPostQuantumCECPQ2) ||
-       (!host_is_ip_address &&
-        base::FeatureList::IsEnabled(features::kPostQuantumCECPQ2SomeDomains) &&
-        IsCECPQ2Host(host_and_port_.host())))) {
-    static const int kCurves[] = {NID_CECPQ2, NID_X25519, NID_X9_62_prime256v1,
-                                  NID_secp384r1};
+                                  NID_X9_62_prime256v1, NID_secp384r1};
     if (!SSL_set1_curves(ssl_.get(), kCurves, std::size(kCurves))) {
       return ERR_UNEXPECTED;
     }
@@ -2313,8 +2335,7 @@ SSLClientSessionCache::Key SSLClientSocketImpl::GetSessionCacheKey(
   SSLClientSessionCache::Key key;
   key.server = host_and_port_;
   key.dest_ip_addr = dest_ip_addr;
-  if (base::FeatureList::IsEnabled(
-          features::kPartitionSSLSessionsByNetworkIsolationKey)) {
+  if (NetworkAnonymizationKey::IsPartitioningEnabled()) {
     key.network_anonymization_key = ssl_config_.network_anonymization_key;
   }
   key.privacy_mode = ssl_config_.privacy_mode;
