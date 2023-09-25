@@ -139,7 +139,7 @@ struct tcp_recv_vars
 #else
 	pthread_mutex_t read_lock;
 #endif
-	struct hash_bucket_head *he_mybucket;
+	uint32_t rss_hash;
 	TAILQ_ENTRY(tcp_stream) he_link;	/* hash table entry link */
 };
 
@@ -244,14 +244,15 @@ typedef struct tcp_stream
 	uint32_t actions;
 	uint64_t cb_events;
 
-	uint8_t state;			/* tcp state */
-	uint8_t close_reason;	/* close reason */
-	uint8_t on_hash_table;
-	uint8_t on_timewait_list;
-	uint8_t ht_idx;
-	uint8_t closed;
-	uint8_t is_bound_addr;
-	uint8_t need_wnd_adv;
+	uint16_t state:4,			/* tcp state */
+		close_reason:4,	/* close reason */
+		on_hash_table:1,
+		on_timewait_list:1,
+		closed:1,
+		is_bound_addr:1,
+		need_wnd_adv:1,
+		unused:3;
+
 	int16_t on_rto_idx;
 
 	uint16_t on_timeout_list:1, 
@@ -303,20 +304,19 @@ RaiseErrorEvent(mtcp_manager_t mtcp, tcp_stream *stream);
 
 tcp_stream *
 CreateTCPStream(mtcp_manager_t mtcp, socket_map_t socket, int type, 
-		uint32_t saddr, uint16_t sport, uint32_t daddr, uint16_t dport,
-		unsigned int *hash);
+		uint32_t saddr, uint16_t sport, uint32_t daddr, uint16_t dport, uint32_t rss_hash);
 
 extern inline tcp_stream *
 CreateDualTCPStream(mtcp_manager_t mtcp, socket_map_t socket, int type, uint32_t saddr, 
-		    uint16_t sport, uint32_t daddr, uint16_t dport, unsigned int *hash);
+		    uint16_t sport, uint32_t daddr, uint16_t dport, uint32_t rss_hash);
 
 extern inline tcp_stream *
 CreateClientTCPStream(mtcp_manager_t mtcp, socket_map_t socket, int type,
-			uint32_t saddr, uint16_t sport, uint32_t daddr, uint16_t dport, unsigned int *hash);
+			uint32_t saddr, uint16_t sport, uint32_t daddr, uint16_t dport, uint32_t rss_hash);
 
 extern inline tcp_stream *
 AttachServerTCPStream(mtcp_manager_t mtcp, tcp_stream *cs, int type,
-			uint32_t saddr, uint16_t sport, uint32_t daddr, uint16_t dport);
+			uint32_t saddr, uint16_t sport, uint32_t daddr, uint16_t dport, uint32_t rss_hash);
 
 void
 DestroyTCPStream(mtcp_manager_t mtcp, tcp_stream *stream);

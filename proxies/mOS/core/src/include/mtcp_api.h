@@ -428,7 +428,7 @@ mtcp_get_connection_cnt(mctx_t mctx);
  * @return found socket id on success, -1 on failure
  */
 int
-mtcp_search_sockid(mctx_t mctx, session_address_t sess_addr);
+mtcp_search_sockid(mctx_t mctx, session_address_t sess_addr, uint32_t rss_hash);
 	
 #ifdef __cplusplus
 };

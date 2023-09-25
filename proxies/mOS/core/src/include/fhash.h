@@ -4,7 +4,7 @@
 #include <sys/queue.h>
 #include "tcp_stream.h"
 
-#define NUM_BINS (131072)     /* 132 K entries per thread*/
+#define NUM_BINS (131072)     /* 128 K entries per thread*/
 #define TCP_AR_CNT (3)
 
 #define STATIC_TABLE FALSE
@@ -17,7 +17,7 @@ typedef struct hash_bucket_head {
 
 /* hashtable structure */
 struct hashtable {
-	uint8_t ht_count ;                    // count for # entry
+	uint16_t ht_count; // count for # entry
 
 #if STATIC_TABLE
 	tcp_stream* ht_array[NUM_BINS][TCP_AR_CNT];
@@ -30,8 +30,8 @@ struct hashtable *CreateHashtable(void);
 void DestroyHashtable(struct hashtable *ht);
 
 
-int HTInsert(struct hashtable *ht, tcp_stream *, unsigned int *hash);
-void* HTRemove(struct hashtable *ht, tcp_stream *);
-tcp_stream* HTSearch(struct hashtable *ht, const tcp_stream *, unsigned int *hash);
+inline int HTInsert(struct hashtable *ht, tcp_stream *, uint32_t rss_hash);
+inline void *HTRemove(struct hashtable *ht, tcp_stream *, uint32_t rss_hash);
+inline tcp_stream *HTSearch(struct hashtable *ht, const tcp_stream *, uint32_t rss_hash);
 
 #endif /* __FHASH_H_ */
