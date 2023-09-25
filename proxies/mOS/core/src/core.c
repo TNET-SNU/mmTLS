@@ -883,8 +883,8 @@ RunMainLoop(struct mtcp_thread_context *ctx)
 	ts = ts_prev = 0;
 	while ((!ctx->done || mtcp->flow_cnt) && !ctx->exit) {
 		/* check per thread callback defined by application */
-		if (ctx->fp_callback != NULL)
-			ctx->fp_callback(g_ctx[mtcp->ctx->cpu]);
+		// if (ctx->fp_callback != NULL)
+		// 	ctx->fp_callback(g_ctx[mtcp->ctx->cpu]);
 		
 		STAT_COUNT(mtcp->runstat.rounds);
 		recv_cnt = 0;
@@ -905,9 +905,10 @@ RunMainLoop(struct mtcp_thread_context *ctx)
 
 			for (i = 0; i < recv_cnt; i++) {
 				uint16_t len;
+				uint32_t rss_hash;
 				uint8_t *pktbuf;
-				pktbuf = mtcp->iom->get_rptr(mtcp->ctx, rx_inf, i, &len);
-				ProcessPacket(mtcp, rx_inf, i, ts, pktbuf, len);
+				pktbuf = mtcp->iom->get_rptr(mtcp->ctx, rx_inf, i, &len, &rss_hash);
+				ProcessPacket(mtcp, rx_inf, i, ts, pktbuf, len, rss_hash);
 			}
 
 		}
@@ -1800,20 +1801,19 @@ mtcp_destroy()
 }
 /*----------------------------------------------------------------------------*/
 int
-mtcp_search_sockid(mctx_t mctx, session_address_t sess_addr)
+mtcp_search_sockid(mctx_t mctx, session_address_t sess_addr, uint32_t rss_hash)
 {
     struct mtcp_thread_context *ctx = g_pctx[mctx->cpu];
     struct mtcp_manager *mtcp = ctx->mtcp_manager;
     struct tcp_stream item, *stream;
 	socket_map_t walk;
-    uint32_t hash;
 
     item.saddr = htonl(sess_addr->client_ip);
     item.sport = htons(sess_addr->client_port);
     item.daddr = htonl(sess_addr->server_ip);
     item.dport = htons(sess_addr->server_port);
 	
-    stream = HTSearch(mtcp->tcp_flow_table, &item, &hash);
+    stream = HTSearch(mtcp->tcp_flow_table, &item, rss_hash);
     if (stream == NULL) {
         return -1;
     }

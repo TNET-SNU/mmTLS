@@ -66,12 +66,13 @@ typedef struct io_module_func {
 	void      (*init_handle)(struct mtcp_thread_context *ctx);
 	int32_t   (*link_devices)(struct mtcp_thread_context *ctx);
 	void      (*release_pkt)(struct mtcp_thread_context *ctx, int ifidx, unsigned char *pkt_data, int len);
-	uint8_t * (*get_wptr)(struct mtcp_thread_context *ctx, int ifidx, uint16_t len, uint16_t l4len);
-	void 	  (*set_wptr)(struct mtcp_thread_context *ctx, int out_ifidx, int in_ifidx, int idx, uint16_t l4len);
+	uint8_t * (*get_wptr)(struct mtcp_thread_context *ctx, int ifidx, uint16_t len);
+	void 	  (*set_wptr)(struct mtcp_thread_context *ctx, int out_ifidx, int ifidx, int idx);
 	int32_t   (*send_pkts)(struct mtcp_thread_context *ctx, int nif);
-	uint8_t * (*get_rptr)(struct mtcp_thread_context *ctx, int ifidx, int index, uint16_t *len);
+	uint8_t * (*get_rptr)(struct mtcp_thread_context *ctx, int ifidx, int index, uint16_t *len, uint32_t *rss_hash);
 	int       (*get_nif)(struct ifreq *ifr);
 	int32_t   (*recv_pkts)(struct mtcp_thread_context *ctx, int ifidx);
+	int 	  (*stall_pkts)(struct mtcp_thread_context *ctx, int ifidx, int idx);
 	int32_t	  (*select)(struct mtcp_thread_context *ctx);
 	void	  (*destroy_handle)(struct mtcp_thread_context *ctx);
 	int32_t	  (*dev_ioctl)(struct mtcp_thread_context *ctx, int nif, int cmd, void *argp);

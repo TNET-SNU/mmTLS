@@ -122,6 +122,7 @@ typedef union event_data {
 struct pkt_info {
 	uint32_t      cur_ts;    /**< packet receiving time (read-only:ro) */
 	int8_t        in_ifidx;  /**< input interface (ro) */
+	uint32_t      rss_hash;
 	
 	/* ETH */
 	uint16_t      eth_len;
@@ -130,7 +131,6 @@ struct pkt_info {
 	uint16_t      ip_len;
 	
 	/* TCP */
-	uint16_t      l4len;
 	uint64_t      offset;    /**< TCP ring buffer offset */
 	uint16_t      payloadlen;
 	uint32_t      seq;
@@ -159,8 +159,8 @@ struct pkt_info {
 struct pkt_ctx {
 	struct pkt_info  p;
 
-	int8_t        direction; /**< where does this packet originate from? (ro)*/
-	uint8_t       forward;   /**< 0: drop, 1: forward to out_ifidx (rw) */
+	int8_t        direction:4; /**< where does this packet originate from? (ro)*/
+	uint8_t       forward:4;   /**< 0: drop, 1: forward to out_ifidx (rw) */
 	int8_t        out_ifidx; /**< output interface (rw) */
 	int8_t        batch_index; /**< index of packet in the rx batch */
 	/* ~~ 64 byte boundary ~~ */
@@ -609,6 +609,6 @@ typedef struct session_address *session_address_t;
  * @return found socket id on success, -1 on failure
  */
 int
-mtcp_addrtosock(mctx_t mctx, session_address_t sess_addr);
+mtcp_addrtosock(mctx_t mctx, session_address_t sess_addr, uint32_t rss_hash);
 
 #endif /* __MOS_API_H_ */

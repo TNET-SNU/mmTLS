@@ -11,7 +11,7 @@
 /*----------------------------------------------------------------------------*/
 inline void
 FillInPacketEthContext (struct pkt_ctx *pctx, uint32_t cur_ts, int in_ifidx,
-		        int index, struct ethhdr *ethh, int eth_len)
+		        int index, struct ethhdr *ethh, int eth_len, uint32_t rss_hash)
 {
 	pctx->p.cur_ts = cur_ts;
 	pctx->p.in_ifidx = in_ifidx;
@@ -20,26 +20,28 @@ FillInPacketEthContext (struct pkt_ctx *pctx, uint32_t cur_ts, int in_ifidx,
 	pctx->p.eth_len = eth_len;
 	pctx->batch_index = index;
 	pctx->forward = g_config.mos->forward;
+	/* since NUMBINS is 131072 (2^17), we just move left by 15 */
+	pctx->p.rss_hash = rss_hash >> 15;
 	
 	return;
 }
 /*----------------------------------------------------------------------------*/
 int
 ProcessPacket(mtcp_manager_t mtcp, const int ifidx, const int index,
-		uint32_t cur_ts, unsigned char *pkt_data, int len)
+		uint32_t cur_ts, unsigned char *pkt_data, int len, uint32_t rss_hash)
 {
 	struct pkt_ctx pctx;
 	struct ethhdr *ethh = (struct ethhdr *)pkt_data;
 	int ret = -1;
 	u_short h_proto = ntohs(ethh->h_proto);
 	
-	if (ethh->h_dest[0] == 0x08 &&
-		ethh->h_dest[1] == 0xc0 &&
-		ethh->h_dest[2] == 0xeb &&
-		ethh->h_dest[3] == 0x62 &&
-		ethh->h_dest[4] == 0x45 &&
-		ethh->h_dest[5] == 0x04)
-		printf("/*********************************************/\n");
+	// if (ethh->h_dest[0] == 0x08 &&
+	// 	ethh->h_dest[1] == 0xc0 &&
+	// 	ethh->h_dest[2] == 0xeb &&
+	// 	ethh->h_dest[3] == 0x62 &&
+	// 	ethh->h_dest[4] == 0x45 &&
+	// 	ethh->h_dest[5] == 0x04)
+	// 	printf("/*********************************************/\n");
 	memset(&pctx, 0, sizeof(pctx));
 
 	/* for debugging */
@@ -69,7 +71,7 @@ ProcessPacket(mtcp_manager_t mtcp, const int ifidx, const int index,
 	 * - SLOWPATH
 	 */
 
-	FillInPacketEthContext(&pctx, cur_ts, ifidx, index, ethh, len);
+	FillInPacketEthContext(&pctx, cur_ts, ifidx, index, ethh, len, rss_hash);
 
 	switch (h_proto) {
 	  case ETH_P_IP:

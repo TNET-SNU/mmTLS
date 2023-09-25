@@ -373,7 +373,7 @@ mtcp_get_record(mctx_t mctx, int msock, int side, int *outlen)
 
 	ptr = tcprb_get_record(rcvbuf, *poff, outlen);
 	if (!ptr) {
-		if (*outlen > TLS_RECORD_BUF_SIZE)
+		if (*outlen > MAX_TLS_RECORD_SIZE + TLS_HEADER_LEN)
 			return NULL;
 		if (*poff >= rcvbuf->head) {
 			/* 
@@ -394,7 +394,7 @@ mtcp_get_record(mctx_t mctx, int msock, int side, int *outlen)
 
 	/*
 	 * should not proceed peek offset
-	 * We separated moving peek offset as another API
+	 * We separated moving peek offset to another API
 	 */
 	// *poff += *outlen;
 
@@ -736,7 +736,6 @@ mtcp_sendpkt_raw(mctx_t mctx, int sock, uint8_t *rawpkt, uint16_t len)
 	uint8_t *dmac;
 	struct ethhdr *ethh;
 	struct iphdr *iph;
-	struct tcphdr *tcph;
 	int nif;
 
 	mtcp = GetMTCPManager(mctx);
@@ -759,8 +758,7 @@ mtcp_sendpkt_raw(mctx_t mctx, int sock, uint8_t *rawpkt, uint16_t len)
 		return 0;
 	if ((nif = GetOutputInterface(daddr)) < 0)
 		return 0;
-	tcph = (struct tcphdr *)(iph + 1);
-	buf = mtcp->iom->get_wptr(mtcp->ctx, nif, len, tcph->doff << 2);
+	buf = mtcp->iom->get_wptr(mtcp->ctx, nif, len);
 	if (!buf) {
 		fprintf(stderr, "Failed to get available write buffer\n");
 		return -1;
@@ -1587,8 +1585,8 @@ mtcp_get_debug_string(mctx_t mctx, char *buf, int len)
 }
 /*----------------------------------------------------------------------------*/
 int
-mtcp_addrtosock(mctx_t mctx, session_address_t sess_addr)
+mtcp_addrtosock(mctx_t mctx, session_address_t sess_addr, uint32_t rss_hash)
 {
-	return mtcp_search_sockid(mctx, sess_addr);
+	return mtcp_search_sockid(mctx, sess_addr, rss_hash);
 }
 /*----------------------------------------------------------------------------*/

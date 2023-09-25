@@ -30,10 +30,6 @@
 #include "cpu.h"
 #include "include/mmtls.h"
 #include "rss.h"
-#include "../core/src/include/memory_mgt.h"
-
-/* Maximum CPU cores */
-#define MAX_CPUS 16
 
 /* Default path to mOS configuration file */
 #define MOS_CONFIG_FILE "config/mos.conf"
@@ -49,19 +45,8 @@
 #define VERBOSE_CRYPTO_DEBUG 0
 /*---------------------------------------------------------------------------*/
 /* mmTLS context manager */
-struct mmtls_manager g_mmtls[MAX_CPUS];
-mem_pool_t g_ci_pool[MAX_CPUS] = {NULL};
-mem_pool_t g_rawpkt_pool[MAX_CPUS] = {NULL};
-#ifndef ZERO_COPY
-mem_pool_t g_cli_buffer_pool[MAX_CPUS] = {NULL};
-mem_pool_t g_svr_buffer_pool[MAX_CPUS] = {NULL};
-#endif
-/*---------------------------------------------------------------------------*/
-/* EVP Cipher context for decryption */
-EVP_CIPHER_CTX *g_evp_ctx[MAX_CPUS];
-/* OpenSSL context to find IANA standard name */
-SSL_CTX *g_ssl_ctx;
-SSL *g_ssl;
+struct mtcp_conf g_mcfg;
+struct mmtls_manager *g_mmtls;
 /*---------------------------------------------------------------------------*/
 /* Signal handler */
 static void
@@ -136,20 +121,21 @@ print_text(uint8_t *aad, int aad_len,
 static inline session *
 create_conn_info(mctx_t mctx, int sock)
 {
+	struct mmtls_manager *mmtls = g_mmtls + mctx->cpu;
 	session *c;
 	/* already created */
 	if ((c = mtcp_get_uctx(mctx, sock)))
 		return c;
-	if (!(c = MPAllocateChunk(g_ci_pool[mctx->cpu])))
+	if (!(c = MPAllocateChunk(mmtls->ci_pool)))
 		EXIT_WITH_ERROR("conn info pool alloc failed");
 	/* MPAlloc needs memset */
 	memset(c, 0, sizeof(session));
 #ifndef ZERO_COPY
 	if (!(c->sess_ctx[MOS_SIDE_CLI].buf = 
-		MPAllocateChunk(g_cli_buffer_pool[mctx->cpu])))
+		MPAllocateChunk(mmtls->cli_buffer_pool)))
 		EXIT_WITH_ERROR("record pool alloc failed");
 	if (!(c->sess_ctx[MOS_SIDE_SVR].buf = 
-		MPAllocateChunk(g_svr_buffer_pool[mctx->cpu])))
+		MPAllocateChunk(mmtls->svr_buffer_pool)))
 		EXIT_WITH_ERROR("record pool alloc failed");
 #endif
 	/* Insert the structure to the queue */
@@ -169,14 +155,15 @@ remove_conn_info(mctx_t mctx, int sock)
 	/* remove the structure from the queue */
 	mtcp_set_uctx(mctx, sock, NULL);
 #ifndef ZERO_COPY
+	struct mmtls_manager *mmtls = g_mmtls + mctx->cpu;
 	if (c->sess_ctx[MOS_SIDE_CLI].buf)
-		MPFreeChunk(g_cli_buffer_pool[mctx->cpu],
+		MPFreeChunk(mmtls->cli_buffer_pool,
 					c->sess_ctx[MOS_SIDE_CLI].buf);
 	if (c->sess_ctx[MOS_SIDE_SVR].buf)
-		MPFreeChunk(g_svr_buffer_pool[mctx->cpu],
+		MPFreeChunk(mmtls->svr_buffer_pool,
 					c->sess_ctx[MOS_SIDE_SVR].buf);
 #endif
-	MPFreeChunk(g_ci_pool[mctx->cpu], c);
+	MPFreeChunk(g_mmtls->ci_pool, c);
 }
 /*---------------------------------------------------------------------------*/
 static inline void
@@ -189,17 +176,28 @@ handle_malicious(mctx_t mctx, int sock, int side, int code)
 	remove_conn_info(mctx, sock);
 }
 /*---------------------------------------------------------------------------*/
+static int
+hs_done(session *c, int side)
+{
+	/* Note that GCM, CCM, ChaChaPoly have 16B tag */
+	int done_len = TLS_HANDSHAKE_HEADER_LEN + 
+				   EVP_MD_size(c->evp_md) + 
+				   EVP_GCM_TLS_TAG_LEN + 
+				   TLS_RECORD_TYPE_LEN;
+	return (c->sess_ctx[side].record_len == done_len);
+}
+/*---------------------------------------------------------------------------*/
 /* Decrypt single TLS record with given key_info */
 /* Return length of decrypted data, -1 of error */
 static int
-decrypt_tls_12_cbc(EVP_CIPHER_CTX *evp_ctx,
-				   const EVP_CIPHER *evp_cipher,
-				   const EVP_MD *evp_md,
-				   uint8_t *data,
-				   uint8_t *plain,
-				   uint8_t *key_info,
-				   uint64_t tls_seq,
-				   uint16_t cipher_len)
+decrypt_tls_cbc(EVP_CIPHER_CTX *evp_ctx,
+				const EVP_CIPHER *evp_cipher,
+				const EVP_MD *evp_md,
+				uint8_t *data,
+				uint8_t *plain,
+				uint8_t *key_info,
+				uint64_t tls_seq,
+				uint16_t cipher_len)
 {
 	// uint8_t buf[2048] = {0,};
 	uint8_t *buf = plain;
@@ -291,14 +289,14 @@ decrypt_tls_12_cbc(EVP_CIPHER_CTX *evp_ctx,
 }
 /*---------------------------------------------------------------------------*/
 static int
-decrypt_tls_12_gcm(EVP_CIPHER_CTX *evp_ctx,
-				   const EVP_CIPHER *evp_cipher,
-				   const EVP_MD *evp_md,
-				   uint8_t *data,
-				   uint8_t *plain,
-				   uint8_t *key_info,
-				   uint64_t tls_seq,
-				   uint16_t cipher_len)
+decrypt_tls_12_aead(EVP_CIPHER_CTX *evp_ctx,
+					const EVP_CIPHER *evp_cipher,
+					const EVP_MD *evp_md,
+					uint8_t *data,
+					uint8_t *plain,
+					uint8_t *key_info,
+					uint64_t tls_seq,
+					uint16_t cipher_len)
 {
 	uint8_t aad[EVP_AEAD_TLS1_AAD_LEN];
 	uint8_t *tag, *cipher, *ptr = aad;
@@ -336,16 +334,24 @@ decrypt_tls_12_gcm(EVP_CIPHER_CTX *evp_ctx,
 	/* decrypt */
 	if (!EVP_DecryptInit(evp_ctx, evp_cipher, key, iv))
 		return DECRYPT_ERR;
+    /*
+     * For CCM we must explicitly set the total plaintext length before we add
+     * any AAD.
+     */
+	if (EVP_CIPHER_get_mode(evp_cipher) == EVP_CIPH_CCM_MODE) {
+		if (!EVP_DecryptUpdate(evp_ctx, NULL, &len, NULL, cipher_len))
+			return DECRYPT_ERR;
+	}
 	if (!EVP_DecryptUpdate(evp_ctx, NULL, &len, aad, EVP_AEAD_TLS1_AAD_LEN))
 		return DECRYPT_ERR;
 	if ((len = EVP_Cipher(evp_ctx, plain, cipher, cipher_len)) <= 0)
 		return DECRYPT_ERR;
 	
 	/* check tag */
-	if (!EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_GCM_SET_TAG, tag_len, tag))
-		return INTEGRITY_ERR;
-	if (EVP_DecryptFinal(evp_ctx, tag, &flen) <= 0)
-		return INTEGRITY_ERR;
+	// if (!EVP_CIPHER_CTX_ctrl(evp_ctx, EVP_CTRL_GCM_SET_TAG, tag_len, tag))
+	// 	return INTEGRITY_ERR;
+	// if (EVP_DecryptFinal(evp_ctx, tag, &flen) <= 0)
+	// 	return INTEGRITY_ERR;
 	len += flen;
 
 	/* print value and results */
@@ -358,14 +364,14 @@ decrypt_tls_12_gcm(EVP_CIPHER_CTX *evp_ctx,
 /* Decrypt single TLS record with given key_info */
 /* Return length of decrypted data, -1 of error */
 static int
-decrypt_tls_13_gcm(EVP_CIPHER_CTX *evp_ctx,
-				   const EVP_CIPHER *evp_cipher,
-				   const EVP_MD *evp_md,
-				   uint8_t *data,
-				   uint8_t *plain,
-				   uint8_t *key_info,
-				   uint64_t tls_seq,
-				   uint16_t cipher_len)
+decrypt_tls_13_aead(EVP_CIPHER_CTX *evp_ctx,
+					const EVP_CIPHER *evp_cipher,
+					const EVP_MD *evp_md,
+					uint8_t *data,
+					uint8_t *plain,
+					uint8_t *key_info,
+					uint64_t tls_seq,
+					uint16_t cipher_len)
 {
 	uint8_t updated_iv[EVP_MAX_IV_LENGTH];
 	uint8_t *aad, *tag, *cipher;
@@ -400,6 +406,14 @@ decrypt_tls_13_gcm(EVP_CIPHER_CTX *evp_ctx,
 	/* decrypt */
 	if (!EVP_DecryptInit(evp_ctx, evp_cipher, key, updated_iv))
 		return DECRYPT_ERR;
+    /*
+     * For CCM we must explicitly set the total plaintext length before we add
+     * any AAD.
+     */
+	if (EVP_CIPHER_get_mode(evp_cipher) == EVP_CIPH_CCM_MODE) {
+		if (!EVP_DecryptUpdate(evp_ctx, NULL, &len, NULL, cipher_len))
+			return DECRYPT_ERR;
+	}
 	if (!EVP_DecryptUpdate(evp_ctx, NULL, &len, aad, TLS_HEADER_LEN))
 		return DECRYPT_ERR;
 	if ((len = EVP_Cipher(evp_ctx, plain, cipher, cipher_len)) <= 0)
@@ -437,26 +451,24 @@ get_plaintext(mmctx_t mmctx, session_ctx *tls_ctx,
 			  const EVP_MD *evp_md,
 			  uint8_t *data, uint8_t *plain)
 {
+	struct mmtls_manager *mmtls = g_mmtls + mmctx->cpu;
 	crypto_cb decrypt;
 
-	/* GCM */
+	/* AEAD: AES-GCM or ChaCha20-poly1305 or CCM */
 	if (EVP_CIPHER_get_flags(evp_cipher) & EVP_CIPH_FLAG_AEAD_CIPHER) {
 		if (version == TLS_1_3_VERSION) {
-			/*
-			 * TLS1.3 has disguised record type
-			 * at the end of plaintext of app record
-			 */
-			decrypt = decrypt_tls_13_gcm;
+			/* TLSv1.3 allows only AEAD */
+			decrypt = decrypt_tls_13_aead;
 			goto Decrypt;
 		}
-		decrypt = decrypt_tls_12_gcm;
+		decrypt = decrypt_tls_12_aead;
 		goto Decrypt;
 	}
-	/* CBC */
-	decrypt = decrypt_tls_12_cbc;
+	/* CBC: Note that this should be deprecated due to security issue */
+	decrypt = decrypt_tls_cbc;
 
 Decrypt:
-	return decrypt(g_evp_ctx[mmctx->cpu],
+	return decrypt(mmtls->evp_ctx,
 				   evp_cipher, evp_md,
 				   data, plain,
 				   tls_ctx->key_info, tls_ctx->tls_seq,
@@ -470,7 +482,7 @@ plaintext_len(session_ctx *tls_ctx,
 			  const EVP_CIPHER *evp_cipher,
 			  const EVP_MD *evp_md)
 {	
-	/* GCM */
+	/* AEAD */
 	if (EVP_CIPHER_get_flags(evp_cipher) & EVP_CIPH_FLAG_AEAD_CIPHER)
 		return tls_ctx->record_len - EVP_GCM_TLS_TAG_LEN;
 	/* CBC */
@@ -535,15 +547,19 @@ parse_tls_record(session_ctx *tls_ctx)
 /*---------------------------------------------------------------------------*/
 /* Select evp cipher and evp md functions for given cipher_suite */
 static inline void
-select_cipher(session *c, uint8_t *cipher_suite)
+select_cipher(mctx_t mctx, session *c, uint8_t *cipher_suite)
 {
+	struct mmtls_manager *mmtls = g_mmtls + mctx->cpu;
 	const SSL_CIPHER *ssl_cipher;
 	const char *IANA_cipher_name;
-	/* ToDo: identify cipher suite by 2B ID, not IANA name */
-	if (!(ssl_cipher = SSL_CIPHER_find(g_ssl, cipher_suite)) ||
+
+	/* ToDo: identify cipher suite by 2B ID, not IANA name one day */
+	if (!(ssl_cipher = SSL_CIPHER_find(mmtls->ssl, cipher_suite)) ||
 		!(IANA_cipher_name = SSL_CIPHER_standard_name(ssl_cipher)))
-		EXIT_WITH_ERROR("SSL_CIPHER_standard_name failed, %02x%02x",
-			cipher_suite[0], cipher_suite[1]);
+		WARNING_PRINT("SSL_CIPHER_standard_name failed\n"
+					  "Unknown cipher suite?\n"
+					  "version: %d, ciphersuite: %d",
+					  c->sess_info.version, c->sess_info.cipher_suite);
 	if (strstr(IANA_cipher_name, "_GCM_")) {
 		/*
 		 * select symmetric crypto algorithm
@@ -560,6 +576,30 @@ select_cipher(session *c, uint8_t *cipher_suite)
 		else
 			WARNING_PRINT("Not supported cipher suite, %s", IANA_cipher_name);
 	}
+	else if (strstr(IANA_cipher_name, "_CHACHA20_")) {
+		c->evp_cipher = EVP_chacha20_poly1305();
+		c->evp_md = EVP_sha256();
+	}
+	else if (strstr(IANA_cipher_name, "_CCM_")) {
+		/* select symmetric crypto algorithm */
+		if (strstr(IANA_cipher_name, "AES_256"))
+			c->evp_cipher = EVP_aes_256_ccm();
+		else if (strstr(IANA_cipher_name, "AES_128"))
+			c->evp_cipher = EVP_aes_128_ccm();
+		else
+			WARNING_PRINT("Not supported cipher suite, %s", IANA_cipher_name);
+		/* select MAC algorithm */
+		if (strstr(IANA_cipher_name, "SHA256"))
+			c->evp_md = EVP_sha256();
+		else if (strstr(IANA_cipher_name, "SHA384"))
+			c->evp_md = EVP_sha384();
+		else if (strstr(IANA_cipher_name, "SHA512"))
+			c->evp_md = EVP_sha512();
+		else if (strstr(IANA_cipher_name, "SHA"))
+			c->evp_md = EVP_sha1();
+		else
+			WARNING_PRINT("Not supported cipher suite, %s", IANA_cipher_name);
+	}
 	else if (strstr(IANA_cipher_name, "_CBC_")) {
 		/* select symmetric crypto algorithm */
 		if (strstr(IANA_cipher_name, "AES_256"))
@@ -573,13 +613,239 @@ select_cipher(session *c, uint8_t *cipher_suite)
 			c->evp_md = EVP_sha256();
 		else if (strstr(IANA_cipher_name, "SHA384"))
 			c->evp_md = EVP_sha384();
+		else if (strstr(IANA_cipher_name, "SHA512"))
+			c->evp_md = EVP_sha512();
 		else if (strstr(IANA_cipher_name, "SHA"))
 			c->evp_md = EVP_sha1();
 		else
 			WARNING_PRINT("Not supported cipher suite, %s", IANA_cipher_name);
 	}
 	else
-		WARNING_PRINT("Not supported cipher suite, %s", IANA_cipher_name);
+		WARNING_PRINT("Not supported mode, %s", IANA_cipher_name);
+}
+/*---------------------------------------------------------------------------*/
+static int
+parse_client_hello(mctx_t mctx, session *c, uint8_t *record)
+{
+	uint16_t total_ex_len, ex_type, ex_len;
+	/* ToDo: check header len */
+
+	/* client hello means key reset */
+	c->has_key = 0;
+	/* TLS HS header */
+	record += TLS_HANDSHAKE_HEADER_LEN;
+	/* client protocol version */
+	record += sizeof(uint16_t);
+	/* TLS1.3 client random */
+	memcpy(c->sess_info.client_random, record, TLS_CLIENT_RANDOM_LEN);
+	record += TLS_CLIENT_RANDOM_LEN;
+	/* pass session id (one byte len field) */
+	record += 1 + *record;
+	/* cipher suite list (two byte len field) */
+	record += 2 + ntohs(*(uint16_t *)record);
+	/* compression method */
+	record += 1 + *record;
+	/* total extension length */
+	total_ex_len = ntohs(*(uint16_t *)record);
+	record += sizeof(uint16_t);
+	/* find protocol extension */
+	while (total_ex_len > 0) {
+		ex_type = ntohs(*(uint16_t *)record);
+		record += sizeof(uint16_t);
+		ex_len = ntohs(*((uint16_t *)record));
+		record += sizeof(uint16_t);
+		/* SNI */
+		if (ex_type == TLSEXT_TYPE_server_name) {
+			record += sizeof(uint16_t);
+			c->sess_info.sni_type = *record;
+			record++;
+			c->sess_info.sni_len = ntohs(*((uint16_t *)record));
+			record += sizeof(uint16_t);
+			memcpy(c->sess_info.sni, record, c->sess_info.sni_len);
+			c->sess_info.sni[c->sess_info.sni_len] = 0;
+			break;
+		}
+		else {
+			record += ex_len;
+			total_ex_len -= 2 * sizeof(uint16_t) + ex_len;
+		}
+	}
+
+	return NO_DECRYPT;
+}
+/*---------------------------------------------------------------------------*/
+static int
+parse_server_hello(mctx_t mctx, session *c, uint8_t *record)
+{
+	uint16_t total_ex_len, ex_type, ex_len;
+	uint8_t *cipher_suite;
+	/* ToDo: check header len */
+
+	/* TLS HS header */
+	record += TLS_HANDSHAKE_HEADER_LEN;
+	/* server protocol version */
+	c->sess_info.version = ntohs(*(uint16_t *)record);
+	record += sizeof(uint16_t);
+	/* TLS1.3 server random */
+	// memcpy(c->tls_info.server_random, record, TLS_SERVER_RANDOM_LEN);
+	record += TLS_SERVER_RANDOM_LEN;
+	/* pass session id (one byte len field) */
+	record += 1 + *record;
+	/* cipher suite */
+	cipher_suite = record;
+	c->sess_info.cipher_suite = ntohs(*(uint16_t *)record);
+	record += sizeof(uint16_t);
+	/* compression method */
+	record++;
+	/* total extension length */
+	total_ex_len = ntohs(*(uint16_t *)record);
+	record += sizeof(uint16_t);
+	/* find protocol extension */
+	while (total_ex_len > 0) {
+		ex_type = ntohs(*(uint16_t *)record);
+		record += sizeof(uint16_t);
+		ex_len = ntohs(*((uint16_t *)record));
+		record += sizeof(uint16_t);
+		/* TLS1.3 */
+		if ((ex_type == TLSEXT_TYPE_supported_versions) &&
+			(ex_len == sizeof(uint16_t))) {
+			/* supported version */
+			c->sess_info.version = ntohs(*(uint16_t *)record);
+			break;
+		}
+		else if ((ex_type == TLSEXT_TYPE_key_share) &&
+				 (ex_len == sizeof(uint16_t))) {
+			/* key share group (e.g. X25519) */
+			c->sess_info.group = ntohs(*(uint16_t *)record);
+		}
+		else {
+			record += ex_len;
+			total_ex_len -= 2 * sizeof(uint16_t) + ex_len;
+		}
+	}
+	select_cipher(mctx, c, cipher_suite);
+
+	return NO_DECRYPT;
+}
+/*---------------------------------------------------------------------------*/
+// static int
+// parse_server_changecipherspec(mctx_t mctx, session *c, uint8_t *record)
+// {
+// 	uint16_t total_ex_len, ex_type, ex_len;
+// 	uint8_t *cipher_suite;
+// 	/* ToDo: check header len */
+
+// 	/* TLS HS header */
+// 	record += TLS_HANDSHAKE_HEADER_LEN;
+// 	/* server protocol version */
+// 	c->sess_info.version = ntohs(*(uint16_t *)record);
+// 	record += sizeof(uint16_t);
+// 	/* TLS1.3 server random */
+// 	// memcpy(c->ci_server_random, record, TLS_SERVER_RANDOM_LEN);
+// 	record += TLS_SERVER_RANDOM_LEN;
+// 	/* pass session id (one byte len field) */
+// 	record += 1 + *record;
+// 	/* cipher suite */
+// 	cipher_suite = record;
+// 	c->sess_info.cipher_suite = ntohs(*(uint16_t *)record);
+// 	record += sizeof(uint16_t);
+// 	/* compression method */
+// 	record++;
+// 	/* total extension length */
+// 	total_ex_len = ntohs(*(uint16_t *)record);
+// 	record += sizeof(uint16_t);
+// 	/* find protocol extension */
+// 	while (total_ex_len > 0) {
+// 		ex_type = ntohs(*(uint16_t *)record);
+// 		record += sizeof(uint16_t);
+// 		ex_len = ntohs(*((uint16_t *)record));
+// 		record += sizeof(uint16_t);
+// 		/* TLS1.3 */
+// 		if ((ex_type == TLSEXT_TYPE_supported_versions) &&
+// 			(ex_len == sizeof(uint16_t))) {
+// 			/* supported version */
+// 			c->sess_info.version = ntohs(*(uint16_t *)record);
+// 		}
+// 		else if ((ex_type == TLSEXT_TYPE_key_share) &&
+// 				 (ex_len == sizeof(uint16_t))) {
+// 			/* key share group (e.g. X25519) */
+// 			c->sess_info.group = ntohs(*(uint16_t *)record);
+// 		}
+// 		else {
+// 			record += ex_len;
+// 			total_ex_len -= 2 * sizeof(uint16_t) + ex_len;
+// 		}
+// 	}
+// 	select_cipher(mctx, c, cipher_suite);
+
+// 	return NO_DECRYPT;
+// }
+/*---------------------------------------------------------------------------*/
+static inline int
+update_conn_info_13(mctx_t mctx, int sock, int side, session *c, uint8_t *record)
+{
+	struct mmtls_manager *mmtls = g_mmtls + mctx->cpu;
+	mmctx_t mmctx = mmtls->mmctx;
+
+	/* ToDo: make it more strict, subject to TLS v1.3 protocol */
+	if (*record != APPLICATION_DATA)
+		return NO_DECRYPT;
+	if (c->tls_state == RECV_SH) {
+		if (side == MOS_SIDE_CLI) {
+			/*
+			 * handshake related record disguised in app data
+			 * e.g. server handshake finished done, new session ticket
+			 */
+			if (!c->svr_done) {
+				/* handshake done from server */
+				if (hs_done(c, side))
+					c->svr_done = 1;	
+				return NO_DECRYPT;
+			}
+			/* 
+			 * If server done detected, the record after server done 
+			 * shoulde be decrypted with traffic key,
+			 * So we increase TLS seq here
+			 * 
+			 * Currently,
+			 * we do not decrypt those above received during HS.
+			 * If needed, decrypt w/o NEW_RECORD event handler call.
+			 */
+			c->sess_ctx[side].tls_seq++;
+			return NO_DECRYPT;
+		}
+		if (side == MOS_SIDE_SVR) {
+			/* handshake done from client */
+			if (hs_done(c, side)) {
+				c->tls_state = TLS_ESTABLISHED;
+				/* client handshake done means handshake end */
+				if (mmtls->cb[ON_TLS_HANDSHAKE_END])
+					mmtls->cb[ON_TLS_HANDSHAKE_END](mmctx, sock, side);
+			}
+			return NO_DECRYPT;
+		}
+		return NO_DECRYPT;
+	}
+
+	return DO_DECRYPT;
+}
+/*---------------------------------------------------------------------------*/
+static inline int
+update_conn_info_12(mctx_t mctx, int sock, int side, session *c, uint8_t *record)
+{
+	struct mmtls_manager *mmtls = g_mmtls + mctx->cpu;
+	mmctx_t mmctx = mmtls->mmctx;
+
+	/* ToDo: make it more strict, subject to TLS v1.2 protocol */
+	if (*record != APPLICATION_DATA)
+		return NO_DECRYPT;
+	c->tls_state = TLS_ESTABLISHED;
+
+	/* handshake end */
+	if (mmtls->cb[ON_TLS_HANDSHAKE_END])
+		mmtls->cb[ON_TLS_HANDSHAKE_END](mmctx, sock, side);
+
+	return DO_DECRYPT;
 }
 /*---------------------------------------------------------------------------*/
 /* Update version and state in connection information
@@ -599,165 +865,52 @@ select_cipher(session *c, uint8_t *cipher_suite)
  * server side recv buffer, whose contents are from client
  *
  */
-static inline bool
+static inline int
 update_conn_info(mctx_t mctx, int sock, int side, session *c)
 {
-	struct mmtls_manager *mmtls = &g_mmtls[mctx->cpu];
+	struct mmtls_manager *mmtls = g_mmtls + mctx->cpu;
 	mmctx_t mmctx = mmtls->mmctx;
 	session_ctx *tls_ctx = &c->sess_ctx[side];
-	uint8_t *cipher_suite, *record;
-	uint16_t total_ex_len, ex_type, ex_len, ex_val;
-
+	uint8_t *record;
+	int ret;
 #ifndef ZERO_COPY
 	record = tls_ctx->buf + tls_ctx->head;
 #else
 	record = tls_ctx->buf;
 #endif
-	if (*record == HANDSHAKE) {
+	if (c->tls_state == INITIAL_STATE) {
+		if (*record != HANDSHAKE)
+			return NO_DECRYPT;
 		record += TLS_HEADER_LEN;
-		if (*record == CLIENT_HS) {
-			/* client hello means handshake start */
-			if (mmtls->cb[ON_TLS_HANDSHAKE_START])
-				mmtls->cb[ON_TLS_HANDSHAKE_START](mmctx, sock, side);
-			c->tls_state = RECV_CH;
-			/* TLS HS header */
-			record += TLS_HANDSHAKE_HEADER_LEN;
-			/* client protocol version */
-			record += sizeof(uint16_t);
-			/* TLS1.3 client random */
-			// memcpy(c->ci_client_random, record, TLS_CLIENT_RANDOM_LEN);
-			record += TLS_CLIENT_RANDOM_LEN;
-			/* pass session id (one byte len field) */
-			record += 1 + *record;
-			/* cipher suite list (two byte len field) */
-			record += 2 + ntohs(*(uint16_t *)record);
-			/* compression method */
-			record += 1 + *record;
-			/* total extension length */
-			total_ex_len = ntohs(*(uint16_t *)record);
-			record += sizeof(uint16_t);
-			/* find protocol extension */
-			while (total_ex_len > 0) {
-				ex_type = ntohs(*(uint16_t *)record);
-				record += sizeof(uint16_t);
-				ex_len = ntohs(*((uint16_t *)record));
-				record += sizeof(uint16_t);
-				/* SNI */
-				if (ex_type == TLSEXT_TYPE_server_name) {
-					// sni_len = ntohs(*((uint16_t *)record));
-					record += sizeof(uint16_t);
-					c->sess_info.sni_type = *record;
-					record++;
-					c->sess_info.sni_len = ntohs(*((uint16_t *)record));
-					record += sizeof(uint16_t);
-					memcpy(c->sess_info.sni, record, c->sess_info.sni_len);
-					break;
-				}
-				else {
-					record += ex_len;
-					total_ex_len -= 2 * sizeof(uint16_t) + ex_len;
-				}
-			}
-		}
-		/* if someone wants to monitor tls stack, we can provide below */
-		else if (*record == SERVER_HS) {
-			c->tls_state = RECV_SH;
-			/* TLS HS header */
-			record += TLS_HANDSHAKE_HEADER_LEN;
-			/* server protocol version */
-			c->sess_info.version = ntohs(*(uint16_t *)record);
-			record += sizeof(uint16_t);
-			/* TLS1.3 server random */
-			// memcpy(c->ci_server_random, record, TLS_SERVER_RANDOM_LEN);
-			record += TLS_SERVER_RANDOM_LEN;
-			/* pass session id (one byte len field) */
-			record += 1 + *record;
-			/* cipher suite */
-			cipher_suite = record;
-			c->sess_info.cipher_suite = ntohs(*(uint16_t *)record);
-			record += sizeof(uint16_t);
-			/* compression method */
-			record++;
-			/* total extension length */
-			total_ex_len = ntohs(*(uint16_t *)record);
-			record += sizeof(uint16_t);
-			/* find protocol extension */
-			while (total_ex_len > 0) {
-				ex_type = ntohs(*(uint16_t *)record);
-				record += sizeof(uint16_t);
-				ex_len = ntohs(*((uint16_t *)record));
-				record += sizeof(uint16_t);
-				/* TLS1.3 */
-				if ((ex_type == TLSEXT_TYPE_supported_versions) &&
-					(ex_len == sizeof(uint16_t))) {
-					ex_val = ntohs(*(uint16_t *)record);
-					if (ex_val == TLS_1_3_VERSION) {
-						c->sess_info.version = TLS_1_3_VERSION;
-						break;
-					}
-				}
-				else {
-					record += ex_len;
-					total_ex_len -= 2 * sizeof(uint16_t) + ex_len;
-				}
-			}
-			select_cipher(c, cipher_suite);
-		}
+		if (*record != CLIENT_HS)
+			return NO_DECRYPT;
+		ret = parse_client_hello(mctx, c, record);
+		if (ret < 0)
+			return ret;
+		/* client hello means handshake start */
+		if (mmtls->cb[ON_TLS_HANDSHAKE_START])
+			mmtls->cb[ON_TLS_HANDSHAKE_START](mmctx, sock, side);
+		c->tls_state = RECV_CH;
+		return NO_DECRYPT;
 	}
-	else if (*record == APPLICATION_DATA) {
-		if (c->tls_state >= TLS_ESTABLISHED)
-			return DO_DECRYPT;
-		if (c->tls_state >= RECV_SH) {
-			/* TLS1.3 */
-			if (c->sess_info.version == TLS_1_3_VERSION) {
-				/* handshake done from client */
-				if ((side == MOS_SIDE_SVR) &&
-					(c->sess_ctx[side].record_len ==
-						TLS_HANDSHAKE_HEADER_LEN + 
-						EVP_MD_size(c->evp_md) + 
-						EVP_GCM_TLS_TAG_LEN + 
-						TLS_RECORD_TYPE_LEN)) {
-					c->tls_state = TLS_ESTABLISHED;
-					/* client handshake done means handshake end */
-					if (mmtls->cb[ON_TLS_HANDSHAKE_END])
-						mmtls->cb[ON_TLS_HANDSHAKE_END](mmctx, sock, side);
-				}
-			}
-			/* TLS1.2 */
-			else if (c->sess_info.version == TLS_1_2_VERSION) {
-				c->tls_state = TLS_ESTABLISHED;
-				return DO_DECRYPT;
-			}
-			else
-				EXIT_WITH_ERROR("Not supported TLS version");
-		}
-		/* only TLS1.3 can reach here */
-		if (c->tls_state == RECV_SH) {
-			/* handshake done from server */
-			if ((side == MOS_SIDE_CLI) &&
-				(c->sess_ctx[side].record_len ==
-					TLS_HANDSHAKE_HEADER_LEN + 
-					EVP_MD_size(c->evp_md) + 
-					EVP_GCM_TLS_TAG_LEN + 
-					TLS_RECORD_TYPE_LEN)) {
-				c->tls_state = RECV_SERVER_HS_DONE;
-			}
-		}
-		else if (c->tls_state == RECV_SERVER_HS_DONE) {
-			/*
-			 * handshake related record disguised in app data
-			 * e.g. new session ticket
-			 * 
-			 * Currently,
-			 * we do not decrypt new session ticket received during HS.
-			 * If needed, decrypt w/o NEW_RECORD event handler call.
-			 */
-			if (side == MOS_SIDE_CLI)
-				c->sess_ctx[side].tls_seq++;
-		}
+	if (c->tls_state == RECV_CH) {
+		if (*record != HANDSHAKE)
+			return NO_DECRYPT;
+		record += TLS_HEADER_LEN;
+		if (*record != SERVER_HS)
+			return NO_DECRYPT;
+		ret = parse_server_hello(mctx, c, record);
+		if (ret < 0)
+			return ret;
+		c->tls_state = RECV_SH;
+		return NO_DECRYPT;
 	}
+	if (c->sess_info.version == TLS_1_3_VERSION)
+		return update_conn_info_13(mctx, sock, side, c, record);
+	if (c->sess_info.version == TLS_1_2_VERSION)
+		return update_conn_info_12(mctx, sock, side, c, record);
 
-	return NO_DECRYPT;
+	return INVALID_VERSION;
 }
 /*---------------------------------------------------------------------------*/
 /* 1. Check whether peeked record is complete
@@ -770,15 +923,21 @@ update_conn_info(mctx_t mctx, int sock, int side, session *c)
 static inline int
 process_data(mctx_t mctx, int sock, int side, session *c)
 {
-	struct mmtls_manager *mmtls = &g_mmtls[mctx->cpu];
+	struct mmtls_manager *mmtls = g_mmtls + mctx->cpu;
 	session_ctx *tls_ctx = &c->sess_ctx[side];
 	uint16_t plain_len;
+	int ret;
 
 	/* decrypt complete records */
 #ifndef ZERO_COPY
 	while (parse_tls_record(tls_ctx) > 0) {
 #endif
-		if (update_conn_info(mctx, sock, side, c)) {
+		ret = update_conn_info(mctx, sock, side, c);
+		if (ret < 0) {
+			c->err_code = ret;
+			return c->err_code;
+		}
+		if (ret == DO_DECRYPT) {
 			if (!c->has_key)
 				return NO_KEY;
 			/* handle callback */
@@ -792,13 +951,15 @@ Callback:
 				if (c->stop_len[side] >= plain_len)
 					c->stop_len[side] -= plain_len;
 				else {
-					/*
-					 * when skipped plaintext length rage is out of stop range,
-					 * call handler for the edge of range to be conservative
-					 * note that it can be changed
-					 */
-					c->stop_len[side] = 0;
-					goto Callback;
+					if (c->stop_len[side] != -1) {
+						/*
+						* when skipped plaintext length range is out of stop range,
+						* call handler for the edge of range to be conservative
+						* note that it can be changed
+						*/
+						c->stop_len[side] = 0;
+						goto Callback;
+					}
 				}
 			}
 
@@ -840,9 +1001,10 @@ Callback:
 static inline int
 copy_lastpkt(mctx_t mctx, int sock, int side, session *c)
 {
+	struct mmtls_manager *mmtls = g_mmtls + mctx->cpu;
 	pkt_vec *rp = c->raw_pkt + c->raw_cnt;
 	if (!rp->data) {
-		if (!(rp->data = MPAllocateChunk(g_rawpkt_pool[mctx->cpu])))
+		if (!(rp->data = MPAllocateChunk(mmtls->rawpkt_pool)))
 			EXIT_WITH_ERROR("rawpkt pool alloc failed");
 	}
 #ifdef MTCP_CB_GETCURPKT_CREATE_COPY
@@ -862,7 +1024,7 @@ copy_lastpkt(mctx_t mctx, int sock, int side, session *c)
 	c->raw_cnt++;
 	if ((c->raw_cnt == MAX_RAW_PKT_NUM) ||
 		(c->raw_len > MAX_BUF_LEN)) {
-		MPFreeChunk(g_rawpkt_pool[mctx->cpu], rp->data);
+		MPFreeChunk(mmtls->rawpkt_pool, rp->data);
 		c->raw_cnt = c->raw_len = 0;
 		return MISSING_KEY;
 	}
@@ -873,7 +1035,7 @@ copy_lastpkt(mctx_t mctx, int sock, int side, session *c)
 static inline int
 stall_lastpkt(mctx_t mctx, int sock, int side, session *c)
 {
-	struct mmtls_manager *mmtls = &g_mmtls[mctx->cpu];
+	struct mmtls_manager *mmtls = g_mmtls + mctx->cpu;
 	mmctx_t mmctx = mmtls->mmctx;
 	if (mmtls->cb[ON_TLS_STALL])
 		mmtls->cb[ON_TLS_STALL](mmctx, sock, side);
@@ -890,6 +1052,7 @@ stall_lastpkt(mctx_t mctx, int sock, int side, session *c)
 static inline void
 resend_lastpkts(mctx_t mctx, int sock, session *c)
 {
+	struct mmtls_manager *mmtls = g_mmtls + mctx->cpu;
 	pkt_vec *rp = c->raw_pkt;
 	if (c->raw_cnt == 0)
 		return;
@@ -903,7 +1066,7 @@ resend_lastpkts(mctx_t mctx, int sock, session *c)
 		rp++;
 	}
 	assert(c->raw_pkt->data);
-	MPFreeChunk(g_rawpkt_pool[mctx->cpu], c->raw_pkt->data);
+	MPFreeChunk(mmtls->rawpkt_pool, c->raw_pkt->data);
 	c->raw_cnt = c->raw_len = 0;
 }
 /*----------------------------------------------------------------------------*/
@@ -911,7 +1074,7 @@ resend_lastpkts(mctx_t mctx, int sock, session *c)
 static inline void
 mmtls_core(mctx_t mctx, int sock, int side, session *c)
 {
-	struct mmtls_manager *mmtls = &g_mmtls[mctx->cpu];
+	struct mmtls_manager *mmtls = g_mmtls + mctx->cpu;
 	session_ctx *tls_ctx = &c->sess_ctx[side];
 	int len, ret, stall = 0;
 
@@ -968,14 +1131,15 @@ mmtls_core(mctx_t mctx, int sock, int side, session *c)
 		tls_ctx->buf = mtcp_get_record(mctx, sock, side, &len);
 		if (!tls_ctx->buf)
 			return;
-		if (len > MAX_BUF_LEN) {
+		if (len > MAX_RECORD_LEN + TLS_HEADER_LEN) {
 			ret = INVALID_RECORD_LEN;
 			goto Abnormal;
 		}
 
 		tls_ctx->record_len = len - TLS_HEADER_LEN;
 		// c->sess_ctx[side].peek_len += len; /* for debugging */
-		if ((ret = process_data(mctx, sock, side, c)) < 0)
+		ret = process_data(mctx, sock, side, c);
+		if (ret < 0)
 			goto Abnormal;
 		if (ret == NO_KEY) {
 			if (!stall) {
@@ -1010,7 +1174,7 @@ Abnormal:
 static void
 cb_tls_start(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 {
-	struct mmtls_manager *mmtls = &g_mmtls[mctx->cpu];
+	struct mmtls_manager *mmtls = g_mmtls + mctx->cpu;
 	mmctx_t mmctx = mmtls->mmctx;
 	create_conn_info(mctx, sock);
 	/* handle callback */
@@ -1022,7 +1186,7 @@ cb_tls_start(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg
 static void
 cb_tls_end(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *arg)
 {
-	struct mmtls_manager *mmtls = &g_mmtls[mctx->cpu];
+	struct mmtls_manager *mmtls = g_mmtls + mctx->cpu;
 	mmctx_t mmctx = mmtls->mmctx;
 	/* handle callback */
 	if (mmtls->cb[ON_TLS_SESSION_END])
@@ -1086,7 +1250,7 @@ cb_tls_buf_full(mctx_t mctx, int sock, int side, uint64_t events, filter_arg_t *
 static void
 cb_new_key(mctx_t mctx, int rsock, int side, uint64_t events, filter_arg_t *arg)
 {
-	struct mmtls_manager *mmtls = &g_mmtls[mctx->cpu];
+	struct mmtls_manager *mmtls = g_mmtls + mctx->cpu;
 	mmctx_t mmctx = mmtls->mmctx;
 	int sock;
 	session *c;
@@ -1125,11 +1289,16 @@ cb_new_key(mctx_t mctx, int rsock, int side, uint64_t events, filter_arg_t *arg)
 		ntohs(*(uint16_t *)udph),
 		ntohs(*((uint16_t *)udph + 1))
 	};
-	if ((sock = mtcp_addrtosock(mctx, (session_address_t)&addr)) == -1) {
+	if ((sock = mtcp_addrtosock(mctx, (session_address_t)&addr, pctx->p.rss_hash)) == -1) {
 		WARNING_PRINT("[core %d] orphan key received", mctx->cpu);
 		return;
 	}
 	c = create_conn_info(mctx, sock);
+	/* check crandom */
+	if (memcmp(c->sess_info.client_random, payload, TLS_CLIENT_RANDOM_LEN)) {
+		WARNING_PRINT("[core %d] orphan key received", mctx->cpu);
+		return;
+	}
 	parse_tls_key(payload + TLS_CLIENT_RANDOM_LEN,
 				&c->sess_info.version,
 				&c->sess_info.cipher_suite,
@@ -1190,8 +1359,6 @@ register_tls_callback(mctx_t mctx, int msock)
 /*---------------------------------------------------------------------------*/
 int mmtls_init(const char *fname, int num_cpus)
 {
-	struct mtcp_conf mcfg;
-	int i;
 	if (mtcp_init(fname) == -1)
 		return -1;
 
@@ -1199,40 +1366,15 @@ int mmtls_init(const char *fname, int num_cpus)
 	if (mtcp_register_signal(SIGINT, sigint_handler) == SIG_ERR)
 		return -1;
 
-	if ((g_ssl_ctx = SSL_CTX_new(TLS_client_method())) == NULL) {
-		ERR_print_errors_fp(stderr);
-		return -1;
-	}
-    if ((g_ssl = SSL_new(g_ssl_ctx)) == NULL) {
-        ERR_print_errors_fp(stderr);
-        return -1;
-    }
-
 	/* set the core limit */
-	if (mtcp_getconf(&mcfg) == -1)
+	if (mtcp_getconf(&g_mcfg) == -1)
 		return -1;
-	mcfg.num_cores = num_cpus;
-	if (mtcp_setconf(&mcfg) == -1)
+	g_mcfg.num_cores = num_cpus;
+	if (mtcp_setconf(&g_mcfg) == -1)
 		return -1;
-
-	for (i = 0; i < num_cpus; i++) {
-		/* create mem pools */
-		if (!(g_ci_pool[i] = MPCreate(sizeof(session),
-						sizeof(session) * mcfg.max_concurrency, 0)))
-			return -1;
-		if (!(g_rawpkt_pool[i] = MPCreate(MAX_BUF_LEN,
-							MAX_BUF_LEN * mcfg.max_concurrency, 0)))
-			return -1;
-#ifndef ZERO_COPY
-		if (!(g_cli_buffer_pool[i] = MPCreate(MAX_BUF_LEN,
-							MAX_BUF_LEN * mcfg.max_concurrency, 0)))
-			return -1;
-		/* server side receive buffer is supposed to be much smaller */
-		if (!(g_svr_buffer_pool[i] = MPCreate(MAX_BUF_LEN,
-							MAX_BUF_LEN * mcfg.max_concurrency, 0)))
-			return -1;
-#endif
-	}
+	g_mmtls = calloc(num_cpus, sizeof(struct mmtls_manager));
+	if (!g_mmtls)
+		return -1;
 	
 	return 0;
 }
@@ -1241,10 +1383,10 @@ mmctx_t mmtls_create_context(int cpu)
 {
 	struct mmtls_manager *mmtls;
 	int msock_raw, msock_tls;
-	if (cpu >= MAX_CPUS || cpu < 0)
+	if (cpu >= g_mcfg.num_cores || cpu < 0)
 		/* invalid number of cores */
 		return NULL;
-	mmtls = &g_mmtls[cpu];
+	mmtls = g_mmtls + cpu;
 	if (!(mmtls->mmctx = (mmctx_t)calloc(1, sizeof(struct mmtls_context))))
 		return NULL;
 	mmtls->mmctx->cpu = cpu;
@@ -1252,10 +1394,36 @@ mmctx_t mmtls_create_context(int cpu)
 	/* Run mOS for each CPU core */
 	if (!(mmtls->mctx = mtcp_create_context(cpu)))
 		return NULL;
+	
+	if ((mmtls->ssl_ctx = SSL_CTX_new(TLS_client_method())) == NULL) {
+		ERR_print_errors_fp(stderr);
+		return NULL;
+	}
+    if ((mmtls->ssl = SSL_new(mmtls->ssl_ctx)) == NULL) {
+        ERR_print_errors_fp(stderr);
+        return NULL;
+    }
 
 	/* create CIPHER context */
-	if (!(g_evp_ctx[cpu] = EVP_CIPHER_CTX_new()))
+	if (!(mmtls->evp_ctx = EVP_CIPHER_CTX_new()))
 		return NULL;
+		
+	/* create mem pools */
+	if (!(mmtls->ci_pool = MPCreate(sizeof(session),
+					sizeof(session) * g_mcfg.max_concurrency, 0)))
+		return NULL;
+	if (!(mmtls->rawpkt_pool = MPCreate(MAX_BUF_LEN,
+						MAX_BUF_LEN * g_mcfg.max_concurrency, 0)))
+		return NULL;
+#ifndef ZERO_COPY
+	if (!(mmtls->cli_buffer_pool = MPCreate(MAX_BUF_LEN,
+						MAX_BUF_LEN * g_mcfg.max_concurrency, 0)))
+		return NULL;
+	/* server side receive buffer is supposed to be much smaller */
+	if (!(mmtls->svr_buffer_pool = MPCreate(MAX_BUF_LEN,
+						MAX_BUF_LEN * g_mcfg.max_concurrency, 0)))
+		return NULL;
+#endif
 	
 	/* Make a raw packet monitoring socket */
 	if ((msock_raw = mtcp_socket(mmtls->mctx, AF_INET,
@@ -1294,22 +1462,18 @@ mmctx_t mmtls_create_context(int cpu)
 /*---------------------------------------------------------------------------*/
 int mmtls_destroy()
 {
-	struct mtcp_conf mcfg;
-	SSL_free(g_ssl);
-	SSL_CTX_free(g_ssl_ctx);
-	/* get the core limit */
-	if (mtcp_getconf(&mcfg) == -1)
-		return -1;
-	for (int i = 0; i < mcfg.num_cores; i++) {
+	for (int i = 0; i < g_mcfg.num_cores; i++) {
 		/* free allocated memories */
 #ifndef ZERO_COPY
-		MPDestroy(g_cli_buffer_pool[i]);
-		MPDestroy(g_svr_buffer_pool[i]);
+		MPDestroy(g_mmtls[i].cli_buffer_pool);
+		MPDestroy(g_mmtls[i].svr_buffer_pool);
 #endif
-		MPDestroy(g_rawpkt_pool[i]);
-		MPDestroy(g_ci_pool[i]);
+		MPDestroy(g_mmtls[i].rawpkt_pool);
+		MPDestroy(g_mmtls[i].ci_pool);
+		SSL_free(g_mmtls[i].ssl);
+		SSL_CTX_free(g_mmtls[i].ssl_ctx);
 		/* free EVP context buffer */
-		EVP_CIPHER_CTX_free(g_evp_ctx[i]);
+		EVP_CIPHER_CTX_free(g_mmtls[i].evp_ctx);
 		/* free mmtls context */
 		free(g_mmtls[i].mmctx);
 	}
@@ -1325,10 +1489,10 @@ int mmtls_register_callback(mmctx_t mmctx, event_t event, mmtls_cb cb)
 	if (!mmctx)
 		/* mmtls context is not created */
 		return -1;
-	if (mmctx->cpu >= MAX_CPUS || mmctx->cpu < 0)
+	if (mmctx->cpu > g_mcfg.num_cores || mmctx->cpu < 0)
 		/* invalid number of cores */
 		return -1;
-	mmtls = &g_mmtls[mmctx->cpu];
+	mmtls = g_mmtls + mmctx->cpu;
 	if (event >= NUM_MMTLS_CALLBACK)
 		return -1;
 	mmtls->cb[event] = cb;
@@ -1369,10 +1533,10 @@ void mmtls_app_join(mmctx_t mmctx)
 int mmtls_get_record(mmctx_t mmctx, int cid, int side,
 					 char *buf, int *len, uint8_t *type)
 {
-	session *c;
+	session *c = NULL;
 	session_ctx *tls_ctx;
 	uint8_t *record; // record includes header
-	int ret;
+	int ret, retry_cnt = 0;
 	uint16_t version;
 	
 	if (!len) {
@@ -1417,12 +1581,19 @@ int mmtls_get_record(mmctx_t mmctx, int cid, int side,
 		 * if application buffer is given,
 		 * decrypt to the buffer, and gives length and type
 		 */
+Retry:
 		ret = get_plaintext(mmctx, tls_ctx,
 							version, c->evp_cipher, c->evp_md,
 							record, (uint8_t *)buf);
+		if (ret < 0) {
+			if (!c->svr_done && retry_cnt < 2) {
+				tls_ctx->tls_seq++;
+				retry_cnt++;
+				goto Retry;
+			}
+			goto Error;
+		}
 	}
-	if (ret < 0)
-		goto Error;
 	*len = ret;
 	if (type)
 		*type = *record;
@@ -1431,7 +1602,8 @@ int mmtls_get_record(mmctx_t mmctx, int cid, int side,
 
 Error:
 	/* on Error, length and type are returned as 0 */
-	c->err_code = ret;
+	if (c)
+		c->err_code = ret;
 	*len = 0;
 	if (type)
 		*type = 0;
@@ -1525,7 +1697,7 @@ int mmtls_get_tls_info(mmctx_t mmctx, int cid,
 	if (bitmask & SNI) {
 		info->sni_type = c->sess_info.sni_type;
 		info->sni_len = c->sess_info.sni_len;
-		memcpy(info->sni, c->sess_info.sni, info->sni_len);
+		strcpy((char *)info->sni, (char *)c->sess_info.sni);
 	}
 	if (bitmask & CLIENT_RANDOM)
 		memcpy(info->client_random, c->sess_info.client_random,

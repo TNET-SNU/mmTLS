@@ -662,7 +662,7 @@ tcprb_get_record(tcprb_t *rb, loff_t off, int *outlen)
 		record_len = ntohs(*(uint16_t *)(ptr + 3));
 
 	/* record length cannot exceed 16KB */
-	if (record_len > TLS_RECORD_BUF_SIZE) {
+	if (record_len > MAX_TLS_RECORD_SIZE) {
 		*outlen = TLS_HEADER_LEN + record_len;
 		return NULL;
 	}

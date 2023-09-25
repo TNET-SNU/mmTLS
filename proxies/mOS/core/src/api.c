@@ -977,6 +977,7 @@ eval_bpf_5tuple(struct sfbpf_program fcode,
 						 TOTAL_TCP_HEADER_LEN);
 }
 /*----------------------------------------------------------------------------*/
+#if 0
 int 
 mtcp_connect(mctx_t mctx, int sockid, 
 		const struct sockaddr *addr, socklen_t addrlen)
@@ -1193,6 +1194,7 @@ mtcp_connect(mctx_t mctx, int sockid,
 	
 	return 0;
 }
+#endif
 /*----------------------------------------------------------------------------*/
 static inline int 
 CloseStreamSocket(mctx_t mctx, int sockid)

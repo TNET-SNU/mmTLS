@@ -36,7 +36,7 @@ typedef struct mem_pool
 } mem_pool;
 
 /*----------------------------------------------------------------------------*/
-	mem_pool * 
+mem_pool * 
 MPCreate(int chunk_size, size_t total_size, int is_hugepage)
 {
 	mem_pool_t mp;
@@ -134,7 +134,7 @@ MPAllocateChunk(mem_pool_t mp)
 #endif
 }
 /*----------------------------------------------------------------------------*/
-	void
+void
 MPFreeChunk(mem_pool_t mp, void *p)
 {
 #ifdef SYS_MALLOC
@@ -155,7 +155,7 @@ MPFreeChunk(mem_pool_t mp, void *p)
 #endif
 }
 /*----------------------------------------------------------------------------*/
-	void
+void
 MPDestroy(mem_pool_t mp)
 {
 #ifdef HUGETABLE
@@ -170,13 +170,13 @@ MPDestroy(mem_pool_t mp)
 	free(mp);
 }
 /*----------------------------------------------------------------------------*/
-	int
+int
 MPGetFreeChunks(mem_pool_t mp)
 {
 	return mp->mp_free_chunks;
 }
 /*----------------------------------------------------------------------------*/
-	uint32_t 
+uint32_t 
 MPIsDanger(mem_pool_t mp)
 {
 #define DANGER_THREASHOLD 0.95
@@ -189,7 +189,7 @@ MPIsDanger(mem_pool_t mp)
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
-	uint32_t
+uint32_t
 MPIsOverSafeline(mem_pool_t mp)
 {
 #define SAFELINE 0.90

@@ -81,7 +81,7 @@ EthernetOutput(struct mtcp_manager *mtcp, struct pkt_ctx *pctx,
 		TRACE_INFO("get_wptr() in io_module is undefined.");
 		return NULL;
 	}
-	buf = mtcp->iom->get_wptr(mtcp->ctx, nif, iplen + ETHERNET_HEADER_LEN, pctx->p.l4len);
+	buf = mtcp->iom->get_wptr(mtcp->ctx, nif, iplen + ETHERNET_HEADER_LEN);
 	if (!buf) {
 		TRACE_DBG("Failed to get available write buffer\n");
 		return NULL;
@@ -120,8 +120,7 @@ ForwardEthernetFrame(struct mtcp_manager *mtcp, struct pkt_ctx *pctx)
 			return;
 		}
 
-		buf = mtcp->iom->get_wptr(mtcp->ctx, pctx->out_ifidx, pctx->p.eth_len, pctx->p.l4len);
-		
+		buf = mtcp->iom->get_wptr(mtcp->ctx, pctx->out_ifidx, pctx->p.eth_len);
 		if (!buf) {
 			TRACE_DBG("Failed to get available write buffer\n");
 			return;

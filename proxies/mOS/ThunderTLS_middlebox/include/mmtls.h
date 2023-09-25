@@ -7,9 +7,17 @@
 #include <sys/queue.h>
 #include <mos_api.h>
 #include <time.h>
+#include <errno.h>
+#include "../../core/src/include/memory_mgt.h"
 
 #define ZERO_COPY
-#define MAX_BUF_LEN 16448 /* align64(16K + TLS_HEADER_LEN) */
+
+#define MMTLS_SIDE_CLI MOS_SIDE_CLI
+#define MMTLS_SIDE_SVR MOS_SIDE_SVR
+#define MMTLS_SIDE_BOTH MOS_SIDE_BOTH
+
+#define MAX_RECORD_LEN 16448
+#define MAX_BUF_LEN 16512 /* align64(16K + TLS_HEADER_LEN) */
 #define MAX_RAW_PKT_NUM 10
 #define MAX_FILE_NAME_LEN 64
 
@@ -80,14 +88,6 @@ typedef int (*crypto_cb)(EVP_CIPHER_CTX *evp_ctx,
 						 uint16_t cipher_len);
 
 /*---------------------------------------------------------------------------*/
-/** Definition of monitor side */
-enum
-{
-	MMTLS_SIDE_CLI = MOS_SIDE_CLI,
-	MMTLS_SIDE_SVR = MOS_SIDE_SVR,
-	MMTLS_SIDE_BOTH = MOS_SIDE_BOTH,
-};
-
 /** events provided by mmTLS */
 enum mmtls_event_type
 {
@@ -108,8 +108,20 @@ struct mmtls_manager
 {
 	mctx_t mctx;
 	mmctx_t mmctx;
+	/* OpenSSL context to find IANA standard name */
+	SSL_CTX *ssl_ctx;
+	/* OpenSSL instance to use SSL utils */
+	SSL *ssl;
+	/* EVP Cipher context for decryption */
+	EVP_CIPHER_CTX *evp_ctx;
 	/* move callback to each session one day */
 	mmtls_cb cb[NUM_MMTLS_CALLBACK];
+	mem_pool_t ci_pool;
+	mem_pool_t rawpkt_pool;
+#ifndef ZERO_COPY
+	mem_pool_t cli_buffer_pool;
+	mem_pool_t svr_buffer_pool;
+#endif
 };
 
 enum tls_cipher_suite
@@ -197,7 +209,6 @@ enum tlsstate
 	INITIAL_STATE,
 	RECV_CH,
 	RECV_SH,
-	RECV_SERVER_HS_DONE,
 	TLS_ESTABLISHED,
 	TO_BE_DESTROYED,
 }; // tls_state_type
@@ -246,6 +257,7 @@ typedef struct session_info
 	/* cipher */
 	uint16_t version;
 	uint16_t cipher_suite;
+	uint16_t group;
 	/* sockaddr */
 	int sock;
 	uint32_t cli_ip;
@@ -288,17 +300,19 @@ typedef struct session
 	uint8_t has_key : 1;
 	uint8_t drop : 1;
 	uint8_t bypass : 1;
-	uint8_t unused: 2;
+
+	/* below two fields are for session state tracking */
+	uint8_t svr_done : 2;
 	uint8_t tls_state : 3; /* TLS state */
 	int err_code;
 
 	session_info sess_info;
-	session_ctx sess_ctx[2];
+	session_ctx sess_ctx[MMTLS_SIDE_BOTH];
 
+	void *offload_flow;
+	int stop_len[MMTLS_SIDE_BOTH];
 	const EVP_CIPHER *evp_cipher;
 	const EVP_MD *evp_md;
-	void *offload_flow;
-	int stop_len[2];
 
 	/* below are for packet stall */
 	pkt_vec raw_pkt[MAX_RAW_PKT_NUM]; /* raw packet buffer */
@@ -332,13 +346,13 @@ void *mmtls_get_uctx(mmctx_t mmctx, int cid);
 /*---------------------------------------------------------------------------*/
 int mmtls_reset_conn(mmctx_t mmctx, int cid);
 /*---------------------------------------------------------------------------*/
-/* in development */
-int mmtls_offload_ctl(mmctx_t mmctx, int cid, int side, int cmd);
-/*---------------------------------------------------------------------------*/
 int mmtls_get_error(mmctx_t mmctx, int cid);
 /*---------------------------------------------------------------------------*/
 int mmtls_get_tls_info(mmctx_t mmctx, int cid,
 					   session_info *info, uint16_t bitmask);
+/*---------------------------------------------------------------------------*/
+/* in development */
+int mmtls_offload_ctl(mmctx_t mmctx, int cid, int side, int cmd);
 /*---------------------------------------------------------------------------*/
 /* only for inner usage */
 int mmtls_get_stallcnt(mmctx_t mmctx, int cid);

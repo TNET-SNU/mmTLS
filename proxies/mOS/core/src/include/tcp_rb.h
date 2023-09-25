@@ -12,17 +12,14 @@
 /* Keep in mind about inc/dec buffer */
 /* FYI, I hate current tcp ring buffer implementation with memmove() */
 
-#define UNITBUFSIZE /*1024*//*131072*//*262144*/1048576/*1310720*//*2097152*/
-#if UNITBUFSIZE < 2
-#error UNITBUFSIZE cannot be smaller than 2
-#endif
+#define UNITBUFSIZE /*1024*//*131072*//*262144*//*1048576*/1310720/*2097152*/
 
 #define BUFMGMT_FULL    2
 #define BUFMGMT_FRAGS   1
 #define BUFMGMT_OFF     0
 
-#define MAX_TLS_RECORD_SIZE 16384
-#define TLS_RECORD_BUF_SIZE (MAX_TLS_RECORD_SIZE + 64) /* align64(16K + TLS_HEADER_LEN) */
+#define MAX_TLS_RECORD_SIZE 16448
+#define TLS_RECORD_BUF_SIZE (MAX_TLS_RECORD_SIZE + 64) /* align64(16K + 64 + TLS_HEADER_LEN) */
 #define TLS_HEADER_LEN 5
 
 // #define DISABLE_DYN_RESIZE
