@@ -143,7 +143,7 @@ typedef intptr_t        ngx_flag_t;
 
 #define HYPERSCAN 0
 #if (HYPERSCAN)
-#include "/home/junghan/mmTLS/proxies/mOS/mmTLS/include/dpi.h"
+#include "../../../proxies/mOS/mmTLS/include/dpi.h"
 #define PATTERNS_FILENAME "./conf/pattern10k.txt"
 #endif
 

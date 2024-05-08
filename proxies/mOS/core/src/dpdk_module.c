@@ -55,7 +55,7 @@
 	#define NB_MBUF				65535
 #endif
 #define MBUF_SIZE 			(MBUF_DATA_SIZE + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM)
-#define MEMPOOL_CACHE_SIZE		256
+#define MEMPOOL_CACHE_SIZE		512
 //#define RX_IDLE_ENABLE			1
 #define RX_IDLE_TIMEOUT			1	/* in micro-seconds */
 #define RX_IDLE_THRESH			64
@@ -87,8 +87,8 @@
 /*
  * Configurable number of RX/TX ring descriptors
  */
-#define RTE_TEST_RX_DATA_DESC_DEFAULT	/* 8192 */ /* 4096 */ 2048 /* 1024 */ /* 512 */ /* 256 */
-#define RTE_TEST_RX_KEY_DESC_DEFAULT	/* 8192 */ 4096 /* 2048 */ /* 1024 */ /* 512 */ /* 256 */
+#define RTE_TEST_RX_DATA_DESC_DEFAULT	/* 8192 */ /* 4096 */ /* 2048 */ 1024 /* 512 */ /* 256 */
+#define RTE_TEST_RX_KEY_DESC_DEFAULT	/* 8192 */ /* 4096 */ 2048 /* 1024 */ /* 512 */ /* 256 */
 #define RTE_TEST_TX_DESC_DEFAULT	/* 8192 */ /* 4096 */ /* 2048 */ 1024 /* 512 */ /* 256 */
 
 static uint16_t nb_rxd_data = RTE_TEST_RX_DATA_DESC_DEFAULT;

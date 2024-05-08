@@ -14,14 +14,10 @@
 #include "include/dpi.h"
 #include "cpu.h"
 
-#define HYPERSCAN 0
-
-#define MAX_CPUS 16
 #define MAX_PATH_LEN	32
 #define FILE_PATH	"outputs/"
 #define DELAY_FILENAME "delay"
 #define PATTERNS_FILENAME "pattern10k.txt"
-#define MAX_FILE_NAME_LEN	64
 #define MAX_UCTX_PER_CORE	8192
 
 /* Default path to mmTLS configuration file */
@@ -39,9 +35,7 @@ typedef struct uctx
 	/* below are for debugging, remove when eval */
 	uint64_t payload_len[2];
 
-#if HYPERSCAN
 	dctx_t dctx;
-#endif
 } uctx;
 /*---------------------------------------------------------------------------*/
 struct debug_cnt {
@@ -52,6 +46,8 @@ struct debug_cnt {
 	int key;
 	int cr;
 } g_cnt[MAX_CPUS] = {{0}};
+int g_pattern_matching = 0;
+int g_monitor_len = 64 * 1000;
 int g_measure_delay = 0;
 int g_write_all = 0;
 int g_cnt_conn = 0;
@@ -135,11 +131,11 @@ cb_session_start(mmctx_t mmctx, int cid, int side)
     if (mmtls_set_uctx(mmctx, cid, c) == -1)
 		EXIT_WITH_ERROR("mmtls_set_uctx failed");
 
-#if HYPERSCAN
-	c->dctx = open_DPI_context(mmctx->cpu);
-	if (!c->dctx)
-		EXIT_WITH_ERROR("open_DPI_context failed");
-#endif
+	if (g_pattern_matching) {
+		c->dctx = open_DPI_context(mmctx->cpu);
+		if (!c->dctx)
+			EXIT_WITH_ERROR("open_DPI_context failed");
+	}
 
 	if (!g_cnt_conn)
 		return;
@@ -159,9 +155,8 @@ cb_session_end(mmctx_t mmctx, int cid, int side)
 			EXIT_WITH_ERROR("fclose() failed");
 	}
 
-#if HYPERSCAN
-	close_DPI_context(c->dctx);
-#endif
+	if (g_pattern_matching)
+		close_DPI_context(c->dctx);
 
 	print_conn_stat(mmctx, c);
 	MPFreeChunk(g_uctx_pool[mmctx->cpu], c);
@@ -218,13 +213,17 @@ cb_recv_key(mmctx_t mmctx, int cid, int side)
 	}
 	if (!g_cnt_conn)
 		return;
+	g_cnt[mmctx->cpu].key++;
+	
+	return;
+
+	/* below are used for debugging, not used now */
 	cnt = mmtls_get_stallcnt(mmctx, cid);
 	if (cnt == -1)
 		EXIT_WITH_ERROR("mmtls_get_stallcnt failed");
 	printf("\n--------------------------------------------------\n"
 			"[%s] core: %d, cid: %u, stall_cnt: %d\n",
 			__FUNCTION__, mmctx->cpu, cid, cnt);
-	g_cnt[mmctx->cpu].key++;
 	printf("key found: %d\n",
 			g_cnt[0].key + g_cnt[1].key + g_cnt[2].key + g_cnt[3].key + 
 			g_cnt[4].key + g_cnt[5].key + g_cnt[6].key + g_cnt[7].key + 
@@ -277,15 +276,15 @@ cb_new_record(mmctx_t mmctx, int cid, int side)
 	/* now this is a response from server */
 	c->monitor_len[side] += len;
 
-#if HYPERSCAN
-	int ret = DPI(c->dctx, buf, len);
-	(void)ret;
-	// if (ret < 0)
-	// 	EXIT_WITH_ERROR("DPI() failed");
-#endif
+	if (g_pattern_matching) {
+		int ret = DPI(c->dctx, buf, len);
+		(void)ret;
+		// if (ret < 0)
+		// 	EXIT_WITH_ERROR("DPI() failed");
+	}
 
 	/* decrypt only xKB for each response */
-	if (c->monitor_len[side] > 64000) {
+	if (c->monitor_len[side] > g_monitor_len) {
 		// mmtls_offload_ctl(mmctx, cid, side, OFFLOAD_BYPASS);
 		// printf("[CORE: %d]\nCLIENT: %lu\n", mmctx->cpu, c->monitor_len[side]);
 		mmtls_pause_monitor(mmctx, cid, side, 5000000);
@@ -326,7 +325,7 @@ int main(int argc, char **argv)
 	/* get the total # of cpu cores */
 	int core_num = GetNumCPUs();
 
-	while ((opt = getopt(argc, argv, "c:def")) != -1)
+	while ((opt = getopt(argc, argv, "c:defpl:")) != -1)
 		switch (opt) {
 		case 'c':
 			if ((rc = atoi(optarg)) > core_num)
@@ -344,8 +343,14 @@ int main(int argc, char **argv)
 		case 'f':
 			g_write_all = 1;
 			break;
+		case 'p':
+			g_pattern_matching = 1;
+			break;
+		case 'l':
+			g_monitor_len = atoi(optarg) * 1000;
+			break;
 		default:
-			printf("Usage: %s [-c num of cores] [-d] [-e] [-f]\n", argv[0]);
+			printf("Usage: %s [-c num of cores] [-d] [-e] [-f] [-p] [-l monitor length]\n", argv[0]);
 			return 0;
 		}
 	
@@ -355,10 +360,10 @@ int main(int argc, char **argv)
 	if (g_measure_delay)
 		g_delay_fp = fopen(g_delay_filename, "a+w");
 
-#if HYPERSCAN
-	if (init_DPI(PATTERNS_FILENAME, core_num, HS_MODE_STREAM) < 0)
-		EXIT_WITH_ERROR("init_DPI failed");
-#endif
+	if (g_pattern_matching) {
+		if (init_DPI(PATTERNS_FILENAME, core_num, HS_MODE_STREAM) < 0)
+			EXIT_WITH_ERROR("init_DPI failed");
+	}
 
 	/* Run mmTLS for each core */
 	for (i = 0; i < core_num; i++) {
@@ -374,16 +379,15 @@ int main(int argc, char **argv)
 			EXIT_WITH_ERROR("mmtls_register_callback failed");
 		if (mmtls_register_callback(g_mmctx[i], ON_TLS_NEW_RECORD, cb_new_record))
 			EXIT_WITH_ERROR("mmtls_register_callback failed");
-		// if (mmtls_register_callback(g_mmctx[i], ON_TLS_STALL, cb_stall))
-		// 	EXIT_WITH_ERROR("mmtls_register_callback failed");
-		// if (mmtls_register_callback(g_mmctx[i], ON_TLS_RECV_KEY, cb_recv_key))
-		// 	EXIT_WITH_ERROR("mmtls_register_callback failed");
+		if (g_measure_delay) {
+			if (mmtls_register_callback(g_mmctx[i], ON_TLS_STALL, cb_stall))
+				EXIT_WITH_ERROR("mmtls_register_callback failed");
+			if (mmtls_register_callback(g_mmctx[i], ON_TLS_RECV_KEY, cb_recv_key))
+				EXIT_WITH_ERROR("mmtls_register_callback failed");
+		}
 		if (mmtls_register_callback(g_mmctx[i], ON_TLS_ERROR, cb_abnormal))
 			EXIT_WITH_ERROR("mmtls_register_callback failed");
 		INFO_PRINT("[core %d] thread created and callback registered", i);
-		(void)cb_new_record;
-		(void)cb_stall;
-		(void)cb_recv_key;
 	}
 
 	/* wait until all threads finish */
@@ -400,9 +404,8 @@ int main(int argc, char **argv)
 	if (g_measure_delay)
 		fclose(g_delay_fp);
 	
-#if HYPERSCAN
-	deinit_DPI();
-#endif
+	if (g_pattern_matching)
+		deinit_DPI();
 
 	return EXIT_SUCCESS;
 }

@@ -14,7 +14,7 @@
 #include <openssl/opensslconf.h>
 #include <openssl/opensslv.h>
 
-#define MMTLS 1
+#define MMTLS 0
 
 /* Helper macros for CPP string composition */
 # define OPENSSL_MSTR_HELPER(x) #x

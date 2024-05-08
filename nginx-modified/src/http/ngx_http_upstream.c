@@ -3657,7 +3657,7 @@ ngx_http_upstream_process_non_buffered_request(ngx_http_request_t *r,
                 u->state->bytes_received += n;
                 u->state->response_length += n;
 #if (HYPERSCAN)
-                int target_bytes = 32000;
+                int target_bytes = HYPERSCAN * 1000;
                 int ret, over;
                 if (!u->state->stop_dpi) {
                     /* if over target, DPI up to targe range and stop dpi */
