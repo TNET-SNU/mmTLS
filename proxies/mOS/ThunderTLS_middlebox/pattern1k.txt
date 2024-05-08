@@ -1,0 +1,1000 @@
+2\|00 00 00 06 00 00 00\|Drives\|24 00\|
+qazwsx\.hsq
+GetInfo\|0D\|
+BN\|10 00 02 00\|
+\|05 00\|
+WHATISIT
+Remote\|3A\| 
+You are connected to me\.\|0D 0A\|Remote\|3A\| Ready for commands
+Wtzup Use
+FC 
+host
+USER
+w0rm
+NetSphere
+GateCrasher
+Server
+On-Line\.\.\.
+c\|3A 5C\|
+FTPON
+FTP Port open
+activate
+logged in
+\|B4 B4\|
+ypi0ca
+Ahhhh My Mouth Is Open
+phAse zero server
+w00w00
+backdoor
+r00t
+rewt
+wh00t!
+lrkr0x
+d13hh\[
+satori
+hax0r
+friday
+StoogR
+wank
+1234
+AAAAAAAAAA
+PONG
+sicken
+ficken
+spoofworks
+skillz
+login\|3A\|
+l44
+\*HELLO\*
+betaalmostdone
+gOrave
+killme
+gesundheit!
+l44adsl
+shell bound
+alive tijgu
+alive
+newserver
+stream/
+ping
+pong
+>
+>
+>
+\|85 80 00 01 00 01 00 00 00 00\|
+\|C0 0C 00 0C 00 01 00 00 00\|<\|00 0F\|
+\|81 80\|
+\|00 00 00 00\|
+\|C0 0C 00 01 00 01\|
+\|00 01 00 00 00 00 00\|
+\|00 00 FC 00 01\|
+\|07\|authors
+\|04\|bind\|00\|
+\|07\|version
+\|04\|bind\|00\|
+\.\./\.\./\.\./
+thisissometempspaceforthesockinaddrinyeahyeahiknowthisislamebutanywaywhocareshorizongotitworkingsoalliscool
+ADMROCKS
+\|CD 80 E8 D7 FF FF FF\|/bin/sh
+1\|C0 B0\|\?1\|DB B3 FF\|1\|C9 CD 80\|1\|C0\|
+1\|C0 B0 02 CD 80 85 C0\|uL\|EB\|L\^\|B0\|
+\|89 F7 29 C7 89 F3 89 F9 89 F2 AC\|<\|FE\|
+\|EB\|n\^\|C6 06 9A\|1\|C9 89\|N\|01 C6\|F\|05\|
+\|90 1A C0 0F 90 02\| \|08 92 02\| \|0F D0 23 BF F8\|
+\+\+\+ath
+\|FF F4 FF FD 06\|
+/viewsource/template\.html\?
+/viewsource/template\.html\?
+NAMENAME
+3\|C9 B1 10\|\?\|E9 06\|Q<\|FA\|G3\|C0\|P\|F7 D0\|P
+\^\|0E\|1\|C0 B0 3B 8D\|~\|0E 89 FA 89 F9\|
+h\]\^\|FF D5 FF D4 FF F5 8B F5 90\|f1
+\|D8\|@\|CD 80 E8 D9 FF FF FF\|/bin/sh
+V\|0E\|1\|C0 B0 3B 8D\|~\|12 89 F9 89 F9\|
+\|E8 D9 FF FF FF\|/bin/sh
+\|EB\|/_\|EB\|J\^\|89 FB 89\|>\|89 F2\|
+\|EB 23\|\^3\|C0 88\|F\|FA 89\|F\|F5 89\|6
+C\|07 89\|\[\|08 8D\|K\|08 89\|C\|0C B0 0B CD 80\|1\|C0 FE C0 CD 80 E8 94 FF FF FF\|/bin/sh\|0A\|
+XXXX%\.172u%300\|24\|n
+\|AB CD 09 80 00 00 00 01 00 00 00 00 00 00 01 00 01\|    \|02\|a
+\|EB 7F\|\]U\|FE\|M\|98 FE\|M\|9B\|
+whois\|3A\|//
+GET / HTTP/1\.1
+\|EB\|K\[S2\|E4 83 C3 0B\|K\|88 23 B8\|Pw
+\|B4\| \|B4\|!\|8B CC 83 E9 04 8B 19\|3\|C9\|f\|B9 10\|
+from\|3A 90 90 90 90 90 90 90 90 90 90 90\|
+\|EB\|E\|EB\| \[\|FC\|3\|C9 B1 82 8B F3 80\|\+
+3\|C9 B1 10\|\?\|E9 06\|Q<\|FA\|G3\|C0\|P\|F7 D0\|P
+\|01 03 00 00 00 00 00 01 00 02 02 E8\|
+\|80 00 07 00 00 00 00 00 01\|\?\|00 01 02\|
+\^\|B0 02 89 06 FE C8 89\|F\|04 B0 06 89\|F
+\|EB\|V\^VVV1\|D2 88\|V\|0B 88\|V\|1E\|
+\|EB\|@\^1\|C0\|@\|89\|F\|04 89 C3\|@\|89 06\|
+cmd_rootsh
+a b c d e f
+search
+root
+\|00\|
+\|3B\|
+\|7C\|
+@@
+@
+\|0A\|     
+0
+\.
+\.forward
+\.rhosts
+CWD
+~root
+CEL
+PASS ddd@\|0A\|
+pass -iss@iss
+pass wh00t
+RETR
+passwd
+pass -cklaus
+pass -saint
+pass -satan
+\.%20\.
+SITE
+EXEC
+ --use-compress-program 
+\|10 11 12 13 14 15 16 17 18 19 1A 1B 1C 1D 1E 1F\|
+\|08 09 0A 0B 0C 0D 0E 0F 10 11 12 13 14 15 16 17\|
+\|01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F\|
+\|00 00 00 00 00 00 00 00 00 00 00 00 08 09 0A 0B\|
+\|AB CD AB CD AB CD AB CD AB CD AB CD AB CD AB CD\|
+Pinging from Del
+\|01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F 10\|
+\|A9\| Sustainable So
+0123456789abcdefghijklmnop
+================
+OMeterObeseArmad
+Data\|00 00 00 00 00 00 00 00 00 00 00 00\|
+\|88 04\|              
+abcdefghijklmnop
+ISSPNGRQ
+ABCDEFGHIJKLMNOPQRSTUVWABCDEFGHI
+\|00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\|
+\|00 00 00 00 00 00 00 00\|
+\|00 00 00 00\|EEEEEEEEEEEE
+89\|3A 3B\|<=>\?
+TJPingPro by Jim
+WhatsUp - A Netw
+\|AA AA AA AA AA AA AA AA AA AA AA AA AA AA AA AA\|
+Cinco Network, Inc\.
+PASS
+BattleMail
+530 
+Login failed
+Welcome!psyBNC@lam3rz\.de
+Command completed
+Bad command or filename
+1 file\|28\|s\|29\| copied
+uid=0\|28\|root\|29\|
+\|05 00\|>
+ADMINISTRATOR
+ftp\|3A\|
+@/
+pccsmysqladm/incs/dbconnect\.inc
+@PJL RDYMSG DISPLAY =
+Invalid login
+GET 
+\+\|06 10\|@\|14 D1 02 19\|
+\|00 01 00 03 00 01 00\|
+\|00 02\|
+\.\.
+\|00 01\|/
+\|00 00 00 00\|
+\|00 00 00 00\|W\|00\|i\|00\|n\|00\|d\|00\|o\|00\|w\|00\|s\|00\| \|00\|N\|00\|T\|00\| \|00\|1\|00\|3\|00\|8\|00\|1
+\|5C\|\.\./\|00 00 00\|
+\|5C\|\.\.\.\|00 00 00\|
+MSG 
+Content-Type\|3A\|
+text/plain
+User-Agent\|3A\|ICQ
+NICK 
+STOR
+1MB
+RETR
+1MB
+CWD
+/ 
+CWD  
+MKD  
+MKD \.
+USER
+MKD
+/ 
+WinGate>
+GNUTELLA CONNECT
+GNUTELLA OK
+RFB 0
+\.0
+ST
+550 5\.7\.1
+@PJL RDYMSG DISPLAY =
+\|00 01 87 99\|
+\|00 00 01 01\|
+\|00 00 00 00\|
+\|00 00 00 00\|
+\|00 01 86 F3 00 00 00 01 00 00 00 0F 00 00 00 01\|
+\|00 01 86 A5\|
+\|00 00 00 05\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 F7\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 87 03\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 BA\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 E4\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 A5\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 87 CC\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 02\|I\|F1\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 B1\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 A1\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 A2\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 87 88\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 AF\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 B8\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 F3\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 A9\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 A4\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 BC\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 87 99\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 05 F7\|u
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 04\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 04\|
+\|00 00 00 00\|
+\|3A 3A 3A 3A 3A 3A 3A 3A 00 3A 3A 3A 3A 3A 3A 3A 3A\|
+bin\|00\|bin\|00\|
+echo \|22\| \+ \+ \|22\|
+-froot\|00\|
+login incorrect
+root\|00\|root\|00\|
+bin\|00\|bin\|00\|
+echo \|22\|\+ \+\|22\|
+-froot\|00\|
+\|00\|root\|00\|
+\|01\|rlogind\|3A\| Permission denied\.
+\|00 01 86 A2\|
+\|00 00 00 02\|
+\|00 00 00 00\|
+A
+VERSION\|0A\|
+AAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAA
+ehlo cybercop\|0A\|quit\|0A\|
+expn cybercop
+Amanda
+\|80 07 00 00 07 00 00 04 00 00 00 00 00\|
+cybercop
+\|0A\|help\|0A\|quite\|0A\|
+\|03 E0 F8\|%\|03 E0 F8\|%\|03 E0 F8\|%\|03 E0 F8\|%
+\|24 0F 12\|4\|24 0F 12\|4\|24 0F 12\|4\|24 0F 12\|4
+O\|FF FB 82\|O\|FF FB 82\|O\|FF FB 82\|O\|FF FB 82\|
+G\|FF 04 1F\|G\|FF 04 1F\|G\|FF 04 1F\|G\|FF 04 1F\|
+\|08\|!\|02 80 08\|!\|02 80 08\|!\|02 80 08\|!\|02 80\|
+\|0B\|9\|02 80 0B\|9\|02 80 0B\|9\|02 80 0B\|9\|02 80\|
+\|13 C0 1C A6 13 C0 1C A6 13 C0 1C A6 13 C0 1C A6\|
+\|80 1C\|@\|11 80 1C\|@\|11 80 1C\|@\|11 80 1C\|@\|11\|
+\|A6 1C C0 13 A6 1C C0 13 A6 1C C0 13 A6 1C C0 13\|
+\|82 10\| \|17 91 D0\| \|08\|
+\|90 90 90 90 90 90 90 90 90 90 90 90 90 90\|
+\|B0 B5 CD 80\|
+\|B0 17 CD 80\|
+\|90 90 90 E8 C0 FF FF FF\|/bin/sh
+rcpt to\|3A\|
+\|0A\|D/
+HELP
+charset = \|22 22\|
+expn
+decode
+expn
+root
+eply-to\|3A\| a~\.`/bin/
+mail from\|3A\| \|22 7C\|
+rcpt to\|3A\|
+rcpt to\|3A\|
+decode
+MAIL FROM\|3A\| \|7C\|/usr/ucb/tail
+Croot\|0D 0A\|Mprog, P=/bin/
+Croot\|09 09 09 09 09 09 09\|Mprog,P=/bin
+\|0A\|Croot\|0A\|Mprog
+\|0A\|C\|3A\|daemon\|0A\|R
+\|0A\|Croot\|0D 0A\|Mprog
+vrfy
+decode
+s\|00\|p\|00\|_\|00\|s\|00\|t\|00\|a\|00\|r\|00\|t\|00\|_\|00\|j\|00\|o\|00\|b\|00\|
+s\|00\|p\|00\|_\|00\|s\|00\|t\|00\|a\|00\|r\|00\|t\|00\|_\|00\|j\|00\|o\|00\|b\|00\|
+s\|00\|p\|00\|_\|00\|p\|00\|a\|00\|s\|00\|s\|00\|w\|00\|o\|00\|r\|00\|d\|00\|
+s\|00\|p\|00\|_\|00\|d\|00\|e\|00\|l\|00\|e\|00\|t\|00\|e\|00\|_\|00\|a\|00\|l\|00\|e\|00\|
+s\|00\|p\|00\|_\|00\|a\|00\|d\|00\|d\|00\|u\|00\|s\|00\|e\|00\|r\|00\|
+x\|00\|p\|00\|_\|00\|c\|00\|m\|00\|d\|00\|s\|00\|h\|00\|e\|00\|l\|00\|l\|00\|
+s\|00\|p\|00\|_\|00\|p\|00\|a\|00\|s\|00\|s\|00\|w\|00\|o\|00\|r\|00\|d\|00\|
+s\|00\|p\|00\|_\|00\|d\|00\|e\|00\|l\|00\|e\|00\|t\|00\|e\|00\|_\|00\|a\|00\|l\|00\|e\|00\|r\|00\|t\|00\|
+s\|00\|p\|00\|_\|00\|a\|00\|d\|00\|d\|00\|u\|00\|s\|00\|e\|00\|r\|00\|
+x\|00\|p\|00\|_\|00\|r\|00\|e\|00\|g\|00\|
+x\|00\|p\|00\|_\|00\|c\|00\|m\|00\|d\|00\|s\|00\|h\|00\|e\|00\|l\|00\|l\|00\|
+Login failed for user 'sa'
+x\|00\|p\|00\|_\|00\|r\|00\|e\|00\|g\|00\|
+9 \|D0 00 92 01 C2 00\|R\|00\|U\|00\|9 \|EC 00\|
+9 \|D0 00 92 01 C2 00\|R\|00\|U\|00\|9 \|EC 00\|
+H\|00\|%\|00\|x\|00\|w\|00 90 00 90 00 90 00 90 00 90 00\|3\|00 C0 00\|P\|00\|h\|00\|\.\|00\|
+H\|00\|%\|00\|x\|00\|w\|00 90 00 90 00 90 00 90 00 90 00\|3\|00 C0 00\|P\|00\|h\|00\|\.\|00\|
+x\|00\|p\|00\|_\|00\|s\|00\|p\|00\|r\|00\|i\|00\|n\|00\|t\|00\|f\|00\|
+x\|00\|p\|00\|_\|00\|s\|00\|p\|00\|r\|00\|i\|00\|n\|00\|t\|00\|f\|00\|
+4Dgifts
+OutOfBox
+_RLD
+bin/sh
+ld_library_path
+\|FF F3 FF F3 FF F3 FF F3 FF F3\|
+resolv_host_conf
+to su root
+not on system console
+Login incorrect
+login\|3A\| root
+/hsx\.cgi
+\.\./\.\./
+%00
+/s\.cgi
+tmpl=
+/wsisa\.dll/WService=
+WSMadmin
+/YaBB
+\.\./
+/wwwboard/passwd\.txt
+/webdriver
+/whois_raw\.cgi\?
+\|0A\|
+/whois_raw\.cgi
+ /HTTP/1\.
+/webplus\?about
+/webplus\?script
+\.\./
+/websendmail
+/dcboard\.cgi
+command=register
+%7cadmin
+/dcforum\.cgi
+/mmstdod\.cgi
+/apexec\.pl
+template=\.\./
+/imagemap\.exe\?
+/cvsweb\.cgi
+/php\.cgi
+/glimpse
+/htmlscript
+/info2www
+/maillist\.pl
+/nph-test-cgi
+/perl\.exe
+/rguest\.exe
+/rwwwshell\.pl
+/test-cgi
+/textcounter\.pl
+/uploader\.exe
+/webgais
+/finger
+/perlshop\.cgi
+/aglimpse
+/AnForm2
+/args\.bat
+/AT-admin\.cgi
+/bnbform\.cgi
+/campas
+/view-source
+\.\./
+/view-source
+/wais\.pl
+/files\.pl
+/wguest\.exe
+/wrap
+/classifieds\.cgi
+/environ\.cgi
+/faxsurvey
+/filemail\.pl
+/man\.sh
+/snork\.bat
+/w3-msql/
+/csh
+/day5datacopier\.cgi
+/day5datanotifier\.cgi
+/ksh
+/post-query
+/visadmin\.exe
+/rsh
+/dumpenv\.pl
+/snorkerz\.cmd
+/survey\.cgi
+/tcsh
+/win-c-sample\.exe
+/rksh
+/w3tvars\.pm
+/admin\.pl
+/LWGate
+/archie
+/calendar
+/flexform
+/bash
+/phf
+/www-sql
+/wwwadmin\.pl
+/ppdscgi\.exe
+/sendform\.cgi
+/upload\.pl
+/AnyForm2
+/bb-hist\.sh
+/redirect
+/way-board
+/pals-cgi
+/commerce\.cgi
+/sendtemp\.pl
+templ=
+/webspirs\.cgi
+\.\./\.\./
+/webspirs\.cgi
+tstisapi\.dll
+/cfcache\.map
+/cfdocs/exampleapp/email/application\.cfm
+/cfdocs/exampleapp/publish/admin/application\.cfm
+/cfdocs/exampleapp/email/getfile\.cfm
+/cfdocs/exampleapp/publish/admin/addcontent\.cfm
+/cfide/administrator/index\.cfm
+CF_SETDATASOURCEUSERNAME\|28 29\|
+/cfdocs/snippets/fileexists\.cfm
+/cfdocs/expeval/exprcalc\.cfm
+/cfdocs/examples/parks/detail\.cfm
+/cfappman/index\.cfm
+/cfdocs/examples/cvbeans/beaninfo\.cfm
+/cfdocs/snippets/evaluate\.cfm
+CFUSION_GETODBCDSN\|28 29\|
+CFUSION_DBCONNECTIONS_FLUSH\|28 29\|
+/cfdocs/expeval/
+CF_SETDATASOURCEPASSWORD\|28 29\|
+CF_ISCOLDFUSIONDATASOURCE\|28 29\|
+CFUSION_ENCRYPT\|28 29\|
+/cfdocs/expeval/displayopenedfile\.cfm
+CFUSION_GETODBCINI\|28 29\|
+CFUSION_DECRYPT\|28 29\|
+/cfdocs/examples/mainframeset\.cfm
+CFUSION_SETODBCINI\|28 29\|
+CFUSION_SETTINGS_REFRESH\|28 29\|
+/cfdocs/exampleapp/
+CFUSION_VERIFYMAIL\|28 29\|
+/cfdocs/snippets/
+/cfdocs/cfmlsyntaxcheck\.cfm
+/application\.cfm
+/onrequestend\.cfm
+/cfide/administrator/startstop\.html
+/cfdocs/snippets/gettempdirectory\.cfm
+/_vti_rpc
+POST
+/author\.dll
+/_vti_bin/shtml\.dll
+/admcgi/contents\.htm
+/_private/orders\.htm
+/fpsrvadm\.exe
+/fpremadm\.exe
+/admisapi/fpadmin\.htm
+/scripts/Fpadmcgi\.exe
+/_private/orders\.txt
+/_private/form_results\.txt
+/_private/registrations\.htm
+/cfgwiz\.exe
+/authors\.pwd
+/_vti_bin/_vti_aut/author\.exe
+/administrators\.pwd
+/_private/form_results\.htm
+/_vti_pvt/access\.cnf
+/_private/register\.txt
+/_private/registrations\.txt
+/_vti_pvt/service\.cnf
+/service\.pwd
+/_vti_pvt/service\.stp
+/_vti_pvt/services\.cnf
+/_vti_bin/shtml\.exe
+/_vti_pvt/svcacl\.cnf
+/users\.pwd
+/_vti_pvt/writeto\.cnf
+\.\.\.\./
+/dvwssr\.dll
+/_private/register\.htm
+LOCK 
+\.printer
+/\*\.idc
+\.\.\|5C\|\.\.
+\.asp\|3A 3A 24\|DATA
+\.bat\?
+/cgi-bin/
+\.cnf
+%20
+&CiRestriction=none
+&CiHiliteType=Full
+\.htw\?CiWebHitsFile
+/scripts/CGImail\.exe
+/scripts/samples/ctguestb\.idc
+/scripts/samples/details\.idc
+/scripts/proxy/w3proxy\.dll
+\.htr
+/sensepost\.exe
+/_vti_inf\.html
+/iisadmpwd/achg\.htr
+/msadc/samples/adctest\.asp
+/iisadmin
+/scripts/iisadmin/default\.htm
+/scripts/iisadmin/ism\.dll\?http/dir
+/iisadmpwd/anot
+\.asp\.
+\|23\|filename=\*\.asp
+/scripts/iisadmin/bdir\.htr
+/bdir\.htr
+/carbo\.dll
+icatcommand=
+cmd\.exe
+\.cmd\?&
+/iissamples/exair/howitworks/codebrws\.asp
+/iissamples/sdk/asp/docs/codebrws\.asp
+/Form_JScript\.asp
+&del\+/s\+c\|3A 5C\|\*\.\*
+/ServerVariables_Jscript\.asp
+%1u
+\|23\|filename=\*\.exe
+/fpcount\.exe
+Digits=
+/fpcount\.exe
+/scripts/tools/getdrvs\.exe
+/global\.asa
+\|23\|filename=\*\.idc
+/iisadmpwd/aexp
+CiWebHitsFile=
+CiRestriction=none
+ciHiliteType=Full
+\.idc\|3A 3A 24\|data
+ \.htr
+/advworks/equipment/catalog_type\.asp
+/msadcs\.dll
+/scripts/tools/newdsn\.exe
+/scripts/perl
+\|0A\|\.pl
+ \.pl
+/issamples/query\.asp
+/scripts/ 
+/search97\.vts
+/SiteServer/Publishing/viewcode\.asp
+/Sites/Knowledge/Membership/Inspired/ViewCode\.asp
+/Sites/Knowledge/Membership/Inspiredtutorial/ViewCode\.asp
+/Sites/Samples/Knowledge/Membership/Inspiredtutorial/ViewCode\.asp
+/Sites/Samples/Knowledge/Push/ViewCode\.asp
+/Sites/Samples/Knowledge/Search/ViewCode\.asp
+/showcode\.asp
+/adsamples/config/site\.csc
+/samples/isapi/srch\.htm
+/srchadm
+/scripts/uploadn\.asp
+Translate\|3A\| F
+/viewcode\.asp
+\.htw
+403
+Forbidden\|3A\|
+/site/iisamples
+REVLOG / 
+INDEX 
+GETPROPERTIES
+/technote/main\.cgi
+filename=
+\.\./\.\./
+/technote/print\.cgi
+board=
+\.\./\.\./
+%00
+/ads\.cgi
+file=
+\.\./\.\./
+\|7C\|
+\.jsp
+%252ejsp
+ftp\.exe
+xp_enumdsn
+xp_filelist
+xp_availablemedia
+xp_cmdshell
+nc\.exe
+wsh\.exe
+rcmd\.exe
+telnet\.exe
+net\.exe
+tftp\.exe
+xp_regread
+SEARCH 
+\.htpasswd
+\.nsf/
+\.\./
+/scripts/samples/search/webhits\.exe
+/scripts/postinfo\.asp
+/scripts/repost\.asp
+/samples/search/queryhit\.htm
+/counter\.exe
+propfind
+/servlet/com\.unify\.servletexec\.UploadServlet
+/dsgw/bin/search\?context=
+ref%3Cscript%20language%3D%22Javascript
+/servlet/ServletExec
+servlet/\.\.\.\.\.\.\.
+\|BA\|I\|FE FF FF F7 D2 B9 BF FF FF FF F7 D1\|
+\?STRENGUR
+/web_store\.cgi
+page=\.\./
+/shop\.cgi
+page=\.\./
+/authenticate\.cgi\?PASSWORD
+config\.ini
+\?\?\?\?\?\?\?\?\?\?
+/search\.cgi\?
+keys
+catigory=\.\./
+/cached_feed\.cgi
+\.\./
+/webplus\.exe\?
+script=test\.wml
+/webplus\.exe\?
+about
+/webplus\.cgi\?
+Script=/webplus/webping/webping\.wml
+_private/shopping_cart\.mdb
+/cybercop
+User-Agent\|3A\| Java1\.2\.1\|0D 0A\|
+User-Agent\|3A\| Webtrends Security Analyzer\|0D 0A\|
+/nessus_is_probing_you_
+/admin-serv/config/admpw
+/bb-hostsvc\.sh\?
+HOSTSVC
+/pollit/Poll_It_SSI_v2\.0\.cgi
+/ftp\.pl
+/jsp/snp/
+\.snp
+/%00
+/site/eg/source\.asp
+/contextAdmin/contextAdmin\.html
+\.html/\.\.\.\.\.\.
+\?DeleteDocument
+\?EditDocument
+ls%20-l
+/mlog\.phtml
+/mylog\.phtml
+/etc/passwd
+\?PageServices
+/config/check\.txt
+/webcart/
+_AuthChangeUrl\?
+/scripts/convert\.bas
+/scripts/cpshost\.dll
+\.htaccess
+\.wwwacl
+\.www_acl
+\|EB\|_\|9A FF FF FF FF 07 FF C3\|\^1\|C0 89\|F\|9D\|
+AAAAAAAAAAAAAAAA
+/admin\.php3
+cd\.\.
+PHP_AUTH_USER=boogieman
+HEAD/\./
+/guestbook\.pl
+/handler
+/\.\.\.\.
+/~root
+/config/import\.txt
+cat 
+/orders/import\.txt
+/count\.cgi
+/catalog\.nsf
+/domcfg\.nsf
+/domlog\.nsf
+/log\.nsf
+/names\.nsf
+/orders/checks\.txt
+////////
+////////
+/PSUser/PSCOErrPage\.htm
+/windmail\.exe
+/webplus\?script
+\?wp-
+/passwd\.php3
+/c32web\.exe/ChangeAdminPassword
+/webdist\.cgi
+/quikstore\.cfg
+/GWWEB\.EXE
+/ws_ftp\.ini
+/rpm_query
+/mall_log_files/order\.log
+/bigconf\.cgi
+/ews/architext_query\.pl
+/cgi-bin/jj
+/wwwboard\.pl
+\?wp-verify-link
+/read\.php3
+/violation\.php3
+/get32\.exe
+/ping\?query=
+\?wp-cs-dump
+\?wp-ver-info
+/bizdb1-search\.cgi
+mail
+\?wp-ver-diff
+/slxweb\.dll/admin\?command=
+\?wp-start-ver
+\?wp-stop-ver
+\?wp-uncheckout
+\?wp-html-rend
+/officescan/cgi/jdkRqNotify\.exe
+/ows-bin/
+\?&
+/sojourn\.cgi\?
+cat=
+%00
+/sojourn\.cgi
+/infosrch\.cgi\?
+fname=
+/code\.php3
+\?wp-usr-prop
+\.\./
+Invalid URL
+403
+/search\.vts
+/ax-admin\.cgi
+/axs\.cgi
+/cachemgr\.cgi
+/htgrep
+/responder\.cgi
+/\.nsconfig
+/web-map\.cgi
+/admin_files
+/backup
+/intranet/
+/ministats/admin\.cgi
+/filemail
+/plusmail
+/adminlogin
+/dfire\.cgi
+/ultraboard
+/empower\?DB
+/pals-cgi
+documentName=
+/ROADS/cgi-bin/search\.pl
+form=
+MIT-MAGIC-COOKIE-1
+l\|00 0B 00 00 00 00 00 00 00 00 00\|
+CWD
+\.\.\.
+/FtpSave\.dll
+/catinfo
+/catinfo
+/FtpSaveCSP\.dll
+/FtpSaveCVP\.dll
+BEAVIS
+yep yep
+\|01\|1\|DB CD 80 E8\|\[\|FF FF FF\|
+/SWEditServlet
+template=\.\./\.\./\.\./
+\.ida
+\.ida\?
+\.idq\?
+\.idq
+/fp30reg\.dll
+/fp4areg\.dll
+/level/
+\|0D 0A\|\[Yes\]\|0D 0A FF FE 08 FF FD\|&
+\|FF F6 FF F6 FF FB 08 FF F6\|
+_PHPLIB\[libdir\]
+/db_mysql\.inc
+/root\.exe
+/SWEditServlet
+\|7F FF FB\|x\|7F FF FB\|x\|7F FF FB\|x\|7F FF FB\|x
+@\|8A FF C8\|@\|82 FF D8 3B\|6\|FE 03 3B\|v\|FE 02\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 F7\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 87 03\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 BA\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 E4\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 87 CC\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 02\|I\|F1\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 B1\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 A1\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 A2\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 87 88\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 AF\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 F3\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 A9\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 A4\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 86 BC\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 03\|
+\|00 01 87 99\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 04\|
+\|00 00 00 00\|
+\|00 01 86 A0\|
+\|00 00 00 04\|
+\|00 00 00 00\|
+/exchange/LogonFrm\.asp\?
+mailbox=
+%%%
+/readme\.eml
+/msdac/
+/_mem_bin/
+/_vti_bin/
+\|00 01\|
+admin\.dll
+window\.open\|28 22\|readme\.eml\|22\|
+/graphics/sml3com
+Volume Serial Number
+R\|00\|I\|00\|C\|00\|H\|00\|E\|00\|D\|00\|2\|00\|0\|00\|\.\|00\|D\|00\|L\|00\|L
+/admin\.php
+file_name=
+/admin\.php
+/cgi-bin/console\.exe
+/cgi-bin/cs\.exe
+/txt2html\.cgi
+/txt2html\.cgi
+/\.\./\.\./\.\./\.\./
+/store\.cgi
+/sendmessage\.cgi
+/zsh
+-soa %p
+/bin/sh
+\|00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\|
+\|90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90\|
+\|00 01\|W\|00 00 00 18\|
+\|FF FF FF FF 00 00\|
+\.htgroup
+GET x HTTP/1\.0
+/\?\.jsp
+~
+\[
+~
+\{
+STAT
+/Form_VBScript\.asp
+/officescan/cgi/jdkRqNotify\.exe\?
+domain=
+event=
+PRIVMSG
+nickserv
+IDENTIFY
+NOTIFY \* 
+LOCATION\|3A\|
+/admin_/
+r\|00\|a\|00\|i\|00\|s\|00\|e\|00\|r\|00\|r\|00\|o\|00\|r\|00\|
+r\|00\|a\|00\|i\|00\|s\|00\|e\|00\|r\|00\|r\|00\|o\|00\|r\|00\|
+Location
+CCCCCCCCCCCCCCCCCCCCCCCC
+/lastlines\.cgi
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+/zml\.cgi
+file=\.\./
+/zml\.cgi
+/way-board/way-board\.cgi
+db=
+\.\./\.\.
+1
+/index\.php
+file=
+/scripts/samples/
+/msadc/samples/
+/iissamples/
+/publisher/search\.cgi
+template=
+/store/agora\.cgi
+/smssend\.php
+\|02 01 00 04 82 01 00\|
+/dcboard\.cgi
+\|06\|public
+public
+private
+private
+ \|04 82 01 00\|
+Content-Disposition\|3A\|
+name=\|22 CC CC CC CC CC\|
