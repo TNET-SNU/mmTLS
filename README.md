@@ -72,3 +72,50 @@ In this repository, we provide how to make mmTLS-ported versions of chromium bro
 
 (...)
 
+
+
+# OpenSSL with mmTLS
+You can also check the microbenchmark result for private tag generation. Run below to reproduce the result.
+```
+cd openssl-modified/tag-gen
+make -j
+./tag
+```
+
+It will print the relative overhead of 1. original TLS, 2. mmTLS, 3. Reusing ciphertext, 4. Double tags.
+
+If you want to check the performance of nginx server with mmTLS, you should build openssl with MMTLS macro in openssl-modified/include/openssl/macros.h like below.
+```
+#define MMTLS 1
+```
+We already have set the macro as 1, and built the OpenSSL and nginx. If you are working on our remote machine, you do not need to rebuild both.
+If you are working on your own machine, you need to re-build the nginx.
+```
+cd nginx-modified
+./configure --prefix=. --with-openssl=../openssl-modified --with-http_ssl_module --with-http_v2_module
+make -j
+cp objs/nginx nginx
+sudo ./nginx -c /etc/nginx/nginx.conf
+```
+If you are running nginx on your own machine, use your own nginx.conf file instead.
+
+
+# DPI applications
+For testing DPI application on mmTLS, run my_ips with -p option. Also, you can set how many bytes to DPI by -l option. -l option is in unit of KB, so if you want to do DPI the first 64KB, use -l 64.
+```
+./my_ips -c 16 -p -l 64
+```
+
+For testing DPI application on split-TLS, modify the HYPERSCAN macro to positive value. It is in nginx-modified/src/core/ngx_config.h.
+```
+#define HYPERSCAN 64
+```
+After modifying HYPERSCAN macro, re-build the nginx. The nginx will do DPI the first 64KB of HTTP response.
+You can adjust the length for DPI by modifying HYPERSCAN macro.
+
+For your convenience, we have already built 4 nginx binaries. They are for 16K DPI, 32K DPI, 64K DPI, 128K DPI, respectively.
+If you want to test them, run below after re-building.
+```
+./sudo nginx-dpi-16k -c /etc/nginx/nginx.conf
+```
+You can run nginx-dpi-32k, nginx-dpi-64k, nginx-dpi-128k as well.
