@@ -116,6 +116,11 @@ You can adjust the length for DPI by modifying HYPERSCAN macro.
 For your convenience, we have already built 4 nginx binaries. They are for 16K DPI, 32K DPI, 64K DPI, 128K DPI, respectively.
 If you want to test them, run below after re-building.
 ```
+make -j
+cp objs/nginx nginx-dpi-16k
 ./sudo nginx-dpi-16k -c /etc/nginx/nginx.conf
 ```
-You can run nginx-dpi-32k, nginx-dpi-64k, nginx-dpi-128k as well.
+You can run nginx-dpi-32k, nginx-dpi-64k, nginx-dpi-128k as well. Before running new nginx, stop or kill the existing nginx daemon to make new nginx daemon able to bind ports.
+```
+sudo killall nginx*
+```
