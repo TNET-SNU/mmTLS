@@ -92,7 +92,7 @@ We already have set the macro as 1, and built the OpenSSL and nginx. If you are 
 If you are working on your own machine, you need to re-build the nginx.
 ```
 cd nginx-modified
-./configure --prefix=. --with-openssl=../openssl-modified --with-http_ssl_module --with-http_v2_module
+./configure --prefix=. --with-openssl=../openssl-modified --with-http_ssl_module
 make -j
 cp objs/nginx nginx
 sudo ./nginx -c /etc/nginx/nginx.conf
