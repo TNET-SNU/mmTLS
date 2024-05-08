@@ -87,12 +87,14 @@
 /*
  * Configurable number of RX/TX ring descriptors
  */
-#define RTE_TEST_RX_DESC_DEFAULT	/* 8192 */ /* 4096 */ 2048 /* 1024 */ /* 512 */ /* 256 */
-#define RTE_TEST_TX_DESC_DEFAULT	/* 8192 */ /* 4096 */ /* 2048 */ /* 1024 */ /* 512 */ 256
+#define RTE_TEST_RX_DATA_DESC_DEFAULT	/* 8192 */ /* 4096 */ 2048 /* 1024 */ /* 512 */ /* 256 */
+#define RTE_TEST_RX_KEY_DESC_DEFAULT	/* 8192 */ 4096 /* 2048 */ /* 1024 */ /* 512 */ /* 256 */
+#define RTE_TEST_TX_DESC_DEFAULT	/* 8192 */ /* 4096 */ /* 2048 */ 1024 /* 512 */ /* 256 */
 
-static uint16_t nb_rxd_data = RTE_TEST_RX_DESC_DEFAULT;
+static uint16_t nb_rxd_data = RTE_TEST_RX_DATA_DESC_DEFAULT;
 #if KEY_MAPPING
-static uint16_t nb_rxd_key = RTE_TEST_RX_DESC_DEFAULT;
+/* In order to avoid key packet drop, use larger RX queue size */
+static uint16_t nb_rxd_key = RTE_TEST_RX_KEY_DESC_DEFAULT;
 #endif
 static uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT;
 /*----------------------------------------------------------------------------*/

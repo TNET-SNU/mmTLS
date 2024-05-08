@@ -1,4 +1,5 @@
-TARGET = my_ips
+MY_IPS = my_ips
+MY_CIPHERSTAT = my_cipherstat
 
 ######################################################################
 # GCC and compilation options
@@ -34,18 +35,23 @@ INC += ${DPDK_CFLAGS}
 LIBS += -pthread -lrt ${MTCP_FLD}/lib/libmtcp.a -lnuma -lmtcp -lpthread -libverbs -lm -lrt -ldl -lgmp ${DPDK_LDFLAGS}
 ######################################################################
 
-default: $(TARGET)
-SRCS-y := mmtls.c $(TARGET).c dpi.c
+default: $(MY_IPS) $(MY_CIPHERSTAT)
+MY_IPS_SRCS := mmtls.c $(MY_IPS).c dpi.c
+MY_CIPHERSTAT_SRCS := mmtls.c $(MY_CIPHERSTAT).c
 
 $(MTCP_TARGET):
-	cd $(MTCP_FLD)/src && make	
+	cd $(MTCP_FLD)/src && make
 
-$(TARGET): $(MTCP_TARGET) $(TARGET).c
+$(MY_IPS): $(MTCP_TARGET) $(MY_IPS).c
 	$(MSG) "   CC $<"
-	$(HIDE) $(GCC) $(GCC_OPT) -o $@ $(SRCS-y) $(MTCP_INC) $(CMN_INC) $(UTIL_INC) $(INC) $(LIB_DIR) $(LIBS)
+	$(HIDE) $(GCC) $(GCC_OPT) -o $@ $(MY_IPS_SRCS) $(MTCP_INC) $(CMN_INC) $(UTIL_INC) $(INC) $(LIB_DIR) $(LIBS)
+
+$(MY_CIPHERSTAT): $(MTCP_TARGET) $(MY_CIPHERSTAT).c
+	$(MSG) "   CC $<"
+	$(HIDE) $(GCC) $(GCC_OPT) -o $@ $(MY_CIPHERSTAT_SRCS) $(MTCP_INC) $(CMN_INC) $(UTIL_INC) $(INC) $(LIB_DIR) $(LIBS)
 
 clean:
-	rm -rf *~ *.o $(TARGET) logs/*
+	rm -rf *~ *.o $(MY_IPS) $(MY_CIPHERSTAT) logs/*
 
 cleanall: clean
 	rm -rf Makefile
