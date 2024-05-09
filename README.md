@@ -65,13 +65,51 @@ make -j
 ```
 
 
-# Clients
+# h2load and ab
 Since mmTLS requires clients to share the E2E session keys, client programs should be recompiled to be linked with our key sharing library.
 In this repository, we provide how to make mmTLS-ported versions of chromium browser, h2load load tester in nghttp2, and ab load tester in Apache httpd.
 
+Before building nghttp2, run below on nghttp2 directory to make a library for key sharing.
+```
+gcc -c keysend.o keysend.c
+ar rcs libkeysend.a keysend.o
+```
+It will make a libkeysend.a library on nghttp2 directory. Now run below to link h2load with the keysend library.
+```
+cd nghttp2
+export KEYSEND_DIR=`pwd`
+./configure LDFLAGS=$KEYSEND_DIR/libkeysend.a
+make -j
+```
+Now you have h2load on nghttp2/src directory. After building h2load, build ab on httpd-2.4.54 directory.
+To build httpd, make sure APR and PCRE are installed on your system. If not, run below.
+
+```
+sudo apt install libapr1-dev libaprutil1-dev libpcre3 libpcre3-dev
+```
+Now you can build httpd including ab.
+```
+cd httpd-2.4.54
+./configure LDFLAGS=$KEYSEND_DIR/libkeysend.a
+make -j
+```
+Now you have ab on httpd-2.4.54/support directory.
+
+To start ephemeral connections test, run below on home.
+```
+./short_conn_test.sh 10.11.90.3 1k 1024 -j
+```
+-j option enables key sharing in ab.
+
+To start persistent connections test, run below on home.
+```
+nghttp2/src/h2load -c1024 -n10240000 -t16 https://10.11.90.3/1m/test0 --key-send
+```
+--key-send option enables key sharing in h2load.
+
+# Chromium
 
 (...)
-
 
 
 # OpenSSL with mmTLS
@@ -116,6 +154,11 @@ You can adjust the length for DPI by modifying HYPERSCAN macro.
 For your convenience, we have already built 4 nginx binaries. They are for 16K DPI, 32K DPI, 64K DPI, 128K DPI, respectively.
 If you want to test them, run below after re-building.
 ```
+make -j
+cp objs/nginx nginx-dpi-16k
 ./sudo nginx-dpi-16k -c /etc/nginx/nginx.conf
 ```
-You can run nginx-dpi-32k, nginx-dpi-64k, nginx-dpi-128k as well.
+You can run nginx-dpi-32k, nginx-dpi-64k, nginx-dpi-128k as well. Before running new nginx, stop or kill the existing nginx daemon to make new nginx daemon able to bind ports.
+```
+sudo killall nginx*
+```
