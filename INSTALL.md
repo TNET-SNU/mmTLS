@@ -1,10 +1,6 @@
 # mmTLS
 mmTLS is a highly scalable TLS middlebox for monitoring encrypted traffic.
 
-Because Bluefield-2 SmartNIC is required for reproducing, we highly recommend you to run test scripts in our remote machines.
-If you want to build and run on your own, please refer to INSTALL.md.
-This page assumes that you have an access to our machines and can log in our machine via ssh.
-
 # Middlebox
 For the TLS middlebox, we use DPDK 22.11, which use pkg-config. For building DPDK, please refer DPDK website and install.
 After installing DPDK, the underlying library, mOS should be compiled. Run below.
@@ -14,7 +10,7 @@ cd mmTLS/proxies/mOS
 ./setup.sh --compile-dpdk
 ```
 
-(Since we add more features to mOS for mmTLS, you should use our new mOS, not original mOS.)
+Since we add more features to mOS for mmTLS, you should use our new mOS, not original mOS.
 
 After building mOS, mmTLS apps can be compiled on mOS. We provide two sample apps; my_ips, my_cipherstat
 my_ips is a simple IPS that read all the decrypted traffic and can do pattern-matching using snort-ruleset using hyperscan.
@@ -35,12 +31,11 @@ make -j
 
 Now check that you have my_ips and my_cipherstat on the same directory.
 
-Before run my_ips, make sure you set enough hugepage. (We have already set enough amount of hugepage for our remote machine. So if you evaluate on our machine, do not care about it.)
+Before run my_ips, make sure you set enough hugepage.
 Run below as sudo user.
 ```
 echo 128 > /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages
 ```
-
 We use 1GB hugepage here, but you may use 2MB hugepage. If so, adjust the number of hugepages much larger.
 
 Now adjust the configuration file of mmTLS, mmTLS/proxies/mOS/mmTLS/config/mos.conf.
@@ -48,50 +43,93 @@ If you want to use less than 16 cores, modify the CPU masks of each interface. (
 
 Run my_ips for microbenchmarks. -c option means the number of worker cores.
 ```
-./my_ips -c 16
+sudo ./my_ips -c 16
 ```
 
 # Key server
 After running my_ips on mmTLS, you should run key server which receives session keys via out-of-band TLS channel from clients and distributes them to worker cores.
-We provide two options for key server, first is using SoC SmartNIC. We use Bluefield-2 for the SmartNIC.
+We provide two options for key server. First one is using SoC SmartNIC, and another one is using dedicated host core.
+In this document, we introduce the first option.
 
-Log in to the Ubuntu server on Bluefield SoC by below command.
-(If you are running on your own machine with bluefield, make sure that you have installed rshim.)
+We use Bluefield-2 for the SmartNIC. Make sure that you have installed rshim and can ssh to the Ubuntu server on Bluefield SoC.
+Copy the key_server directory to the SmartNIC and ssh to it.
 ```
-ssh junghan@192.168.100.2
+scp -r key_server [yourID on SoC]@192.168.100.2:~/
+ssh [yourID on SoC]@192.168.100.2
 ```
-
-Then, you can see a directory, bf2_key_server on home. Just run below to run the key server on BF2.
+Then, go to the copied directory and build.
 ```
-cd bf2_key_server
+cd key_server
 make -j
-./key-server -c 8 -i p1
 ```
-
+Run the server. -c option specifies the number of cores used, and -i option specifies via which interface the key-server will send crafted UDP key packets.
+Check your interface using ip link or ifconfig.
+```
+sudo ./key-server -c [num of cores used] -i [one of interface]
+```
 
 # Keysend library
 Since mmTLS requires clients to share the E2E session keys, client programs should be recompiled to be linked with our key sharing library.
+First copy the library to the client machine and do ssh.
+```
+cd mmTLS
+scp -r endpoints [yourID on client machine]@[client IP]:~/
+ssh [yourID on client machine]@[client IP]
+```
+
 Before building nghttp2, ab, and chromium, go to mmTLS/endpoints/keysend directory and make a library for key sharing.
 ```
-cd mmTLS/endpoints/keysend
+cd endpoints/keysend
 gcc -c keysend.o keysend.c
 ar rcs libkeysend.a keysend.o
 export KEYSEND_DIR=`pwd`
 ```
-It will make a libkeysend.a library on mmTLS/endpoints/keysend/.
+It will make a libkeysend.a library on endpoints/keysend/.
 Then, copy the keysend.h header to /usr/local/include/ in order to make h2load and ab able to use this header.
 ```
 sudo cp keysend.h /usr/local/include/
 ```
 
 # h2load
-Go to your nghttp2 directory and configure it to be linked with libkeysend.a. KEYSEND_DIR should be the path of libkeysend.a you compiled above.
+In this document, we only present a guide for h2load. We will add guides for other clients such as chromium later.
+Download the nghttp2 repository from github, and go to your nghttp2 directory.
 ```
 cd nghttp2
+```
+Add below to somewhere in nghttp2/src/h2load.cc.
+```
+#include <keysend.h>
+```
+Then, search SSL_CTX_set_keylog_callback, and modify that part. If you found lines like below,
+```C
+auto keylog_filename = getenv("SSLKEYLOGFILE");
+if (keylog_filename) {
+  keylog_file.open(keylog_filename, std::ios_base::app);
+  if (keylog_file) {
+    SSL_CTX_set_keylog_callback(ssl_ctx, keylog_callback);
+  }
+}
+```
+modify them as below.
+```C
+if (init_key_channel(ssl_ctx, config.nthreads) < 0)
+  exit(EXIT_FAILURE);
+SSL_CTX_set_keylog_callback(ssl_ctx, keysend_callback);
+```
+
+Search SSL_CTX_free, and add one more line before it.
+```C
+destroy_key_channel(ssl_ctx); // added line
+SSL_CTX_free(ssl_cxt);
+```
+
+Now build mmTLS-ported h2load.
+First, configure it to be linked with libkeysend.a. KEYSEND_DIR should be the path of libkeysend.a you compiled above.
+```
 ./configure LDFLAGS=$KEYSEND_DIR/libkeysend.a
 make -j
 ```
-Now you have h2load on nghttp2/src directory.
+You will have h2load on nghttp2/src directory.
 
 # ab
 To build httpd, make sure APR and PCRE are installed on your system. If not, run below.
