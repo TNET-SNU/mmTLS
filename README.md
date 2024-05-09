@@ -1,6 +1,9 @@
 # mmTLS
 mmTLS is a highly scalable TLS middlebox for monitoring encrypted traffic.
 
+Because Bluefield-2 SmartNIC is required for reproducing, we recommend you to run test scripts in our remote machines.
+This page assumes that you have an access to our machines and can log in our machine via ssh.
+
 # Middlebox
 For the TLS middlebox, we use DPDK 22.11, which use pkg-config. For building DPDK, please refer DPDK website and install.
 After installing DPDK, the underlying library, mOS should be compiled. Run below.
