@@ -82,10 +82,10 @@ export KEYSEND_DIR=`pwd`
 make -j
 ```
 Now you have h2load on nghttp2/src directory. After building h2load, build ab on httpd-2.4.54 directory.
-To build httpd, make sure APR is installed on your system. If not, run below.
+To build httpd, make sure APR and PCRE are installed on your system. If not, run below.
 
 ```
-sudo apt-get install libapr1-dev libaprutil1-dev
+sudo apt install libapr1-dev libaprutil1-dev libpcre3 libpcre3-dev
 ```
 Now you can build httpd including ab.
 ```
