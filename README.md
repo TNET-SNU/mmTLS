@@ -1,7 +1,8 @@
 # mmTLS
 mmTLS is a highly scalable TLS middlebox for monitoring encrypted traffic.
 
-Because Bluefield-2 SmartNIC is required for reproducing, we recommend you to run test scripts in our remote machines.
+Because Bluefield-2 SmartNIC is required for reproducing, we highly recommend you to run test scripts in our remote machines.
+If you want to build and run on your own, please refer to INSTALL.md.
 This page assumes that you have an access to our machines and can log in our machine via ssh.
 
 # Middlebox
