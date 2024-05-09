@@ -80,7 +80,7 @@
 #define TX_HTHRESH			0  /**< Default values of TX host threshold reg. */
 #define TX_WTHRESH			0  /**< Default values of TX write-back threshold reg. */
 
-#define MAX_PKT_BURST		16
+#define MAX_PKT_BURST		64
 #define MAX_PKT_BURST_KEY	64
 #define MAX_PKT_BURST_RAW	64
 
@@ -416,13 +416,11 @@ uint8_t *
 dpdk_get_wptr(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize)
 {
 	struct dpdk_private_context *dpc;
-	mtcp_manager_t mtcp;
 	struct rte_mbuf *m;
 	uint8_t *ptr;
 	int send_cnt;
 
 	dpc = (struct dpdk_private_context *) ctxt->io_private_context;
-	mtcp = ctxt->mtcp_manager;
 	
 	/* sanity check */
 	if (unlikely(dpc->wmbufs_raw[nif].wlen == MAX_PKT_BURST_RAW)) {
@@ -452,7 +450,7 @@ dpdk_get_wptr(struct mtcp_thread_context *ctxt, int nif, uint16_t pktsize)
 	}
 
 #ifdef NETSTAT
-	mtcp->nstat.tx_bytes[nif] += pktsize + ETHER_OVR;
+	ctxt->mtcp_manager->nstat.tx_bytes[nif] += pktsize + ETHER_OVR;
 #endif
 	
 	/* increment the len of mbuf */
@@ -466,12 +464,10 @@ dpdk_set_wptr(struct mtcp_thread_context *ctxt, int out_nif,
 				  int in_nif, int index)
 {
 	struct dpdk_private_context *dpc;
-	mtcp_manager_t mtcp;
 	struct rte_mbuf *m;
 	uint8_t *ptr;
 
 	dpc = (struct dpdk_private_context *) ctxt->io_private_context;
-	mtcp = ctxt->mtcp_manager;
 	
 	/* sanity check */
 	if (unlikely(dpc->wmbufs[out_nif].wlen == MAX_PKT_BURST))
@@ -494,7 +490,7 @@ dpdk_set_wptr(struct mtcp_thread_context *ctxt, int out_nif,
 		m->ol_flags |= RTE_MBUF_F_TX_TCP_SEG;
 	}
 #ifdef NETSTAT
-	mtcp->nstat.tx_bytes[out_nif] += m->pkt_len + ETHER_OVR;
+	ctxt->mtcp_manager->nstat.tx_bytes[out_nif] += m->pkt_len + ETHER_OVR;
 #endif
 	
 	/* increment the len of mbuf */

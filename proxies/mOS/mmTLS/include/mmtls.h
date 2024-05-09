@@ -8,7 +8,7 @@
 #include <mos_api.h>
 #include <time.h>
 #include <errno.h>
-#include "../../core/src/include/memory_mgt.h"
+#include <rte_mempool.h>
 
 #define ZERO_COPY
 
@@ -19,6 +19,7 @@
 #define MAX_RECORD_LEN 16448
 #define MAX_BUF_LEN 16512 /* align64(16K + TLS_HEADER_LEN) */
 #define MAX_RAW_PKT_NUM 10
+#define MAX_POOL_NAME_LEN 20
 #define MAX_FILE_NAME_LEN 64
 
 #define TLS_HANDSHAKE_HEADER_LEN 4
@@ -116,11 +117,11 @@ struct mmtls_manager
 	EVP_CIPHER_CTX *evp_ctx;
 	/* move callback to each session one day */
 	mmtls_cb cb[NUM_MMTLS_CALLBACK];
-	mem_pool_t ci_pool;
-	mem_pool_t rawpkt_pool;
+	struct rte_mempool *ci_pool;
+	struct rte_mempool *rawpkt_pool;
 #ifndef ZERO_COPY
-	mem_pool_t cli_buffer_pool;
-	mem_pool_t svr_buffer_pool;
+	struct rte_mempool *cli_buffer_pool;
+	struct rte_mempool *svr_buffer_pool;
 #endif
 };
 

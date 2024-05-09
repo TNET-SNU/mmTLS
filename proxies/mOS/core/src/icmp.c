@@ -78,13 +78,13 @@ ICMPOutput(struct mtcp_manager *mtcp, struct pkt_ctx *pctx, uint32_t saddr, uint
     /* Get next hop MAC address */
     haddr = GetDestinationHWaddr(daddr);
     if (!haddr) {
-        uint8_t *da = (uint8_t *)&daddr;
+        uint8_t *da = (uint8_t *)&daddr; (void)da;
         TRACE_INFO("[WARNING] The destination IP %u.%u.%u.%u "
                    "is not in ARP table!\n",
                    da[0], da[1], da[2], da[3]);
-	/* ARP requests will not be created if it's a standalone middlebox */
-	if (!pctx->forward)        
-		RequestARP(mtcp, daddr, nif, mtcp->cur_ts);
+        /* ARP requests will not be created if it's a standalone middlebox */
+        if (!pctx->forward)        
+            RequestARP(mtcp, daddr, nif, mtcp->cur_ts);
         haddr = GetDestinationHWaddr(daddr);
     }
    

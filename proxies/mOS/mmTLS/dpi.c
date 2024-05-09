@@ -1,13 +1,13 @@
 #include "include/dpi.h"
 
-hs_database_t *g_database;
-hs_scratch_t *g_scratch[MAX_CPUS] = {NULL,};
-unsigned int *g_flags;
-char **g_patterns = NULL;
-int g_numPatterns;
+static hs_database_t *g_database;
+static hs_scratch_t **g_scratch = {NULL};
+static unsigned int *g_flags;
+static char **g_patterns = NULL;
+static int g_numPatterns;
+static int g_num_cores;
 static int g_dpi_mode;
-mem_pool_t g_dctx_pool[MAX_CPUS] = {NULL};
-
+static mem_pool_t *g_dctx_pool = {NULL};
 /*---------------------------------------------------------------------------*/
 static inline mem_pool * 
 MPCreate(int chunk_size, size_t total_size, int is_hugepage)
@@ -255,9 +255,10 @@ int init_DPI(const char *filename, int num_cores, int mode)
         hs_free_compile_error(err);
         return -1;
     }
-
+    g_num_cores = num_cores;
     g_dpi_mode = mode;
-    printf("DPI mode: %s\n", (mode == HS_MODE_BLOCK)?"BLOCK":"STREAM");
+    g_dctx_pool = (mem_pool_t *)calloc(num_cores, sizeof(mem_pool_t));
+    g_scratch = (hs_scratch_t **)calloc(num_cores, sizeof(hs_scratch_t *));
 
     for (i = 0; i < num_cores; i++) {
         g_dctx_pool[i] = MPCreate(sizeof(struct dpi_ctx),
@@ -290,11 +291,13 @@ void deinit_DPI()
     }
 
     /* free scratches */
-    for (i = 0; i < MAX_CPUS; i++) {
+    for (i = 0; i < g_num_cores; i++) {
         if (g_scratch[i])
             hs_free_scratch(g_scratch[i]);
 		MPDestroy(g_dctx_pool[i]);
     }
+    free(g_dctx_pool);
+    free(g_scratch);
     free(g_patterns);
     free(g_flags);
 }
