@@ -17,7 +17,7 @@ my_ips is a simple IPS that read all the decrypted traffic and can do pattern-ma
 We first use it for microbenchmarks which does not require pattern matching. So the macro, HYPERSCAN is initially set as zero, but you can turn it on later.
 my_cipherstat is a simple app to collect TLS information of Alexa top 1K web sites. We will use it later.
 
-Before building mmTLS apps, make sure hyperscap library is installed.
+Before building mmTLS apps, make sure hyperscan library is installed.
 ```
 sudo apt install libhyperscan-dev
 ```
@@ -65,28 +65,36 @@ make -j
 ```
 
 
-# h2load and ab
+# Keysend library
 Since mmTLS requires clients to share the E2E session keys, client programs should be recompiled to be linked with our key sharing library.
-In this repository, we provide how to make mmTLS-ported versions of chromium browser, h2load load tester in nghttp2, and ab load tester in Apache httpd.
-
-Before building nghttp2, run below on nghttp2 directory to make a library for key sharing.
+Before building nghttp2, ab, and chromium, go to mmTLS/endpoints/keysend directory and make a library for key sharing.
 ```
+cd mmTLS/endpoints/keysend
 gcc -c keysend.o keysend.c
 ar rcs libkeysend.a keysend.o
+export KEYSEND_DIR=`pwd`
 ```
-It will make a libkeysend.a library on nghttp2 directory. Now run below to link h2load with the keysend library.
+It will make a libkeysend.a library on mmTLS/endpoints/keysend/.
+Then, copy the keysend.h header to /usr/local/include/ in order to make h2load and ab able to use this header.
+```
+sudo cp keysend.h /usr/local/include/
+```
+
+# h2load
+Go to your nghttp2 directory and configure it to be linked with libkeysend.a. KEYSEND_DIR should be the path of libkeysend.a you compiled above.
 ```
 cd nghttp2
-export KEYSEND_DIR=`pwd`
 ./configure LDFLAGS=$KEYSEND_DIR/libkeysend.a
 make -j
 ```
-Now you have h2load on nghttp2/src directory. After building h2load, build ab on httpd-2.4.54 directory.
-To build httpd, make sure APR and PCRE are installed on your system. If not, run below.
+Now you have h2load on nghttp2/src directory.
 
+# ab
+To build httpd, make sure APR and PCRE are installed on your system. If not, run below.
 ```
 sudo apt install libapr1-dev libaprutil1-dev libpcre3 libpcre3-dev
 ```
+Then, go to httpd-2.4.54 directory and configure it to be linked with libkeysend.a. KEYSEND_DIR should be the path of libkeysend.a you compiled above.
 Now you can build httpd including ab.
 ```
 cd httpd-2.4.54
@@ -94,6 +102,22 @@ cd httpd-2.4.54
 make -j
 ```
 Now you have ab on httpd-2.4.54/support directory.
+
+# Chromium
+Building and linking chromium to keysend library is similar to the cases of h2load and ab.
+However, building chromium from scratch takes so long time.
+So, we have already prepared the binary of default chromium and mmTLS-ported chromium. Both have a browser extension which measures page load time.
+Go to mmTLS/endpoints/keysend directory and run each chromium.
+```
+cd mmTLS/endpoints
+./
+```
+
+# Test
+Before start testing, you should configure an address of the key server.
+```
+export KEYSERVERADDR=10.11.90.100
+```
 
 To start ephemeral connections test, run below on home.
 ```
@@ -106,10 +130,6 @@ To start persistent connections test, run below on home.
 nghttp2/src/h2load -c1024 -n10240000 -t16 https://10.11.90.3/1m/test0 --key-send
 ```
 --key-send option enables key sharing in h2load.
-
-# Chromium
-
-(...)
 
 
 # OpenSSL with mmTLS
