@@ -3,8 +3,15 @@ mmTLS is a highly scalable TLS middlebox for monitoring encrypted traffic.
 
 Because Bluefield-2 SmartNIC is required for reproducing, we highly recommend you to run test scripts in our remote machines.
 If you want to build and run on your own, please refer to INSTALL.md.
+
+Currently we have a simple testbed to test functionality of our work, used for ATC’24 artifact evaluation. Please let us know (cerotyki@gmail.com or HotCRP) if you want to access to them.
+Our testbed is consisted of 7 machines: 4 clients, 1 middlebox, and 2 backend servers. You can access to them via ssh. Please access to the access server first, and log in other 6 machines from the access server.
+
+Access server is box3.kaist.ac.kr, and it is used as one of a backend server. A figure below depicts the topology of our testbed.
+
+
+
 This page assumes that you have an access to our machine, box1.kaist.ac.kr via ssh.
-Go to kvpn.kaist.ac.kr, and follow the instruction. You can log in to Ivanti VPN using a temporary account, cerotyki.
 
 After applying kvpn, run below on your local machine to log in.
 ```Bash
@@ -98,10 +105,19 @@ cd ~/fig12
 ./all-in-one.sh
 ```
 It will take about 10 minutes.
+Note that this script modifies the default routing table entry to make the WAN traffic comes and goes via LAN (private network) interface instead of default WAN (public network) interface.
+(Unless, WAN traffic will not goes to the middlebox which is connected via LAN interface.)
+If you are accessing via ssh to WAN interface of the client (wood1), your ssh session will be lost.
+Please do ssh from the access point machine (box3), and run the script.
 
 Since the news site is updated every hour, the result will be differenct with our evaluation.
-Also, www.washingtonpost.com currently does not support http/1.1, so we could not reproduce the result of split-TLS. The result for it will be empty.
-In this figure, please check that mmTLS is similar to E2E-TLS, while split-TLS increases the response time for WAN connections.
+We recommend you to check the gap between mmTLS and split-TLS, rather than the absolute response time of mmTLS.
+
+Also, www.washingtonpost.com no longer supports http/1.1. It currently accepts only http/2.
+But, the nginx proxy (split-TLS) currently supports up to http/1.1 as backend upstream connection, so we could not fully reproduce the result of split-TLS.
+So, the result for split-TLS to washingtonpost will appear empty.
+If you think the absolute response time is necessary, please let us know. We will prepare other popular web sites to test split-TLS to WAN.
+
 
 # Figure 13a
 
