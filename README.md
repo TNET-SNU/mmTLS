@@ -248,7 +248,7 @@ nload ens7f0np0 # on box1.kaist.ac.kr
 nload will show the throughput in Gibps, so do not forget to multiplicate 1.024 * 1.024 * 1.024 on the printed throughput.
 
 
-# Figure 9
+# Figure 9 - mmTLS
 The method is similar to the evaluation for figure 8.
 
 You can run the middlebox on box1.kaist.ac.kr.
@@ -271,6 +271,7 @@ Then, ssh to the SoC SmartNIC to run the key-server.
 ```Bash
 ssh 192.168.100.2
 ```
+
 ``` Bash
 cd bf2_key_server
 sudo ./key-server -c 8 -i p1
@@ -281,7 +282,7 @@ The key-server will print the logs; total key.,
 Now, run ephemeral clients instead of persistent.
 
 ```Bash
-./run-mmtls-clients-ephemeral-gcm.sh
+./run-mmtls-clients-ephemeral-gcm.sh # on box1.kaist.ac.kr
 ```
 
 Since we fix the size of requested objects as 1KB for ephemeral connections, the script does not need any parameter.
@@ -292,6 +293,9 @@ It will print the total keys, keys per second, total connections, connections pe
 (In the context of key-server, connection means the secondary key channel, which is persistent.)
 The second log, keys per second shows the E2E connections established in one second.
 
+
+# Figure 9 - split-TLS (nginx TLS proxy)
+To 
 
 
 # Figure 10
@@ -341,7 +345,7 @@ If you think the absolute response time is necessary, please let us know.
 We will prepare other popular web sites to test split-TLS to WAN.
 
 
-# Figure 13a
+# Figure 13a - mmTLS
 
 Same as figure 8. Log in to the middlebox machine, and just run my_ips app with -c 1, 2, 4, 8, or 16.
 
@@ -364,7 +368,43 @@ Then, check the throughput log printed by my_ips.
 Unlike evaluation for figure 8, you should change the number of cores used in my_ips, with fixed size of objects requested by the clients.
 
 
-# Figure 13b
+# Figure 13a - split-TLS
+
+You can restart the nginx daemon with smaller number of cores as below.
+
+```Bash
+ssh box1.kaist.ac.kr
+```
+
+```Bash
+cd nginx-1.24.0
+sudo killall nginx*
+sudo ./nginx-dpi-0k -c /etc/nginx/1core.conf
+```
+
+The nginx configuration file, 1core.conf configures the nginx to use single core.
+You can also apply 2core.conf, 4core.conf, 8core.conf, and 16core.conf to change the number of cores used by nginx.
+
+Then, open a new session and execute the clients using the script, run-splittls-clients-persistent-gcm.sh which is used above.
+
+```Bash
+ssh box1.kaist.ac.kr
+```
+
+```Bash
+cd mmTLS/proxies/mOS/mmTLS
+./run-splittls-clients-persistent-gcm.sh 64k
+```
+
+Use nload to see the throughput on the middlebox machine.
+
+```Bash
+nload
+```
+
+
+# Figure 13b - E2E-TLS
+
 Since the throughput of mmTLS middlebox is already measured by evaluation for figure 8, it is enough to measure the throughput of an endpoint TLS server.
 Stop all the middlebox programs on the middlebox machine (box1.kaist.ac.kr), and run the clients.
 
