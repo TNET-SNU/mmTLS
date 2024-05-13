@@ -1,6 +1,5 @@
 # mmTLS
 mmTLS is a highly scalable TLS middlebox for monitoring encrypted traffic.
-https://github.com/TNET-SNU/mmTLS/files/15292786/mmtls-timeline2.pdf
 
 <img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/08e02f36-be13-443a-b923-3278b487c80f" />
 
