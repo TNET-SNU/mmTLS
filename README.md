@@ -16,7 +16,7 @@ Because Bluefield-2 SmartNIC is required for reproducing, we highly recommend yo
 If you want to build and run on your own, please refer to INSTALL.md.
 
 Currently we have a simple testbed to test functionality of our work, used for ATC’24 artifact evaluation. Please let us know (cerotyki@gmail.com or HotCRP) if you want to access to them.
-Our testbed is consisted of 7 machines: 4 clients, 1 middlebox, and 2 backend servers. You can access to them via ssh. Please access to the access server first, and log in other 6 machines from the access server.
+Our testbed consists of 7 machines: 4 clients, 1 middlebox, and 2 backend servers. You can access to them via ssh. Please access to the access server first, and log in other 6 machines from the access server.
 
 Access server is box3.kaist.ac.kr, and it is used as one of a backend server. A figure below depicts the topology of our testbed.
 
@@ -190,8 +190,25 @@ If you think the absolute response time is necessary, please let us know. We wil
 
 
 # Figure 13a
+Same as figure 8. Just run my_ips app with -c 1, 2, 4, 8, and 16.
+```Bash
+cd mmTLS/proxies/mOS/mmTLS
+sudo ./my_ips -c 1 # single core
+```
+Run the clients to request 64KB objects.
+```Bash
+./run-h2load-persistent.sh 64k
+```
+Then, check the throughput log printed by my_ips.
 
 # Figure 13b
+Since the throughput of mmTLS middlebox is already measured by evaluation for figure 8, it is enough to measure the throughput of an endpoint TLS server.
+Stop all the middlebox program on the middlebox machine (box1.kaist.ac.kr), and run the clients.
+```Bash
+./run-h2load-persistent.sh [file size]
+```
+You should run the test for file size 1k, 4k, 16k, 64k, 256k, 1m, and 4m.
+Check the printed throughput by nload.
 
 # Figure 14
 1. Run below. It generates the TLS record tag in 4 ways. 1. Original (no private tag) 2. mmTLS (optimal) 3. Reusing ciphertext 4. Double tags (naive)
