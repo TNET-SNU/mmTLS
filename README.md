@@ -11,12 +11,17 @@ Access server is box3.kaist.ac.kr, and it is used as one of a backend server. A 
 
 <img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/7b82e7f2-834f-474c-9cad-c8b43e8ee3f1" />
 
-This page assumes that you have an access to our machine, box1.kaist.ac.kr via ssh.
+This page assumes that you have an access to our machine, box3.kaist.ac.kr via ssh.
 
-After applying kvpn, run below on your local machine to log in.
 ```Bash
-ssh guest@box1.kaist.ac.kr
+ssh [guest ID]@box3.kaist.ac.kr
 ```
+
+Then access to box1.kaist.ac.kr which has mmTLS middlebox source code.
+```Bash
+ssh box1.kaist.ac.kr
+```
+
 You should be able to see your home. Now export a mmTLS directory as a bash variable.
 ```Bash
 cd mmTLS
