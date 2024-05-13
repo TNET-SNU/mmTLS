@@ -211,28 +211,33 @@ Then, you will see the throughput withDHE-RSA-AES-256-GCM-SHA256 as logs from nl
 
 # Figure 8 - mcTLS
 
-To see the throughput of mcTLS, run mcTLS server on box3.kaist.ac.kr first.
+We run mcTLS clients and an mcTLS server by ssh command to the clients and a server machine (wood1.kaist.ac.kr, core2.kaist.ac.kr, and box3.kaist.ac.kr, respectively) from the middlebox machine (box1.kaist.ac.kr).
+So you do not need to log in to clients or servers to execute the mcTLS endpoints.
+Log in to the middlebox machine.
 
 ```Bash
-cd ~/mctls/evaluation/client_server
-./wserver -c spp_mod -o 3 > /dev/null 2> /dev/null &
+ssh box1.kaist.ac.kr
 ```
 
-Then, run mcTLS mbox on another ssh session to box1.kaist.ac.kr.
+Go to the directory including my_ips, and just run a script, run-mctls-test.sh.
 
 ```Bash
-cd ~/mctls/evaluation/client_server
-./mbox -c spp_mod -a 10.11.90.3:4433 -m 10.11.90.1:8423 > /dev/null 2> /dev/null &
+cd ~/mmTLS/proxies/mOS/mmTLS
+./run-mctls-test.sh 64k # size of objects requested by clients
 ```
+You can use the size of requested objects among 1k, 4k, 16k, 64k, 256k, 1m, and 4m.
 
-At last, run mcTLS clients at once using the script on box1.kaist.ac.kr.
+To see the throughput using nload, open a new ssh session to the middlebox machine (box1.kaist.ac.kr).
 
 ```Bash
-cd ~/mctls/evaluation/client_server
-./run-mctls-client-persistent.sh 64k
+ssh box1.kaist.ac.kr
 ```
 
-Now, you can check the mcTLS throughput using nload on box1.kaist.ac.kr.
+```Bash
+nload ens7f0np0 # on box1.kaist.ac.kr
+```
+
+nload will show the throughput in Gibps, so do not forget to multiplicate 1.024 * 1.024 * 1.024 on the printed throughput.
 
 
 # Figure 9
@@ -278,10 +283,14 @@ One thing different is that you should check the logs printed by the key-server 
 It will print the total keys, keys per second, total connections, connections per second. (In the context of key-server, connection means the secondary key channel, which are persistent.)
 The second log, keys per second shows the E2E connections established in one second.
 
+
+
 # Figure 10
 
+
+
 # Figure 11 & Figure 12
-We measure the LAN response time for 100 times and get the average, and measure the WAN response time for 200 times and get the average of 25% ~ 75%, since WAN connection is very unstable.
+We measure the average of 100 LAN response times and 100 WAN response times.
 To simplify your evaluation, we prepared a simple all-in-one script on the client side.
 Log in to wood1.kaist.ac.kr first.
 
@@ -323,8 +332,14 @@ So, the result for split-TLS to washingtonpost will appear empty.
 If you think the absolute response time is necessary, please let us know. We will prepare other popular web sites to test split-TLS to WAN.
 
 
+
 # Figure 13a
-Same as figure 8. Just run my_ips app with -c 1, 2, 4, 8, and 16.
+
+Same as figure 8. Log in to the middlebox machine, and just run my_ips app with -c 1, 2, 4, 8, or 16.
+
+```Bash
+ssh box1.kaist.ac.kr
+```
 
 ```Bash
 cd mmTLS/proxies/mOS/mmTLS
@@ -334,10 +349,11 @@ sudo ./my_ips -c 1 # single core
 Run the clients to request 64KB objects.
 
 ```Bash
-./run-h2load-persistent.sh 64k
+./run-mmtls-clients-persistent-gcm.sh 64k
 ```
 
 Then, check the throughput log printed by my_ips.
+Unlike evaluation for figure 8, you should change the number of cores used in my_ips, with fixed size of objects requested by the clients.
 
 
 # Figure 13b
@@ -345,36 +361,62 @@ Since the throughput of mmTLS middlebox is already measured by evaluation for fi
 Stop all the middlebox program on the middlebox machine (box1.kaist.ac.kr), and run the clients.
 
 ```Bash
-./run-h2load-persistent.sh [file size]
+./stop-clients.sh
+./run-e2e-clients-persistent-gcm.sh [file size]
 ```
 
-You should run the test for file size 1k, 4k, 16k, 64k, 256k, 1m, and 4m.
 Check the printed throughput by nload.
+
+```Bash
+ssh box1.kaist.ac.kr
+```
+```Bash
+nload
+```
+
+After checking the throughput once, you should stop the clients by executing stop-clients.sh.
+```Bash
+./stop-clients.sh # on the same ssh session that execute the script
+```
+
+You might want to run the test for file size 1k, 4k, 16k, 64k, 256k, 1m, and 4m. Just replace the file size to the file size that you want to test.
+
 
 
 # Figure 14
-1. Run below. It generates the TLS record tag in 4 ways. 1. Original (no private tag) 2. mmTLS (optimal) 3. Reusing ciphertext 4. Double tags (naive)
+
+This is the simplest of our artifacts.
+Go to the mmTLS root directory and run tag script.
+It generates private tags in various methods for record size of 1KB, 2KB, 4KB, 8KB, and 16KB, then measures the relative overhead using average time spent.
 
 ```Bash
-cd $MMTLS_DIR/openssl-modified/tag-gen
+cd mmTLS
+cd openssl-modified/tag-gen
 ./tag
 ```
 
-It will take about 1 minute, and the printed result will be equivalent to the figure 14.
-
+It will take about 1 minute.
+Each column means Original (no private tag), mmTLS (optimal), Reusing ciphertext, and Double tags (naive), respectively.
 
 # Figure 15
 
 
-# Figure 16
-Run my_ips app with option -p and -l on the middlebox machine (box1.kaist.ac.kr).
+
+# Figure 16 - mmTLS
+
+First, log in to the middlebox machine (box1.kaist.ac.kr).
+```Bash
+ssh box1.kaist.ac.kr
+```
+
+Run my_ips app with option -p and -l on the middlebox machine.
 
 ```Bash
 cd mmTLS/proxies/mOS/mmTLS
 sudo ./my_ips -c 16 -p -l 16 # DPI on first 16KB
 ```
 
-Then start the clients using run-h2load-persistent.sh.
+Then, start the clients using run-h2load-persistent.sh.
 
 ```Bash
 ./run-h2load-persistent.sh 1m
@@ -382,7 +424,15 @@ Then start the clients using run-h2load-persistent.sh.
 
 my_ips app will prints the real-time throughput.
 
+
+
+# Figure 16 - split-TLS (nginx TLS proxy)
+
 To run split-TLS DPI, use the pre-built binaries, nginx-dpi-16k, nginx-dpi-32k, nginx-dpi-64k, and nginx-dpi-128k on nginx-1.24.0 directory at the middlebox machine (box1.kaist.ac.kr).
+
+```Bash
+ssh box1.kaist.ac.kr
+```
 
 ```Bash
 cd nginx-1.24.0
@@ -390,7 +440,6 @@ sudo ./nginx-dpi-16k -c /etc/nginx/16.conf # replace the binary as you want
 ```
 
 Then measure the throughput using nload on the middlebox machine (box1.kaist.ac.kr).
-Do not forget multiplying 1.024 * 1.024 * 1.024 to the printed nload log.
 
 
 # Figure 17
