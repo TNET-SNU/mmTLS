@@ -417,25 +417,23 @@ sudo ./mmtls.sh
 cd chromium/src/out;
 ```
 
-In the directory, you can find two driectories, Default and mmtls.
-In Default, there is an default chrome, and in mmtls, there is a mmTLS-ported chrome.
-You can run the default chrome with some options as below.
+You can run the mmTLS-ported chrome with some options as below.
 
 ```Bash
 ./Default/chrome --ignore-certificate-errors --disable-proxy-certificate-handler
 ```
 
-If you want to test split-TLS, type 10.11.95.1:21443 on the URL space.
+If you want to test split-TLS, type https://10.11.95.1:21443 on the URL space.
 Otherwise, type https://10.11.95.3:1443 on the URL space as below.
 
 <img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/64a7ca03-6777-4869-aff9-141e831bfb28" />
 
-It will load the page with number of embedding resources.
+It will load the page with a number of embedding resources.
 After loading, click the first extension and check the total loading timing. (132 ms in the screenshot)
-You can repeat by entering "F6 key" and "enter key". (No refresh button or "F5 key", since they does not establish new TLS connection.)
+You can repeat by entering "F6 key" and "enter key". (No refresh button or "F5 key", since they do not establish a new TLS connection.)
 Since it's a LAN connection, it will be almost the same value as our evaluation, even though you do not repeat it 100 times fully to measure the average.
 
-If you want to change the number of embedding resources, control it on the server side as below.
+If you want to change the number of embedding resources, modify the main page on the server side as below.
 
 ```Bash
 ssh box4.kaist.ac.kr
@@ -447,7 +445,7 @@ sudo ./genhtml.sh 100 # number of embedding resources
 ```
 
 It will change the same index page to include more resources.
-(Since chromium is based on GUI, click and re-type other resource on chromium is more cumbersome task than directly modifying the same index page on the server.)
+(Since chromium is based on GUI, clicking and re-typing other resource on chromium is a more cumbersome task than directly modifying the same index page on the server.)
 
 
 # Figure 16 - mmTLS
