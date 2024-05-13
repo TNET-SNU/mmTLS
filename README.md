@@ -101,7 +101,7 @@ The configuration of nginx as endpoints is a subset of above. Endpoints (box3, b
 
 
 
-# Figure 8
+# Figure 8 - mmTLS
 
 You can run the middlebox on box1.kaist.ac.kr.
 Log in to box1.kaist.ac.kr first.
@@ -119,17 +119,27 @@ sudo ./my_ips -c 16
 ```
 
 When it starts to print the throughput logs, it is ready to work.
+<img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/c0919b1f-5056-4af6-9bc5-3489e3069513" />
 On ths client side, execute ./run-h2load-persistent to run all four client machines at the same time
 Open new ssh session and go to the same directory.
 
+On the directory, run my_ips.
+
 ```Bash
 cd mmTLS/proxies/mOS/mmTLS
-./run-h2load-persistent 64k
+./run-mmtls-clients-gcm.sh 64k
 ```
 
-You can check the throughput of mmTLS on the first ssh session.
+64k means the clients request 64KB objects from the server. You can control it among 1k, 4k, 16k, 64k, 256k, 1m, 4m.
+The output should seems like screenshot below.
 
-If you want to measure the throughput of baselines, you should stop my_ips and use nload on the middlebox.
+<img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/c0919b1f-5056-4af6-9bc5-3489e3069513" />
+
+With the printed logs, you can check the throughput of mmTLS.
+
+
+# Figure 8 - split-TLS (nginx TLS proxy)
+If you want to measure the throughput of split-TLS which is one of our baselines, you should stop my_ips and use nload on the middlebox.
 
 ```Bash
 nload
