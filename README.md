@@ -425,10 +425,29 @@ You can run the default chrome with some options as below.
 ./Default/chrome --ignore-certificate-errors --disable-proxy-certificate-handler
 ```
 
-If you want to test mmTLS or E2E-TLS, type https://10.11.95.3:1443 to the URL space.
+If you want to test split-TLS, type 10.11.95.1:21443 on the URL space.
+Otherwise, type https://10.11.95.3:1443 on the URL space as below.
 
-<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/08e02f36-be13-443a-b923-3278b487c80f" />
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/1ee24879-ef68-4c02-829c-38aece563a46" />
 
+It will load the page with number of embedding resources.
+After loading, click the first extension and check the total loading timing. (132 ms in the screenshot)
+You can repeat by entering "F6 key" and "enter key". (No refresh button or "F5 key", since they does not establish new TLS connection.)
+Since it's a LAN connection, it will be almost the same value as our evaluation, even though you do not repeat it 100 times fully to measure the average.
+
+If you want to change the number of embedding resources, control it on the server side as below.
+
+```Bash
+ssh box4.kaist.ac.kr
+```
+
+```
+cd /usr/share/nginx/html
+sudo ./genhtml.sh 100 # number of embedding resources
+```
+
+It will change the same index page to include more resources.
+(Since chromium is based on GUI, click and re-type other resource on chromium is more cumbersome task than directly modifying the same index page on the server.)
 
 
 # Figure 16 - mmTLS
