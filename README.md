@@ -13,7 +13,25 @@ Access server is box3.kaist.ac.kr, and it is used as one of a backend server. A 
 
 This page assumes that you have an access to our machine, box3.kaist.ac.kr via ssh.
 
+```Bash
+ssh [guest ID]@box3.kaist.ac.kr
+```
+
+Then access to box1.kaist.ac.kr which has mmTLS middlebox source code.
+```Bash
+ssh box1.kaist.ac.kr
+```
+
+You should be able to see your home. Now export a mmTLS directory as a bash variable.
+```Bash
+cd mmTLS
+export MMTLS_DIR=`pwd`
+```
+
+
 # nginx config as a baseline middlebox (Split-TLS) and endpoints
+
+For your information, the configuration of nginx as a Split-TLS middlebox is as below. If you want to test various workload as you want. Use h2load or ab for those ports.
 
 ```
 	# LAN
@@ -61,20 +79,7 @@ This page assumes that you have an access to our machine, box3.kaist.ac.kr via s
 	# 34443: proxy to washingtonpost	ephemeral	TLS13
 ```
 
-```Bash
-ssh [guest ID]@box3.kaist.ac.kr
-```
-
-Then access to box1.kaist.ac.kr which has mmTLS middlebox source code.
-```Bash
-ssh box1.kaist.ac.kr
-```
-
-You should be able to see your home. Now export a mmTLS directory as a bash variable.
-```Bash
-cd mmTLS
-export MMTLS_DIR=`pwd`
-```
+The configuration of nginx as endpoints is a subset of above. Endpoints (box3, box4) use only upper 6 ports; 80, 1080, 442, 1442, 443, 1443.
 
 # Figure 8
 You can run the middlebox on box1.kaist.ac.kr.
