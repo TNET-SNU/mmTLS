@@ -428,7 +428,7 @@ You can run the default chrome with some options as below.
 If you want to test split-TLS, type 10.11.95.1:21443 on the URL space.
 Otherwise, type https://10.11.95.3:1443 on the URL space as below.
 
-<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/1ee24879-ef68-4c02-829c-38aece563a46" />
+<img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/64a7ca03-6777-4869-aff9-141e831bfb28" />
 
 It will load the page with number of embedding resources.
 After loading, click the first extension and check the total loading timing. (132 ms in the screenshot)
