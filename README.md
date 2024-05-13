@@ -120,7 +120,12 @@ nload
 ```
 You can see other interfaces using arrow keys (e.g., <-, ->).
 nload prints the throughput of each interface in Gibps. So you should multiply 1.024 * 1.024 * 1.024 to the printed throughput.
-(Search the source code of nload at github and check that it actually uses Gibps, while the printed units are Gbps.)
+[We have confirmed that the source code of nload is actually computing Gibps rather than Gbps.](https://github.com/rolandriegel/nload/blob/8f92dc04fad283abdd2a4538cd4c2093d957d9da/src/statistics.cpp#L125)
+Or, you can check the bps by adding -u b option to nload.
+```Bash
+nload -u b
+```
+It will show the throughput in bps unit.
 
 Now open new ssh session to box1.kaist.ac.kr, and run the client script.
 ```Bash
