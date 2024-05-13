@@ -32,6 +32,7 @@ export MMTLS_DIR=`pwd`
 # nginx config as a baseline middlebox (Split-TLS) and endpoints
 
 For your information, the configuration of nginx as a Split-TLS middlebox is as below. If you want to test various workload as you want. Use h2load or ab for those ports.
+Note that svr0 and svr1 mean box3.kaist.ac.kr and box4.kaist.ac.kr, respectively.
 
 ```
 	# LAN
