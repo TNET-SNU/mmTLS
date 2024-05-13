@@ -400,6 +400,34 @@ It will take about 1 minute.
 Each column means Original (no private tag), mmTLS (optimal), Reusing ciphertext, and Double tags (naive), respectively.
 
 # Figure 15
+This evaluation needs chromium GUI application and the extension program.
+We manually measured the page load time shown by the chromium extension so it is difficult to automatically reproduce the figure.
+Here, we only provide how to run the test manually.
+
+First log in to the client machine, box2.kaist.ac.kr with -X option to enable X window.
+
+```Bash
+ssh box2.kaist.ac.kr
+```
+
+Then, setup mmtls configuration and go to the chromium directory.
+
+```Bash
+sudo ./mmtls.sh
+cd chromium/src/out;
+```
+
+In the directory, you can find two driectories, Default and mmtls.
+In Default, there is an default chrome, and in mmtls, there is a mmTLS-ported chrome.
+You can run the default chrome with some options as below.
+
+```Bash
+./Default/chrome --ignore-certificate-errors --disable-proxy-certificate-handler
+```
+
+If you want to test mmTLS or E2E-TLS, type https://10.11.95.3:1443 to the URL space.
+
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/08e02f36-be13-443a-b923-3278b487c80f" />
 
 
 
