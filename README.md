@@ -13,6 +13,54 @@ Access server is box3.kaist.ac.kr, and it is used as one of a backend server. A 
 
 This page assumes that you have an access to our machine, box3.kaist.ac.kr via ssh.
 
+# nginx config as a baseline middlebox (Split-TLS) and endpoints
+
+```
+	# LAN
+
+	# endpoint:			0xxxx,	proxy to svr0: 	1xxxx,	proxy to svr1:	2xxxx
+	# persistent: 		x0xxx, 	ephemeral: 		x1xxx,
+	# TCP: 				xx080, 	TLS12: 			xx442, 	TLS13: 			xx443
+
+	# 00080: endpoint persistent		TCP
+	# 01080: endpoint ephemeral			TCP
+
+	# 00442: endpoint persistent		TLS12
+	# 01442: endpoint ephemeral			TLS12
+
+	# 00443: endpoint persistent		TLS13
+	# 01443: endpoint ephemeral			TLS13
+	
+	# 10080: proxy to svr0 persistent	TCP 
+	# 11080: proxy to svr0 ephemeral	TCP
+
+	# 10442: proxy to svr0 persistent	TLS12
+	# 11442: proxy to svr0 ephemeral	TLS12
+
+	# 10443: proxy to svr0 persistent	TLS13
+	# 11443: proxy to svr0 ephemeral	TLS13
+
+	# 20080: proxy to svr1 persistent	TCP
+	# 21080: proxy to svr1 ephemeral	TCP
+
+	# 20442: proxy to svr1 persistent	TLS12
+	# 21442: proxy to svr1 ephemeral	TLS12
+
+	# 20443: proxy to svr1 persistent	TLS13
+	# 21443: proxy to svr1 ephemeral	TLS13
+
+
+	# WAN
+
+	# proxy to WAN:		3xxxx
+
+	# 30443: proxy to usatoday			ephemeral	TLS13
+	# 31443: proxy to bbc				ephemeral	TLS13
+	# 32443: proxy to nytimes			ephemeral	TLS13
+	# 33443: proxy to cnn				ephemeral	TLS13
+	# 34443: proxy to washingtonpost	ephemeral	TLS13
+```
+
 ```Bash
 ssh [guest ID]@box3.kaist.ac.kr
 ```
