@@ -9,7 +9,7 @@ Our testbed is consisted of 7 machines: 4 clients, 1 middlebox, and 2 backend se
 
 Access server is box3.kaist.ac.kr, and it is used as one of a backend server. A figure below depicts the topology of our testbed.
 
-<img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/bc7a2ecc-2141-4bed-9f4e-ecd864b8311c" />
+<img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/7b82e7f2-834f-474c-9cad-c8b43e8ee3f1" />
 
 This page assumes that you have an access to our machine, box1.kaist.ac.kr via ssh.
 
