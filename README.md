@@ -147,8 +147,13 @@ cd ~/mctls/evaluation/client_server
 Now, you can check the mcTLS throughput using nload on box1.kaist.ac.kr.
 
 # Figure 9
-The flow is similar to the fig8.
-Run ephemeral clients instead of persistent.
+The flow is similar to the evaluation for figure 8. Run ephemeral clients instead of persistent.
+```Bash
+./run-ab-ephemeral.sh
+```
+One thing different is that you should check the logs printed by the key-server running on SoC SmartNIC.
+It will print the total keys, keys per second, total connections, connections per second. (In the context of key-server, connection means the secondary key channel, which are persistent.)
+The second log, keys per second shows the E2E connections established in one second.
 
 # Figure 10
 
