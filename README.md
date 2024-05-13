@@ -204,6 +204,26 @@ It will take about 1 minute, and the printed result will be equivalent to the fi
 # Figure 15
 
 # Figure 16
+Run my_ips app with option -p and -l on the middlebox machine (box1.kaist.ac.kr).
+```Bash
+cd mmTLS/proxies/mOS/mmTLS
+sudo ./my_ips -c 16 -p -l 16 # DPI on first 16KB
+```
+Then start the clients using run-h2load-persistent.sh.
+```Bash
+./run-h2load-persistent.sh 1m
+```
+
+my_ips app will prints the real-time throughput.
+
+To run split-TLS DPI, use the pre-built binaries, nginx-dpi-16k, nginx-dpi-32k, nginx-dpi-64k, and nginx-dpi-128k on nginx-1.24.0 directory at the middlebox machine (box1.kaist.ac.kr).
+```Bash
+cd nginx-1.24.0
+sudo ./nginx-dpi-16k -c /etc/nginx/16.conf # replace the binary as you want
+```
+
+Then measure the throughput using nload on the middlebox machine (box1.kaist.ac.kr).
+Do not forget multiplying 1.024 * 1.024 * 1.024 to the printed nload log.
 
 # Figure 17
 1. Run mmTLS middlebox first.
