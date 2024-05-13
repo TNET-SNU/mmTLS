@@ -295,7 +295,63 @@ The second log, keys per second shows the E2E connections established in one sec
 
 
 # Figure 9 - split-TLS (nginx TLS proxy)
-To 
+
+```Bash
+ssh box1.kaist.ac.kr
+```
+
+Then, go to the directory including test scripts, and check the throughput using nload.
+
+```Bash
+cd mmTLS/proxies/mOS/mmTLS
+./run-splittls-clients-ephemeral-gcm.sh
+nload
+```
+
+You can check another cipher suite, DHE-RSA-AES-256-GCM-SHA256 by the script below.
+
+```Bash
+./stop-clients.sh
+./run-splittls-clients-ephemeral-cbc.sh
+nload
+```
+
+After checking the throughput using nload, stop the clients.
+```Bash
+./stop-clients.sh
+```
+
+To test single core nginx TLS proxy, open a new ssh session to the middlebox machine (box1.kaist.ac.kr).
+
+```Bash
+ssh box1.kaist.ac.kr
+```
+
+Restart the nginx proxy with single configuration and see the throughput using nload.
+
+```Bash
+cd nginx-1.24.0
+sudo killall nginx
+sudo killall nginx*
+sudo ./nginx-dpi-0k -c /etc/nginx/1core.conf
+```
+
+On the first ssh session, run scripts.
+
+```Bash
+./stop-clients.sh
+./run-splittls-clients-ephemeral-gcm.sh
+nload
+```
+
+For DHE-RSA-AES-256-GCM-SHA256, run below.
+
+```Bash
+./stop-clients.sh
+./run-splittls-clients-ephemeral-cbc.sh
+nload
+```
+
 
 
 # Figure 10
