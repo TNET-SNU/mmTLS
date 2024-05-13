@@ -1,5 +1,17 @@
 # mmTLS
 mmTLS is a highly scalable TLS middlebox for monitoring encrypted traffic.
+https://github.com/TNET-SNU/mmTLS/files/15292786/mmtls-timeline2.pdf
+
+<img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/files/15292786/mmtls-timeline2.pdf" />
+
+mmTLS provides high throughput and low latency using techniques below.
+
+1. Single connection architecture which removes redundant TLS/TCP handshakes, flow management, memory copies, and re-encryption
+2. Scalable key distribution technique using SmartNIC or a dedicated core
+3. Minimized overhead on private tag generation/verification
+4. On-demand decryption of partial content via event-driven API
+
+# Accessing remote machines for AE
 
 Because Bluefield-2 SmartNIC is required for reproducing, we highly recommend you to run test scripts in our remote machines.
 If you want to build and run on your own, please refer to INSTALL.md.
