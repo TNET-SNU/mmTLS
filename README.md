@@ -440,7 +440,7 @@ cd nginx-1.24.0
 sudo ./nginx-dpi-16k -c /etc/nginx/16.conf # replace the binary as you want
 ```
 
-Then measure the throughput using nload on the middlebox machine (box1.kaist.ac.kr).
+Then, measure the throughput using nload on the middlebox machine (box1.kaist.ac.kr).
 
 
 # Figure 17
