@@ -119,7 +119,7 @@ sudo ./my_ips -c 16
 ```
 
 When it starts to print the throughput logs, it is ready to work.
-<img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/c0919b1f-5056-4af6-9bc5-3489e3069513" />
+<img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/679cdfd6-0570-4ea0-9782-f4bb582bdcaa" />
 On ths client side, execute ./run-h2load-persistent to run all four client machines at the same time
 Open new ssh session and go to the same directory.
 
