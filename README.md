@@ -1,4 +1,5 @@
 # mmTLS
+
 mmTLS is a highly scalable TLS middlebox for monitoring encrypted traffic.
 
 <img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/08e02f36-be13-443a-b923-3278b487c80f" />
@@ -9,6 +10,8 @@ mmTLS provides high throughput and low latency using techniques below.
 2. Scalable key distribution technique using SmartNIC or a dedicated core
 3. Minimized overhead on private tag generation/verification
 4. On-demand decryption of partial content via event-driven API
+
+
 
 # Accessing remote machines for AE
 
@@ -29,15 +32,18 @@ ssh [guest ID]@box3.kaist.ac.kr
 ```
 
 Then access to box1.kaist.ac.kr which has mmTLS middlebox source code.
+
 ```Bash
 ssh box1.kaist.ac.kr
 ```
 
 You should be able to see your home. Now export a mmTLS directory as a bash variable.
+
 ```Bash
 cd mmTLS
 export MMTLS_DIR=`pwd`
 ```
+
 
 
 # nginx config as a baseline middlebox (Split-TLS) and endpoints
@@ -48,18 +54,18 @@ Note that svr0 and svr1 mean box3.kaist.ac.kr and box4.kaist.ac.kr, respectively
 ```
 	# LAN
 
-	# endpoint:			0xxxx,	proxy to svr0: 	1xxxx,	proxy to svr1:	2xxxx
-	# persistent: 		x0xxx, 	ephemeral: 		x1xxx,
-	# TCP: 				xx080, 	TLS12: 			xx442, 	TLS13: 			xx443
+	# endpoint:	0xxxx,	proxy to svr0: 	1xxxx,	proxy to svr1:	2xxxx
+	# persistent: 	x0xxx, 	ephemeral: 	x1xxx,
+	# TCP:		xx080, 	TLS12: 		xx442, 	TLS13:		xx443
 
 	# 00080: endpoint persistent		TCP
-	# 01080: endpoint ephemeral			TCP
+	# 01080: endpoint ephemeral		TCP
 
 	# 00442: endpoint persistent		TLS12
-	# 01442: endpoint ephemeral			TLS12
+	# 01442: endpoint ephemeral		TLS12
 
 	# 00443: endpoint persistent		TLS13
-	# 01443: endpoint ephemeral			TLS13
+	# 01443: endpoint ephemeral		TLS13
 	
 	# 10080: proxy to svr0 persistent	TCP 
 	# 11080: proxy to svr0 ephemeral	TCP
@@ -84,78 +90,101 @@ Note that svr0 and svr1 mean box3.kaist.ac.kr and box4.kaist.ac.kr, respectively
 
 	# proxy to WAN:		3xxxx
 
-	# 30443: proxy to usatoday			ephemeral	TLS13
-	# 31443: proxy to bbc				ephemeral	TLS13
-	# 32443: proxy to nytimes			ephemeral	TLS13
-	# 33443: proxy to cnn				ephemeral	TLS13
+	# 30443: proxy to usatoday		ephemeral	TLS13
+	# 31443: proxy to bbc			ephemeral	TLS13
+	# 32443: proxy to nytimes		ephemeral	TLS13
+	# 33443: proxy to cnn			ephemeral	TLS13
 	# 34443: proxy to washingtonpost	ephemeral	TLS13
 ```
 
 The configuration of nginx as endpoints is a subset of above. Endpoints (box3, box4) use only upper 6 ports; 80, 1080, 442, 1442, 443, 1443.
 
+
+
 # Figure 8
+
 You can run the middlebox on box1.kaist.ac.kr.
 Log in to box1.kaist.ac.kr first.
+
 ```Bash
 ssh box1.kaist.ac.kr
 ```
-Go to the my_ips directory, and run the middlebox.
+
+We prepared a pre-built mmTLS application which decrypts (and does DPI when -p option exists) the payload for the given size 
+It is on mmTLS/proxies/mOS/mmTLS directory, so got the the directory and run the sample application.
+
 ```Bash
 cd mmTLS/proxies/mOS/mmTLS
 sudo ./my_ips -c 16
 ```
+
 When it starts to print the throughput logs, it is ready to work.
-Run the client machines at once. You can use our script that runs 4 clients at once.
+On ths client side, execute ./run-h2load-persistent to run all four client machines at the same time
 Open new ssh session and go to the same directory.
+
 ```Bash
 cd mmTLS/proxies/mOS/mmTLS
 ./run-h2load-persistent 64k
 ```
-You can check the throughput of mmTLS on the first ssh session.
-Adjust the number of cores as you want.
 
-To check the baselines, you should stop my_ips and use nload on the middlebox.
+You can check the throughput of mmTLS on the first ssh session.
+
+If you want to measure the throughput of baselines, you should stop my_ips and use nload on the middlebox.
+
 ```Bash
 nload
 ```
+
 You can see other interfaces using arrow keys (e.g., <-, ->).
 nload prints the throughput of each interface in Gibps. So you should multiply 1.024 * 1.024 * 1.024 to the printed throughput.
 [We have confirmed that the source code of nload is actually computing Gibps rather than Gbps.](https://github.com/rolandriegel/nload/blob/8f92dc04fad283abdd2a4538cd4c2093d957d9da/src/statistics.cpp#L125)
 Or, you can check the bps by adding -u b option to nload.
+
 ```Bash
 nload -u b
 ```
+
 It will show the throughput in bps unit.
 
 Now open new ssh session to box1.kaist.ac.kr, and run the client script.
+
 ```Bash
 cd mmTLS/proxies/mOS/mmTLS
 ./run-h2load-persistent.sh 64k
 ```
+
 Now, you can check the split-TLS throughput.
 
 To see the throughput of mcTLS, run mcTLS server on box3.kaist.ac.kr first.
+
 ```Bash
 cd ~/mctls/evaluation/client_server
 ./wserver -c spp_mod -o 3 > /dev/null 2> /dev/null &
 ```
+
 Then, run mcTLS mbox on another ssh session to box1.kaist.ac.kr.
+
 ```Bash
 cd ~/mctls/evaluation/client_server
 ./mbox -c spp_mod -a 10.11.90.3:4433 -m 10.11.90.1:8423 > /dev/null 2> /dev/null &
 ```
+
 At last, run mcTLS clients at once using the script on box1.kaist.ac.kr.
+
 ```Bash
 cd ~/mctls/evaluation/client_server
 ./run-mctls-client-persistent.sh 64k
 ```
+
 Now, you can check the mcTLS throughput using nload on box1.kaist.ac.kr.
 
 # Figure 9
 The flow is similar to the evaluation for figure 8. Run ephemeral clients instead of persistent.
+
 ```Bash
 ./run-ab-ephemeral.sh
 ```
+
 One thing different is that you should check the logs printed by the key-server running on SoC SmartNIC.
 It will print the total keys, keys per second, total connections, connections per second. (In the context of key-server, connection means the secondary key channel, which are persistent.)
 The second log, keys per second shows the E2E connections established in one second.
@@ -166,24 +195,30 @@ The second log, keys per second shows the E2E connections established in one sec
 We measure the LAN response time for 100 times and get the average, and measure the WAN response time for 200 times and get the average of 25% ~ 75%, since WAN connection is very unstable.
 To simplify your evaluation, we prepared a simple all-in-one script on the client side.
 Log in to wood1.kaist.ac.kr first.
+
 ```
 ssh wood1.kaist.ac.kr
 ```
+
 Since our script includes running the mmTLS or mcTLS (baseline) middlebox on box1.kaist.ac.kr as background program, you don't need to directly control the middlebox.
 Move to the fig11 directory and run all-in-one script. It takes about 5 minutes.
+
 ```
 cd ~/fig11
 ./kill-others.sh # When something goes wrong, run kill-others.sh and restart.
 ./all-in-one.sh
 ```
+
 The result will be equivalent to figure 11 for both 11(a) -GCM- and 11(b) -CBC-.
 
 For figure 12, we prepared a simple all-in-one script on the client side as well as fig 11.
+
 ```
 cd ~/fig12
 ./kill-others.sh
 ./all-in-one.sh
 ```
+
 It will take about 10 minutes.
 Note that this script modifies the default routing table entry to make the WAN traffic comes and goes via LAN (private network) interface instead of default WAN (public network) interface.
 (Unless, WAN traffic will not goes to the middlebox which is connected via LAN interface.)
@@ -201,42 +236,57 @@ If you think the absolute response time is necessary, please let us know. We wil
 
 # Figure 13a
 Same as figure 8. Just run my_ips app with -c 1, 2, 4, 8, and 16.
+
 ```Bash
 cd mmTLS/proxies/mOS/mmTLS
 sudo ./my_ips -c 1 # single core
 ```
+
 Run the clients to request 64KB objects.
+
 ```Bash
 ./run-h2load-persistent.sh 64k
 ```
+
 Then, check the throughput log printed by my_ips.
+
 
 # Figure 13b
 Since the throughput of mmTLS middlebox is already measured by evaluation for figure 8, it is enough to measure the throughput of an endpoint TLS server.
 Stop all the middlebox program on the middlebox machine (box1.kaist.ac.kr), and run the clients.
+
 ```Bash
 ./run-h2load-persistent.sh [file size]
 ```
+
 You should run the test for file size 1k, 4k, 16k, 64k, 256k, 1m, and 4m.
 Check the printed throughput by nload.
 
+
 # Figure 14
 1. Run below. It generates the TLS record tag in 4 ways. 1. Original (no private tag) 2. mmTLS (optimal) 3. Reusing ciphertext 4. Double tags (naive)
+
 ```Bash
 cd $MMTLS_DIR/openssl-modified/tag-gen
 ./tag
 ```
+
 It will take about 1 minute, and the printed result will be equivalent to the figure 14.
+
 
 # Figure 15
 
+
 # Figure 16
 Run my_ips app with option -p and -l on the middlebox machine (box1.kaist.ac.kr).
+
 ```Bash
 cd mmTLS/proxies/mOS/mmTLS
 sudo ./my_ips -c 16 -p -l 16 # DPI on first 16KB
 ```
+
 Then start the clients using run-h2load-persistent.sh.
+
 ```Bash
 ./run-h2load-persistent.sh 1m
 ```
@@ -244,6 +294,7 @@ Then start the clients using run-h2load-persistent.sh.
 my_ips app will prints the real-time throughput.
 
 To run split-TLS DPI, use the pre-built binaries, nginx-dpi-16k, nginx-dpi-32k, nginx-dpi-64k, and nginx-dpi-128k on nginx-1.24.0 directory at the middlebox machine (box1.kaist.ac.kr).
+
 ```Bash
 cd nginx-1.24.0
 sudo ./nginx-dpi-16k -c /etc/nginx/16.conf # replace the binary as you want
@@ -252,23 +303,32 @@ sudo ./nginx-dpi-16k -c /etc/nginx/16.conf # replace the binary as you want
 Then measure the throughput using nload on the middlebox machine (box1.kaist.ac.kr).
 Do not forget multiplying 1.024 * 1.024 * 1.024 to the printed nload log.
 
+
 # Figure 17
+
 1. Run mmTLS middlebox first.
+
 ```Bash
 cd $MMTLS_DIR/proxies/mOS/mmTLS
 sudo ./my_cipherstat -c 1
 ```
 
+
 2. Log in to the client machine.
+
 ```Bash
 ssh wood1.kaist.ac.kr
 ```
 
+
 3. Run cipherstat.sh
+
 ```Bash
 ./cipherstat.sh alexa
 ```
+
 It will take about 10 minutes.
+
 
 4. After running above, stop the middlebox and see the alexa file on the mmTLS directory.
 
