@@ -18,14 +18,19 @@ mmTLS provides high throughput and low latency using techniques below.
 Because Bluefield-2 SmartNIC is required for reproducing, we highly recommend you to run test scripts in our remote machines.
 If you want to build and run on your own, please refer to INSTALL.md.
 
-Currently we have a simple testbed to test functionality of our work, used for ATC’24 artifact evaluation. Please let us know (cerotyki@gmail.com or HotCRP) if you want to access to them.
-Our testbed consists of 7 machines: 4 clients, 1 middlebox, and 2 backend servers. You can access to them via ssh. Please access to the access server first, and log in other 6 machines from the access server.
+Currently we have a simple testbed to test functionality of our work, used for ATC’24 artifact evaluation.
+Please let us know (cerotyki@gmail.com or HotCRP) if you want to access them.
+Our testbed consists of 7 machines: 4 clients, 1 middlebox, and 2 backend servers.
+You can access them via ssh.
+Please access the access server first, and log in other 6 machines from the access server.
 
-Access server is box3.kaist.ac.kr, and it is used as one of a backend server. A figure below depicts the topology of our testbed.
+Access server is box3.kaist.ac.kr, and it is used as one of the backend servers. The figure below depicts the topology of our testbed.
+
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/7b82e7f2-834f-474c-9cad-c8b43e8ee3f1" />
 
-This page assumes that you have an access to our machine, box3.kaist.ac.kr via ssh.
+This page assumes that you have access to our machine, box3.kaist.ac.kr via ssh.
+
 
 ```Bash
 ssh [guest ID]@box3.kaist.ac.kr
@@ -111,8 +116,8 @@ Log in to box1.kaist.ac.kr first.
 ssh box1.kaist.ac.kr
 ```
 
-We prepared a pre-built mmTLS application which decrypts (and does DPI when -p option exists) the payload for the given size 
-It is on mmTLS/proxies/mOS/mmTLS directory, so go to the that directory and run the sample application.
+We prepared a pre-built mmTLS application which decrypts (and does DPI when -p option exists) the payload for the given size.
+It is in the mmTLS/proxies/mOS/mmTLS directory, so go to that directory and run the sample application.
 
 ```Bash
 cd mmTLS/proxies/mOS/mmTLS
@@ -134,7 +139,7 @@ Run the key-server on bf2_key_server directory.
 cd bf2_key_server
 sudo ./key-server -c 8 -i p1
 ```
-The key-server will prints the logs about secondary key channels.
+The key-server will print the logs about secondary key channels.
 
 Now, open one more new ssh session and go to the same directory.
 Then, execute ./run-mmtls-clients-persistent-gcm.sh to run all four client machines at the same time.
@@ -144,8 +149,10 @@ cd mmTLS/proxies/mOS/mmTLS
 ./run-mmtls-clients-persistent-gcm.sh 64k
 ```
 
-64k means the clients request 64KB objects from the server. You can control it among 1k, 4k, 16k, 64k, 256k, 1m, 4m.
-The output should seems like screenshot below.
+64k means the clients request 64KB objects from the server.
+You can control it among 1k, 4k, 16k, 64k, 256k, 1m, 4m.
+The output should seem like the screenshot below.
+
 
 <img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/c0919b1f-5056-4af6-9bc5-3489e3069513" />
 
@@ -184,7 +191,7 @@ Or, you can check the bps by adding -u b option to nload.
 nload -u b
 ```
 
-It will show the throughput in bps unit.
+It will show the throughput in the bps unit.
 Since nginx TLS proxy is running on the middlebox machine as background by default, you do not need to execute any middlebox application here.
 
 Now open a new ssh session to box1.kaist.ac.kr, and run the client script.
@@ -251,7 +258,7 @@ Log in to box1.kaist.ac.kr first.
 ssh box1.kaist.ac.kr
 ```
 
-Then, go to the the directory including my_ips and run the sample application with **bf{single core}**.
+Then, go to the directory including my_ips and run the sample application with **single core**.
 In our testbed, 4 clients and 2 servers cannot make the middlebox bottleneck in ephemeral connections, since ephemeral connections incur huge overhead on endpoints.
 
 ```Bash
@@ -259,7 +266,7 @@ cd mmTLS/proxies/mOS/mmTLS
 sudo ./my_ips -c 1
 ```
 
-Then, do ssh to the SoC SmartNIC to run key-server.
+Then, ssh to the SoC SmartNIC to run the key-server.
 
 ```Bash
 ssh 192.168.100.2
@@ -281,7 +288,8 @@ Since we fix the size of requested objects as 1KB for ephemeral connections, the
 
 
 One thing different is that you should check the logs printed by the key-server running on SoC SmartNIC.
-It will print the total keys, keys per second, total connections, connections per second. (In the context of key-server, connection means the secondary key channel, which are persistent.)
+It will print the total keys, keys per second, total connections, connections per second.
+(In the context of key-server, connection means the secondary key channel, which is persistent.)
 The second log, keys per second shows the E2E connections established in one second.
 
 
@@ -319,19 +327,18 @@ cd ~/fig12
 ```
 
 It will take about 10 minutes.
-Note that this script modifies the default routing table entry to make the WAN traffic comes and goes via LAN (private network) interface instead of default WAN (public network) interface.
-(Unless, WAN traffic will not goes to the middlebox which is connected via LAN interface.)
-If you are accessing via ssh to WAN interface of the client (wood1), your ssh session will be lost.
+Note that this script modifies the default routing table entry to make the WAN traffic come and go via LAN (private network) interface instead of the default WAN (public network) interface.
+(Unless, WAN traffic will not go to the middlebox which is connected via the LAN interface.)
+If you are accessing via ssh to the WAN interface of the client (wood1), your ssh session will be lost.
 Please do ssh from the access point machine (box3), and run the script.
-
-Since the news site is updated every hour, the result will be differenct with our evaluation.
+Since the news site is updated every hour, the result will be different with our evaluation.
 We recommend you to check the gap between mmTLS and split-TLS, rather than the absolute response time of mmTLS.
-
-Also, www.washingtonpost.com no longer supports http/1.1. It currently accepts only http/2.
+Also, www.washingtonpost.com no longer supports http/1.1.
+It currently accepts only http/2.
 But, the nginx proxy (split-TLS) currently supports up to http/1.1 as backend upstream connection, so we could not fully reproduce the result of split-TLS.
 So, the result for split-TLS to washingtonpost will appear empty.
-If you think the absolute response time is necessary, please let us know. We will prepare other popular web sites to test split-TLS to WAN.
-
+If you think the absolute response time is necessary, please let us know.
+We will prepare other popular web sites to test split-TLS to WAN.
 
 
 # Figure 13a
@@ -359,7 +366,7 @@ Unlike evaluation for figure 8, you should change the number of cores used in my
 
 # Figure 13b
 Since the throughput of mmTLS middlebox is already measured by evaluation for figure 8, it is enough to measure the throughput of an endpoint TLS server.
-Stop all the middlebox program on the middlebox machine (box1.kaist.ac.kr), and run the clients.
+Stop all the middlebox programs on the middlebox machine (box1.kaist.ac.kr), and run the clients.
 
 ```Bash
 ./stop-clients.sh
@@ -443,9 +450,8 @@ ssh box4.kaist.ac.kr
 cd /usr/share/nginx/html
 sudo ./genhtml.sh 100 # number of embedding resources
 ```
-
 It will change the same index page to include more resources.
-(Since chromium is based on GUI, clicking and re-typing other resource on chromium is a more cumbersome task than directly modifying the same index page on the server.)
+(Since chromium is based on GUI, clicking and re-typing other resources on chromium is a more cumbersome task than directly modifying the same index page on the server.)
 
 
 # Figure 16 - mmTLS
@@ -468,7 +474,7 @@ Then, start the clients using run-h2load-persistent.sh.
 ./run-h2load-persistent.sh 1m
 ```
 
-my_ips app will prints the real-time throughput.
+my_ips app will print the real-time throughput.
 
 
 
