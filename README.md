@@ -536,12 +536,19 @@ We manually measured the page load time shown by the chromium extension so it is
 Here, we only provide how to run the test manually.
 
 First log in to the client machine, box2.kaist.ac.kr with -X option to enable X window.
+You should have been connected to the first access server (box3.kaist.ac.kr) with -X option.
 
 ```Bash
-ssh box2.kaist.ac.kr
+ssh -X [guest ID]@box3.kaist.ac.kr
 ```
 
-Then, unset mmtls configuration and go to the chromium directory.
+Then, log in to the machine that has pre-built chromium with -X option.
+
+```Bash
+ssh -X box2.kaist.ac.kr
+```
+
+Before testing, unset mmtls configuration and go to the chromium directory.
 
 ```Bash
 sudo ./unmmtls.sh
