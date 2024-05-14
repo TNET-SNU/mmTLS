@@ -552,7 +552,7 @@ Each column means Original (no private tag), mmTLS (optimal), Reusing ciphertext
 
 
 
-# Figure 15 - Default Chromium (for split-TLS and E2E-TLS
+# Figure 15 - Default Chromium (for split-TLS and E2E-TLS)
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/b6a6ccdd-f3d8-4de2-9f8d-5670dbf6cfab" />
 
