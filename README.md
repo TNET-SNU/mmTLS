@@ -403,6 +403,8 @@ We will prepare other popular web sites to test split-TLS to WAN.
 
 # Figure 13a - mmTLS
 
+<img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/266cfaff-859c-48c0-a1ba-0a3b5b4da25b" />
+
 Same as figure 8. Log in to the middlebox machine, and just run my_ips app with -c 1, 2, 4, 8, or 16.
 
 ```Bash
@@ -461,7 +463,7 @@ nload
 
 # Figure 13b - E2E-TLS
 
-<img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/7e0d5757-3172-4358-8d76-4c3228e25a48" />
+<img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/7e0d5757-3172-4358-8d76-4c3228e25a48" />
 
 Since the throughput of mmTLS middlebox is already measured by evaluation for figure 8, it is enough to measure the throughput of an endpoint TLS server.
 Stop all the middlebox programs on the middlebox machine (box1.kaist.ac.kr), and run the clients.
