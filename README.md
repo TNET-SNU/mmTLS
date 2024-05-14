@@ -493,6 +493,8 @@ You might want to run the test for file size 1k, 4k, 16k, 64k, 256k, 1m, and 4m.
 
 # Figure 14
 
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/8b8620b1-af71-4ea4-aa2c-2b77fc8d571a" />
+
 This is the simplest of our artifacts.
 Go to the mmTLS root directory and run tag script.
 It generates private tags in various methods for record size of 1KB, 2KB, 4KB, 8KB, and 16KB, then measures the relative overhead using average time spent.
@@ -508,7 +510,7 @@ Each column means Original (no private tag), mmTLS (optimal), Reusing ciphertext
 
 # Figure 15
 
-<img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/b6a6ccdd-f3d8-4de2-9f8d-5670dbf6cfab" />
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/b6a6ccdd-f3d8-4de2-9f8d-5670dbf6cfab" />
 
 This evaluation needs chromium GUI application and the extension program.
 We manually measured the page load time shown by the chromium extension so it is difficult to automatically reproduce the figure.
