@@ -109,7 +109,7 @@ The configuration of nginx as endpoints is a subset of above. Endpoints (box3, b
 
 # Figure 8 - mmTLS
 
-<img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/0ca8fc65-0562-465e-ac7c-f5c19882dc58" />
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/0ca8fc65-0562-465e-ac7c-f5c19882dc58" />
 
 You can run the middlebox on box1.kaist.ac.kr.
 Log in to box1.kaist.ac.kr first.
