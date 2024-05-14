@@ -525,7 +525,9 @@ cd openssl-modified/tag-gen
 It will take about 1 minute.
 Each column means Original (no private tag), mmTLS (optimal), Reusing ciphertext, and Double tags (naive), respectively.
 
-# Figure 15
+
+
+# Figure 15 - Default Chromium (for split-TLS and E2E-TLS
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/b6a6ccdd-f3d8-4de2-9f8d-5670dbf6cfab" />
 
@@ -539,21 +541,21 @@ First log in to the client machine, box2.kaist.ac.kr with -X option to enable X 
 ssh box2.kaist.ac.kr
 ```
 
-Then, setup mmtls configuration and go to the chromium directory.
+Then, unset mmtls configuration and go to the chromium directory.
 
 ```Bash
-sudo ./mmtls.sh
-cd chromium/src/out;
+sudo ./unmmtls.sh
+cd chromium/src/out
 ```
 
-You can run the mmTLS-ported chrome with some options as below.
+You can run the default chrome with some options as below.
 
 ```Bash
-./Default/chrome --ignore-certificate-errors --disable-proxy-certificate-handler
+./Default/chrome --ignore-certificate-errors --disable-proxy-certificate-handler --test-type
 ```
 
 If you want to test split-TLS, type https://10.11.95.1:21443 on the URL space.
-Otherwise, type https://10.11.95.3:1443 on the URL space as below.
+Else if you want to test E2E-TLS, type https://10.11.95.3:1443 on the URL space as below.
 
 <img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/64a7ca03-6777-4869-aff9-141e831bfb28" />
 
@@ -574,6 +576,44 @@ sudo ./genhtml.sh 100 # number of embedding resources
 ```
 It will change the same index page to include more resources.
 (Since chromium is based on GUI, clicking and re-typing other resources on chromium is a more cumbersome task than directly modifying the same index page on the server.)
+
+
+
+# Figure 15 - mmTLS-ported Chromium
+
+To test the mmTLS-ported chromium, setup mmtls.sh configuration and go to the chromium directory.
+
+```Bash
+ssh box2.kaist.ac.kr
+```
+
+```Bash
+sudo ./mmtls.sh
+cd chromium/src/out
+```
+
+Then, run the mmTLS middlebox and the key-server on the middlebox machine (box1.kaist.ac.kr) in advance.
+We provide a script that runs both automatically.
+
+```Bash
+./run-mmtls-middlebox.sh
+```
+
+Now you can run mmTLS-ported chromium.
+
+```Bash
+./mmtls/chrome --ignore-certificate-errors --disable-proxy-certificate-handler --test-type
+```
+
+To test mmTLS, type https://10.11.95.3:1443 on the URL apace.
+The other steps are the same with the section above.
+
+After testing, you should stop the mmtls middlebox.
+
+```Bash
+./stop-mmtls-middlebox.sh
+```
+
 
 
 # Figure 16 - mmTLS
