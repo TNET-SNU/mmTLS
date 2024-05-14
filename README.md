@@ -561,7 +561,7 @@ Else if you want to test E2E-TLS, type https://10.11.95.3:1443 on the URL space 
 
 It will load the page with a number of embedding resources.
 After loading, click the first extension and check the total loading timing. (132ms in the screenshot)
-You can repeat by entering "F6 key" and "enter key". (No refresh button or "F5 key", since they do not establish a new TLS connection.)
+You can repeat by typing **"Ctrl + F5". (No refresh button or "only F5", since they do not establish a new TLS connection.)**
 Since it's a LAN connection, it will be almost the same value as our evaluation, even though you do not repeat it 100 times fully to measure the average.
 
 If you want to change the number of embedding resources, modify the main page on the server side as below.
