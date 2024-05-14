@@ -589,33 +589,21 @@ You can run the default chrome with some options as below.
 ./Default/chrome --ignore-certificate-errors --disable-proxy-certificate-handler --test-type
 ```
 
-If you want to test split-TLS, type https://10.11.95.1:21443 on the URL space.
-Else if you want to test E2E-TLS, type https://10.11.95.3:1443 on the URL space as below.
+If you want to test split-TLS, type https://10.11.95.1:21443/200.html on the URL space.
+Else if you want to test E2E-TLS, type https://10.11.95.3:1443/200.html on the URL space as below.
 
-<img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/64a7ca03-6777-4869-aff9-141e831bfb28" />
+<img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/726cd67d-5768-4dfb-b56a-02f7e31a4e48" />
 
 It will load the page with a number of embedding resources.
-After loading, click the first extension and check the total loading timing. (132ms in the screenshot)
+After loading, click the first extension and check the total loading timing. (754ms in the screenshot)
 You can repeat by typing **"Ctrl + F5". (No refresh button or "only F5", since they do not establish a new TLS connection.)**
 Since it's a LAN connection, the result will be pretty stable, even though you do not repeat it 100 times fully to measure the average.
 
 However, the absolute result will not be exactly same as the figure, since the chromium client machine is changed.
 Again, we recommend you to check the gap between E2E-TLS/mmTLS and split-TLS in terms of the page load time.
 
-If you want to change the number of embedding resources, modify the main page on the server side as below.
-
-```Bash
-# on box3.kaist.ac.kr
-ssh box4.kaist.ac.kr
-```
-
-```
-# on box4.kaist.ac.kr
-cd /usr/share/nginx/html
-sudo ./genhtml.sh 100 # number of embedding resources
-```
-It will change the same index page to include more resources.
-(Since chromium is based on GUI, clicking and re-typing other resources on chromium is a more cumbersome task than directly modifying the same index page on the server.)
+If you want to change the number of embedding resources, change the name of requested html file to one among 10.html, 20.html, 50.html, 100.html, and 200.html
+The number in the name of html file means the number of 136KB embedding resources.
 
 
 
@@ -654,7 +642,7 @@ Now, you can run mmTLS-ported chromium.
 ./mmtls/chrome --ignore-certificate-errors --disable-proxy-certificate-handler --test-type
 ```
 
-To test mmTLS, type https://10.11.95.3:1443 on the URL apace.
+To test mmTLS, type https://10.11.95.3:1443/[number of embedding resources].html on the URL apace.
 The other steps are the same with the section above.
 
 After testing, you should stop the mmtls middlebox.
@@ -665,46 +653,76 @@ After testing, you should stop the mmtls middlebox.
 
 
 
-# Figure 16 - mmTLS
+# Figure 16 - DPI on mmTLS
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/e83eee3c-58f2-4450-b8f9-446800c29a14" />
 
-First, log in to the middlebox machine (box1.kaist.ac.kr).
+First, login to the middlebox machine (box1.kaist.ac.kr).
+
 ```Bash
+# on box3.kaist.ac.kr
 ssh box1.kaist.ac.kr
 ```
 
-Run my_ips app with option -p and -l on the middlebox machine.
+Run 'my_ips' app with option -p and -l on the middlebox machine.
+
+'-p' option means 'my_ips' should do DPI on the decrypted content.
+
+'-l [monitoring size]' option means it should decrypt first [monitoring_size]KB of the HTTP response. (Default is 64, which decrypts first 64KB.)
 
 ```Bash
+# on box1.kaist.ac.kr
 cd mmTLS/proxies/mOS/mmTLS
 sudo ./my_ips -c 16 -p -l 16 # DPI on first 16KB
 ```
 
-Then, start the clients using run-h2load-persistent.sh.
+Then, start the clients using the script, 'run-h2load-persistent.sh'.
 
 ```Bash
 ./run-h2load-persistent.sh 1m
 ```
 
-my_ips app will print the real-time throughput.
+'my_ips' app will print the real-time throughput.
+
+After checking the throughput, stop the clients.
+
+```Bash
+./stop-clients.sh
+```
 
 
-
-# Figure 16 - split-TLS (nginx TLS proxy)
+# Figure 16 - DPI on split-TLS (nginx TLS proxy)
 
 To run split-TLS DPI, use the pre-built binaries, nginx-dpi-16k, nginx-dpi-32k, nginx-dpi-64k, and nginx-dpi-128k on nginx-1.24.0 directory at the middlebox machine (box1.kaist.ac.kr).
 
 ```Bash
+# on box3.kaist.ac.kr
 ssh box1.kaist.ac.kr
 ```
 
 ```Bash
+# on box1.kaist.ac.kr
 cd nginx-1.24.0
-sudo ./nginx-dpi-16k -c /etc/nginx/16.conf # replace the binary as you want
+sudo killall nginx
+sudo killall nginx*
+sudo ./nginx-dpi-16k -c /etc/nginx/16core.conf # replace the binary as you want
 ```
 
-Then, measure the throughput using nload on the middlebox machine (box1.kaist.ac.kr).
+Start the clients using the script, 'run-h2load-persistent.sh' and check the throughput using nload.
+
+```Bash
+cd ~/mmTLS/proxies/mOS/mmTLS
+./run-h2load-persistent.sh 1m
+nload
+```
+
+nload will print the real-time throughput in Gibps.
+
+After checking the throughput, stop nload by entering Ctrl+C, and stop the clients.
+
+```Bash
+./stop-clients.sh
+```
 
 
 # Figure 17
