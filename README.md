@@ -461,6 +461,8 @@ nload
 
 # Figure 13b - E2E-TLS
 
+<img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/7e0d5757-3172-4358-8d76-4c3228e25a48" />
+
 Since the throughput of mmTLS middlebox is already measured by evaluation for figure 8, it is enough to measure the throughput of an endpoint TLS server.
 Stop all the middlebox programs on the middlebox machine (box1.kaist.ac.kr), and run the clients.
 
