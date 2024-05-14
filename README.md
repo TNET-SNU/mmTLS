@@ -4,45 +4,41 @@ mmTLS is a highly scalable TLS middlebox for monitoring encrypted traffic.
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/08e02f36-be13-443a-b923-3278b487c80f" />
 
-mmTLS provides high throughput and low latency using techniques below.
+mmTLS  achieves high throughput and low latency leveraging the techniques below.
 
 1. Single connection architecture which removes redundant TLS/TCP handshakes, flow management, memory copies, and re-encryption
-2. Scalable key distribution technique using SmartNIC or a dedicated core
-3. Minimized overhead on private tag generation/verification
-4. On-demand decryption of partial content via event-driven API
+2. Scalable key distribution via SmartNIC (or a dedicated CPU core)
+3. Minimal overhead on private tag generation/verification
+4. Support for event-driven API for programming TLS connections
 
 
 
-# Accessing remote machines for AE
 
-Because Bluefield-2 SmartNIC is required for reproducing, we highly recommend you to run test scripts in our remote machines.
-If you want to build and run on your own, please refer to INSTALL.md.
+# Accessing machines remotely for AE
 
-Currently we have a simple testbed to test functionality of our work, used for ATC’24 artifact evaluation.
-Please let us know (cerotyki@gmail.com or HotCRP) if you want to access them.
-Our testbed consists of 7 machines: 4 clients, 1 middlebox, and 2 backend servers.
-You can access them via ssh.
-Please access the access server first, and log in other 6 machines from the access server.
-
-Access server is box3.kaist.ac.kr, and it is used as one of the backend servers. The figure below depicts the topology of our testbed.
-
+mmTLS currently leverages the Bluefield-2 SmartNIC, so we recommend accessing our test machine with the SmartNIC from remotely and running test scripts on them.
+If you want to build and run the system on your own, please refer to INSTALL.md.
+We have set up a simple testbed to evaluate the functionality of our work, used for ATC’24 artifact evaluation.
+Please let us know (cerotyki@gmail.com or HotCRP) and we will provide the credential to login to the test machine.
+Our testbed consists of 7 machines: 4 clients, 1 middlebox, and 2 backend servers (see the picture below) and all of them are accessible by ssh.
+Please log into the access server (i.e., box3.kaist.ac.kr) first, and you can log into other machines from it.
+The figure below depicts the topology of our testbed.
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/7b82e7f2-834f-474c-9cad-c8b43e8ee3f1" />
 
-This page assumes that you have access to our machine, box3.kaist.ac.kr via ssh.
-
+This page assumes that you have access to box3.kaist.ac.kr via ssh.
 
 ```Bash
 ssh [guest ID]@box3.kaist.ac.kr
 ```
 
-Then access to box1.kaist.ac.kr which has mmTLS middlebox source code.
+Then log into box1.kaist.ac.kr which has the mmTLS middlebox source code.
 
 ```Bash
 ssh box1.kaist.ac.kr
 ```
 
-You should be able to see your home. Now export a mmTLS directory as a bash variable.
+Enter “mmTLS” directory from the home directory, and export the mmTLS directory path as a bash variable.
 
 ```Bash
 cd mmTLS
@@ -51,11 +47,11 @@ export MMTLS_DIR=`pwd`
 
 
 
-# nginx config as a baseline middlebox (Split-TLS) and endpoints
+# Configuring nginx a baseline middlebox (Split-TLS) and endpoints
 
-For your information, the configuration of nginx as a Split-TLS middlebox is as below.
-If you want to test various workload as you want, use h2load or ab for those ports.
-Note that svr0 and svr1 mean box3.kaist.ac.kr and box4.kaist.ac.kr, respectively.
+The configuration of nginx as a Split-TLS middlebox is shown below.
+If you want to test without the script we prepared, make h2load or ab on the client machines send requests to the responsible port.
+Note that svr0 and svr1 refer to box3.kaist.ac.kr and box4.kaist.ac.kr, respectively.
 
 ```
 	# LAN
@@ -104,45 +100,61 @@ Note that svr0 and svr1 mean box3.kaist.ac.kr and box4.kaist.ac.kr, respectively
 ```
 
 The configuration of nginx as endpoints is a subset of above. Endpoints (box3, box4) use only upper 6 ports; 80, 1080, 442, 1442, 443, 1443.
-
+You don't need to modify the configuration files. That's just for reference.
 
 
 # Figure 8 - mmTLS
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/0ca8fc65-0562-465e-ac7c-f5c19882dc58" />
 
-You can run the middlebox on box1.kaist.ac.kr.
+You run the mmTLS middlebox on box1.kaist.ac.kr.
 Log in to box1.kaist.ac.kr first.
 
 ```Bash
 ssh box1.kaist.ac.kr
 ```
 
-We prepared a pre-built mmTLS application which decrypts (and does DPI when -p option exists) the payload for the given size.
-It is in the mmTLS/proxies/mOS/mmTLS directory, so go to that directory and run the sample application.
+We have prepared a pre-built mmTLS application which decrypts (and runs DPI with the ‘-p’ option which means pattern matching on) the payload for the given size.
+The binary is in the mmTLS/proxies/mOS/mmTLS directory, so go to that directory and run the sample application.
 
 ```Bash
 cd mmTLS/proxies/mOS/mmTLS
 sudo ./my_ips -c 16
 ```
 
-When it starts to print the throughput logs, it is ready to work.
+my_ips is a script that runs the mmTLS application.
+
+'-c 16' means it should use 16 CPU cores.
+
+'-l [monitoring size]' means it should decrypt first [monitoring_size]KB of the HTTP response. (Default is 64, which decrypts first 64KB.)
+
+'-p' means run pattern matching using a snort3-10k-ruleset. We will use it on AE for figure 16.
+
+When it starts, it periodically prints out the throughput after initialization.
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/679cdfd6-0570-4ea0-9782-f4bb582bdcaa" />
 
-Then, open a new ssh session to the middlebox machine (box1.kaist.ac.kr) and ssh to Bluefield-2 SmartNIC.
+Then, on another ssh session to the middlebox machine (box1.kaist.ac.kr), ssh into the Bluefield-2 SmartNIC.
+
 ```Bash
 ssh box1.kaist.ac.kr
 ```
 ```Bash
 ssh 192.168.100.2 # on box1.kaist.ac.kr
 ```
-Run the key-server on bf2_key_server directory.
+
+Run the ‘key-server’ binary in the bf2_key_server directory.
+
 ```Bash
 cd bf2_key_server
 sudo ./key-server -c 8 -i p1
 ```
-The key-server will print the logs about secondary key channels.
+
+'-c 8' means it should use 8 CPU cores. (BF-2 has 8 cores.)
+
+'-i p1' means it uses 'p1' interface to send raw packets to the host.
+
+The ‘key-server’ will print out the trace on the secondary key channel.
 
 Now, open one more new ssh session and go to the same directory.
 Then, execute ./run-mmtls-clients-persistent-gcm.sh to run all four client machines at the same time.
