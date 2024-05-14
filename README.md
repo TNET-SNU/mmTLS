@@ -359,6 +359,10 @@ nload
 
 
 # Figure 11 & Figure 12
+
+<img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/8490913b-e9f3-4a3d-a99d-b5b59136eb1b" />
+
+
 We measure the average of 100 LAN response times and 100 WAN response times.
 To simplify your evaluation, we prepared a simple all-in-one script on the client side.
 Log in to wood1.kaist.ac.kr first.
