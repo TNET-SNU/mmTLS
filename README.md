@@ -552,6 +552,8 @@ It will change the same index page to include more resources.
 
 # Figure 16 - mmTLS
 
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/e83eee3c-58f2-4450-b8f9-446800c29a14" />
+
 First, log in to the middlebox machine (box1.kaist.ac.kr).
 ```Bash
 ssh box1.kaist.ac.kr
