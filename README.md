@@ -109,6 +109,8 @@ The configuration of nginx as endpoints is a subset of above. Endpoints (box3, b
 
 # Figure 8 - mmTLS
 
+<img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/0ca8fc65-0562-465e-ac7c-f5c19882dc58" />
+
 You can run the middlebox on box1.kaist.ac.kr.
 Log in to box1.kaist.ac.kr first.
 
@@ -125,7 +127,8 @@ sudo ./my_ips -c 16
 ```
 
 When it starts to print the throughput logs, it is ready to work.
-<img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/679cdfd6-0570-4ea0-9782-f4bb582bdcaa" />
+
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/679cdfd6-0570-4ea0-9782-f4bb582bdcaa" />
 
 Then, open a new ssh session to the middlebox machine (box1.kaist.ac.kr) and ssh to Bluefield-2 SmartNIC.
 ```Bash
@@ -154,7 +157,8 @@ You can control it among 1k, 4k, 16k, 64k, 256k, 1m, 4m.
 The output should seem like the screenshot below.
 
 
-<img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/c0919b1f-5056-4af6-9bc5-3489e3069513" />
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/c0919b1f-5056-4af6-9bc5-3489e3069513" />
+
 
 With the printed logs, you can check the persistent throughput of mmTLS with ECDHE-RSA-AES-256-GCM-SHA384 on TLS 1.3.
 After checking the throughput, you should stop the clients, as below.
