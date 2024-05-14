@@ -360,7 +360,10 @@ nload
 
 # Figure 11 & Figure 12
 
-<img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/8490913b-e9f3-4a3d-a99d-b5b59136eb1b" />
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/8490913b-e9f3-4a3d-a99d-b5b59136eb1b" />
+
+
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/867552f4-17bb-4ae3-95fd-f0ce04cefcc1" />
 
 
 We measure the average of 100 LAN response times and 100 WAN response times.
