@@ -249,6 +249,9 @@ nload will show the throughput in Gibps, so do not forget to multiplicate 1.024 
 
 
 # Figure 9 - mmTLS
+
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/8a8e8669-d295-4a11-ab8c-f2d6bc1a74dd" />
+
 The method is similar to the evaluation for figure 8.
 
 You can run the middlebox on box1.kaist.ac.kr.
