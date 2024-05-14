@@ -507,6 +507,9 @@ It will take about 1 minute.
 Each column means Original (no private tag), mmTLS (optimal), Reusing ciphertext, and Double tags (naive), respectively.
 
 # Figure 15
+
+<img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/b6a6ccdd-f3d8-4de2-9f8d-5670dbf6cfab" />
+
 This evaluation needs chromium GUI application and the extension program.
 We manually measured the page load time shown by the chromium extension so it is difficult to automatically reproduce the figure.
 Here, we only provide how to run the test manually.
@@ -536,7 +539,7 @@ Otherwise, type https://10.11.95.3:1443 on the URL space as below.
 <img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/64a7ca03-6777-4869-aff9-141e831bfb28" />
 
 It will load the page with a number of embedding resources.
-After loading, click the first extension and check the total loading timing. (132 ms in the screenshot)
+After loading, click the first extension and check the total loading timing. (132ms in the screenshot)
 You can repeat by entering "F6 key" and "enter key". (No refresh button or "F5 key", since they do not establish a new TLS connection.)
 Since it's a LAN connection, it will be almost the same value as our evaluation, even though you do not repeat it 100 times fully to measure the average.
 
