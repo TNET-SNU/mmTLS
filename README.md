@@ -195,8 +195,6 @@ After checking the throughput, you should stop the clients, as below.
 ./stop-clients.sh
 ```
 
-Then, stop the 'my_ips' binary by entering Ctrl+C.
-
 You can also test with DHE-RSA-AES-256-GCM-SHA256 with another script, run-mmtls-clients-persistent-cbc.sh.
 Follow the same step above, but replace the script ‘run-mmtls-clients-persistent-gcm.sh’ with ‘run-mmtls-clients-persistent-cbc.sh’ as below.
 
