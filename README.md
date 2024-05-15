@@ -354,24 +354,19 @@ sudo killall my_ips
 
 
 # Figure 9 - split-TLS (nginx TLS proxy)
-We use the 'key-server' to measure the E2E connections per second.
-Login to the SmartNIC via the middlebox machine (box1.kaist.ac.kr).
+We use the 'key-server' on the SmartNIC to measure the E2E connections per second.
 
 ```Bash
 # on box3.kaist.ac.kr
 ssh box1.kaist.ac.kr
 ```
 
+For your convenience, we provide a script, 'run-splittls-keyserver-ephemeral.sh' to remotely execute the 'key-server'.
+
 ```Bash
 # on box1.kaist.ac.kr
-ssh 192.168.100.2
-```
-
-Run the 'key-server' binary as below.
-
-```Bash
-cd ~/bf2_key_server
-sudo  ./key-server -c 8 -i p1
+cd ~/mmTLS/proxies/mOS/mmTLS
+./run-splittls-keyserver-ephemeral.sh
 ```
 
 It will print the E2E connection establishments in one second which is denoted as key/s in the printed logs.
@@ -402,25 +397,30 @@ After checking the throughput, stop the clients.
 You can check with another cipher suite, DHE-RSA-AES-256-GCM-SHA256 by the script below.
 
 ```Bash
+# on box1.kaist.ac.kr
+cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-splittls-clients-ephemeral-cbc.sh
 ```
 
 After checking the throughput using nload, stop the clients.
 
 ```Bash
+# on box1.kaist.ac.kr
 ./stop-clients.sh
 ```
 
 To test single core nginx TLS proxy, open a new ssh session to the middlebox machine (box1.kaist.ac.kr).
 
 ```Bash
+# on box3.kaist.ac.kr
 ssh box1.kaist.ac.kr
 ```
 
 Restart the nginx proxy with single configuration and see the throughput using nload.
 
 ```Bash
-cd nginx-1.24.0
+# on box1.kaist.ac.kr
+cd ~/nginx-1.24.0
 sudo killall nginx
 sudo killall nginx* # to stop our custom nginx binaries if they are running
 sudo ./nginx-dpi-0k -c /etc/nginx/1core.conf
@@ -429,6 +429,8 @@ sudo ./nginx-dpi-0k -c /etc/nginx/1core.conf
 On the first ssh session, run the script below and check the key/s printed by 'key-server' on SmartNIC.
 
 ```Bash
+# on box1.kaist.ac.kr
+cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-splittls-clients-ephemeral-gcm.sh
 ```
 
