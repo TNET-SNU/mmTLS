@@ -817,7 +817,7 @@ You can try DPI with 32KB, 64KB, and 128KB by replacing the argument as below.
 ```Bash
 # on box1.kaist.ac.kr
 cd mmTLS/proxies/mOS/mmTLS
-./run-mmtls-middlebox-dpi.sh 32 # DPI on first 32KB
+./run-mmtls-middlebox-dpi.sh 128 # DPI on first 128KB
 ```
 
 
@@ -853,6 +853,15 @@ After checking the throughput, stop nload by entering Ctrl+C, and stop the clien
 ```Bash
 # on box1.kaist.ac.kr
 ./stop-clients.sh
+```
+
+You can try DPI with 32KB, 64KB, and 128KB by replacing the argument as below.
+
+```Bash
+# on box1.kaist.ac.kr
+cd ~/mmTLS/proxies/mOS/mmTLS
+./run-splittls-middlebox-dpi.sh 128 # 128 means DPI on the first 128KB of HTTP response
+nload
 ```
 
 
