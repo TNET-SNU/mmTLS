@@ -325,7 +325,7 @@ However, the absolute result will not be exactly same as the figure, since the c
 Again, we recommend you to check the gap between E2E-TLS/mmTLS and split-TLS in terms of the page load time.
 
 If you want to change the number of embedding resources, change the name of requested html file to one among 10.html, 20.html, 50.html, 100.html, and 200.html
-The number in the name of html file means the number of 136KB embedding resources.
+The number in the name of html file means the number of embedding resources.
 
 
 
