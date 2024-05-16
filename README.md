@@ -880,8 +880,11 @@ cd ~/fig17
 ./all-in-one.sh alexa-test
 ```
 
-It will print whether the site is accessible from our testbed.
-It will take about 10 minutes.
+It will print whether the site is accessible from our testbed as below.
+
+<img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/5b94af03-2bac-4680-89e0-5b2a279ec0bd" />
+
+It will take about 30 minutes.
 
 After running above, stop the middlebox and count and sort the alexa file on the mmTLS directory on the middlebox machine (box1.kaist.ac.kr).
 
@@ -898,5 +901,5 @@ cd ~/mmTLS/proxies/mOS/mmTLS
 
 The script will show the result which is equivalent to the figure 17.
 
-<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/56dfbad2-3593-4c4a-b5c1-2f1ed14f0531" />
+<img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/56dfbad2-3593-4c4a-b5c1-2f1ed14f0531" />
 
