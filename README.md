@@ -471,6 +471,8 @@ cd ~/fig11
 ./all-in-one.sh
 ```
 
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/d763d77f-a50c-4094-b8e4-acb174dbd4aa" />
+
 The result will be equivalent to figure 11 for both 11(a) -GCM- and 11(b) -CBC-.
 
 
@@ -495,6 +497,8 @@ cd ~/fig12
 ./kill-others.sh
 ./all-in-one.sh
 ```
+
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/d763d77f-a50c-4094-b8e4-acb174dbd4aa" />
 
 It will take about 15 minutes.
 Note that this script modifies the default routing table entry to make the WAN traffic come and go via LAN (private network) interface instead of the default WAN (public network) interface.
