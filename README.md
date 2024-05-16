@@ -702,7 +702,7 @@ ssh -X box3.kaist.ac.kr
 
 ```Bash
 # on box3.kaist.ac.kr
-ssh -X box2.kaist.ac.kr
+ssh -X junghan@box2.kaist.ac.kr
 ```
 
 Run the 'mmtls.sh' script to setup configuration for mmTLS and go to the chromium directory.
