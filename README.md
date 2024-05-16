@@ -864,6 +864,9 @@ nload
 
 
 # Figure 17
+
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/fe423586-39d1-4f64-8ed3-86d01965fe7f" />
+
 We provide an all-in-one script that runs the mmTLS middlebox application, 'my_cipherstat' on the middlebox machine (box1.kaist.ac.kr) and 'key-server' on the SmartNIC.
 Login to the client machine (wood1.kaist.ac.kr).
 
