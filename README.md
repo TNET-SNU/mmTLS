@@ -173,9 +173,10 @@ cd ~/fig12
 ./all-in-one.sh
 ```
 
+It will take about **15 minutes,** and print the result as below.
+
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/d763d77f-a50c-4094-b8e4-acb174dbd4aa" />
 
-It will take about **15 minutes.**
 Note that this script modifies the default routing table entry to make the WAN traffic come and go via LAN (private network) interface instead of the default WAN (public network) interface.
 (Unless, WAN traffic will not go to the middlebox which is connected via the LAN interface.)
 If you are accessing via ssh to the WAN interface of the client (wood1), your ssh session will be lost.
