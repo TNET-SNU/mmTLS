@@ -80,7 +80,7 @@ cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-persistent.sh
 ```
 
-It will take about 25 minutes.
+It will take about **25 minutes.**
 The script will print the throughput of mmTLS (1), mmTLS (2), splitTLS (1), splitTLS (2), and mcTLS (2) as below.
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/1b3a9327-c972-438a-9243-bd70f2885b26" />
@@ -113,7 +113,7 @@ Then, run the script, 'run-ephemeral.sh' as below.
 cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-ephemeral.sh
 ```
-This script will take about 5 minutes and print the throughput as below.
+This script will take about **5 minutes** and print the throughput as below.
 
 <img style="width:600px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/ed67ad11-4847-430d-a050-ef2947eb31c5" />
 
