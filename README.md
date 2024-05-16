@@ -511,7 +511,7 @@ We recommend you to check the gap between mmTLS and split-TLS, rather than the a
 Also, www.washingtonpost.com no longer supports http/1.1.
 It currently accepts only http/2.
 However, the nginx proxy (split-TLS) currently supports up to http/1.1 as a backend upstream connection, so we could not fully reproduce the result of split-TLS.
-So, the result for split-TLS to washingtonpost will appear empty.
+So, the result for washingtonpost will appear empty.
 If you think the absolute response time is necessary, please let us know.
 We will prepare other popular web sites to test split-TLS to WAN.
 
