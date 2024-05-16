@@ -113,7 +113,10 @@ Then, run the script, 'run-ephemeral.sh' as below.
 cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-ephemeral.sh
 ```
-This script will print the throughput in order of 1 core mmTLS, 16 core split-TLS (1), 1 core split-TLS (1), 16 core split-TLS (2), 1 core split-TLS (2), 16 core mcTLS, and 1 core mcTLS.
+This script will print the throughput as below.
+
+<img style="width:600px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/ed67ad11-4847-430d-a050-ef2947eb31c5" />
+
 
 
 
