@@ -60,7 +60,7 @@ ssh -X junghan@box2.kaist.ac.kr
 
 
 
-# Figure 8
+# Figure 8 - Persistent Connection Test
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/0ca8fc65-0562-465e-ac7c-f5c19882dc58" />
 
@@ -87,7 +87,7 @@ The script will print the throughput of mmTLS (1), mmTLS (2), splitTLS (1), spli
 
 
 
-# Figure 9
+# Figure 9 - Ephemeral Connection Test
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/8a8e8669-d295-4a11-ab8c-f2d6bc1a74dd" />
 
@@ -120,11 +120,11 @@ This script will take about **5 minutes** and print the throughput as below.
 
 
 
-# Figure 10
+# Figure 10 - Key Delay Measurement
 
 
 
-# Figure 11
+# Figure 11 - Response Time - LAN
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/8490913b-e9f3-4a3d-a99d-b5b59136eb1b" />
 
@@ -161,7 +161,7 @@ The result will be equivalent to figure 11 for both 11(a) -GCM- and 11(b) -CBC-.
 - Sorry for your inconvenience.
 ```
 
-# Figure 12
+# Figure 12 - Response Time - WAN
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/0a857799-c9bb-4baf-a151-13c7304f39a9" />
 
@@ -200,7 +200,7 @@ We will prepare other popular web sites to test split-TLS to WAN.
 
 
 
-# Figure 13a
+# Figure 13a - Scalability
 
 <img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/266cfaff-859c-48c0-a1ba-0a3b5b4da25b" />
 
@@ -223,7 +223,7 @@ The script will take about **7 minutes** and print the result as below.
 
 
 
-# Figure 13b
+# Figure 13b - Comparison with E2E TLS Server
 
 <img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/7e0d5757-3172-4358-8d76-4c3228e25a48" />
 
@@ -248,7 +248,7 @@ It will take about **7 minutes** and finally print the throughput of mmTLS and E
 
 
 
-# Figure 14
+# Figure 14 - Overhead on Tag Generation
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/8b8620b1-af71-4ea4-aa2c-2b77fc8d571a" />
 
@@ -272,7 +272,7 @@ Each column means Original (no private tag), mmTLS (optimal), Reusing ciphertext
 <img style="width:600px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/ee631ed4-cc12-4087-8c09-274a8238c751" />
 
 
-# Figure 15
+# Figure 15 - Web Browser Test
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/b6a6ccdd-f3d8-4de2-9f8d-5670dbf6cfab" />
 
@@ -376,7 +376,7 @@ After testing, you should stop the mmtls middlebox.
 
 
 
-# Figure 16
+# Figure 16 - DPI Application on the TLS Middlebox
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/e83eee3c-58f2-4450-b8f9-446800c29a14" />
 
@@ -401,7 +401,7 @@ It will take about **6 minutes**, and print the result as below.
 
 
 
-# Figure 17
+# Figure 17 - Another Sample Application - Cipherstats
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/fe423586-39d1-4f64-8ed3-86d01965fe7f" />
 
