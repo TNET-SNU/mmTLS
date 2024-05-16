@@ -30,22 +30,28 @@ This page assumes that you have access to box3.kaist.ac.kr via ssh.
 
 ```Bash
 # on your local
-ssh [guest ID]@box3.kaist.ac.kr
+ssh [guest ID]@box3.kaist.ac.kr -p [port]
 ```
 
-Then log into box1.kaist.ac.kr which has the mmTLS middlebox source code.
+Now you can log into the middlebox machine (box1.kaist.ac.kr) which has the AE scripts for figure 8, 9, 10, 13, 14, and 16.
 
 ```Bash
 # on box3.kaist.ac.kr
 ssh box1.kaist.ac.kr
 ```
 
-Enter “mmTLS” directory from the home directory, and export the mmTLS directory path as a bash variable.
+Or, you can log into the client machine (wood1.kaist.ac.kr) which has the AE scripts for figure 11, 12, and 17.
+
+For figure 15, which requires compiled chromium, you should log into box2.kaist.ac.kr with -X option to use X window.
 
 ```Bash
-# on box1.kaist.ac.kr
-cd ~/mmTLS
-export MMTLS_DIR=`pwd`
+# on your local
+ssh -X [guest ID]@box3.kaist.ac.kr -p [port]
+```
+
+```Bash
+# on box3.kaist.ac.kr
+ssh -X box2.kaist.ac.kr
 ```
 
 
@@ -129,6 +135,7 @@ When you are done, stop the clients and my_ips as instructed above.
 # on box1.kaist.ac.kr
 ./stop-clients.sh
 ```
+
 
 
 # Figure 8 - split-TLS (nginx TLS proxy)
@@ -230,6 +237,7 @@ After checking the throughput, stop the clients, as below.
 ```
 
 Again, nload will show the throughput in Gibps, so don’t forget to multiply (1.024 * 1.024 * 1.024) with the printed throughput.
+
 
 
 # Figure 9 - mmTLS
