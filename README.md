@@ -396,6 +396,7 @@ cd mmTLS/proxies/mOS/mmTLS
 It will take about **1 minute.**
 Each column means Original (no private tag), mmTLS (optimal), Reusing ciphertext, and Double tags (naive), respectively.
 
+<img style="width:600px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/ee631ed4-cc12-4087-8c09-274a8238c751" />
 
 
 # Figure 15
