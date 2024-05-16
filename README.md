@@ -60,9 +60,11 @@ ssh -X junghan@box2.kaist.ac.kr
 
 
 
-# Figure 8 - mmTLS
+# Figure 8
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/0ca8fc65-0562-465e-ac7c-f5c19882dc58" />
+
+## mmTLS
 
 You run the mmTLS middlebox on box1.kaist.ac.kr.
 Log in to box1.kaist.ac.kr first.
@@ -142,7 +144,8 @@ When you are done, stop the clients and my_ips as instructed above.
 
 
 
-# Figure 8 - split-TLS (nginx TLS proxy)
+## split-TLS (nginx TLS proxy)
+
 If you want to measure the throughput of split-TLS which is one of our baselines, first login to the middlebox machine (box1.kaist.ac.kr).
 
 ```Bash
@@ -200,7 +203,7 @@ Then, you will see the throughput with DHE-RSA-AES-256-GCM-SHA256 in the logs of
 
 
 
-# Figure 8 - mcTLS
+## mcTLS
 
 We run mcTLS clients and an mcTLS server by ssh command to the clients and a server machine (wood1.kaist.ac.kr, core2.kaist.ac.kr, and box3.kaist.ac.kr, respectively) from the middlebox machine (box1.kaist.ac.kr).
 So you do not need to log into clients or servers to execute the mcTLS endpoints.
