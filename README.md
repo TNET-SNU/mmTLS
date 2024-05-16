@@ -446,16 +446,11 @@ After checking the throughput, stop the clients.
 
 
 
-# Figure 11 & Figure 12
+# Figure 11
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/8490913b-e9f3-4a3d-a99d-b5b59136eb1b" />
 
-
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/867552f4-17bb-4ae3-95fd-f0ce04cefcc1" />
-
-
-<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/0a857799-c9bb-4baf-a151-13c7304f39a9" />
-
 
 We measure the average of 100 LAN response times and 100 WAN response times.
 To simplify your evaluation, we have prepared a simple all-in-one script on the client side.
@@ -467,7 +462,7 @@ ssh wood1.kaist.ac.kr
 ```
 
 Since our script includes running the mmTLS or mcTLS (baseline) middlebox on box1.kaist.ac.kr as background program, you don't need to directly control the middlebox.
-Move to the fig11 directory and run 'all-in-one.sh' script. It takes about 5 minutes.
+Move to the fig11 directory and run 'all-in-one.sh' script. It takes about 6 minutes.
 
 ```Bash
 # on wood1.kaist.ac.kr
@@ -478,6 +473,12 @@ cd ~/fig11
 
 The result will be equivalent to figure 11 for both 11(a) -GCM- and 11(b) -CBC-.
 
+
+
+# Figure 12
+
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/0a857799-c9bb-4baf-a151-13c7304f39a9" />
+
 For figure 12, we have prepared a simple 'all-in-one.sh' script on the client side as well as fig 11.
 
 ```
@@ -487,7 +488,7 @@ cd ~/fig12
 ./all-in-one.sh
 ```
 
-It will take about 10 minutes.
+It will take about 15 minutes.
 Note that this script modifies the default routing table entry to make the WAN traffic come and go via LAN (private network) interface instead of the default WAN (public network) interface.
 (Unless, WAN traffic will not go to the middlebox which is connected via the LAN interface.)
 If you are accessing via ssh to the WAN interface of the client (wood1), your ssh session will be lost.
