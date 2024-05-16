@@ -93,165 +93,27 @@ The script will print the throughput of mmTLS (1), mmTLS (2), splitTLS (1), spli
 
 
 ```diff
-- For AE of Figure 9, we found that there was a mis-configuration at the last evaluation done before submitting our paper for AE.
-- The result that you reproduce in this section will be smaller than the figure, but it is correct result.
-- They will be about 40K/s, 0.63K/s, and 9K/s for 1 core mmTLS, 1 core nginx, and 16 core nginx, respectively.
+- For AE of Figure 9, we found that there was a mis-configuration at the last evaluation.
+- The result of mmTLS that you reproduce in this section will be about 40K/s, but it is correct result.
 - We will update the final result for the camera-ready version.
 - Sorry for your inconvenience.
 ```
 
-
-## mmTLS
-It is similar to the evaluation of figure 8 as you run the middlebox on box1.kaist.ac.kr.
-First, log into box1.kaist.ac.kr.
+Login to the middlebox machine (box1.kaist.ac.kr).
 
 ```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
+# on atc-ae@box3.kaist.ac.kr
+ssh junghan@box1.kaist.ac.kr
 ```
 
-Then, go to the directory including 'my_ips' and run the sample application with a single CPU core as background and run the 'key-server' on the SmartNIC.
-(We use only a single CPU core for the mmTLS middlebox as 4 clients and 2 servers are not enough to saturate the middlebox with ephemeral connections since they incur huge overhead at endpoints.)
-For your convenience, we provide the script below which runs the single core 'my_ips' on the host and the 'key-server' on the SmartNIC.
-
-```Bash
-# on box1.kaist.ac.kr
-cd mmTLS/proxies/mOS/mmTLS
-./run-splittls-keyserver-ephemeral.sh
-```
-
-The script will print out the trace on the secondary key channel as below.
-
-<img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/6164bba2-b499-4298-bbeb-2cb9d213ceee" />
-
-The E2E connection establishments in one second is denoted as key/s in the printed logs.
-
-Now, open a new session to the middlebox machine (box1.kaist.ac.kr) and run ephemeral clients.0
-
-```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
-```
+Then, run the script, 'run-ephemeral.sh' as below.
 
 ```Bash
 # on box1.kaist.ac.kr
 cd ~/mmTLS/proxies/mOS/mmTLS
-./run-mmtls-clients-ephemeral-gcm.sh
+./run-ephemeral.sh
 ```
-
-It will print the total keys, keys per second, total connections, connections per second.
-(In the context of key-server, a connection means the secondary key channel, which is persistent.)
-**The second log, keys per second shows the E2E connections established in one second.**
-
-After checking the throughput, stop the clients, 'my_ips', and 'key-server'.
-
-```Bash
-# on box1.kaist.ac.kr
-./stop-clients.sh
-```
-
-
-
-## split-TLS (nginx TLS proxy)
-
-We use the 'key-server' on the SmartNIC to measure the E2E connections per second.
-
-```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
-```
-
-Again, for your convenience, we provide a script on the middlebox host to run remotely execute the 'key-server' on the SmartNIC.
-
-```Bash
-# on box1.kaist.ac.kr
-cd ~/mmTLS/proxies/mOS/mmTLS
-./run-splittls-middlebox.sh
-./run-splittls-keyserver-ephemeral.sh
-```
-
-It will print the E2E connection establishments in one second which is denoted as key/s in the printed logs.
-
-Now, it is ready for testing.
-To start the clients, open a new session to the middlebox machine (box1.kaist.ac.kr).
-
-```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
-```
-
-Then, run the test scripts, and check the logs by 'key-server' running on the first ssh session.
-
-```Bash
-# on box1.kaist.ac.kr
-cd ~/mmTLS/proxies/mOS/mmTLS
-./run-splittls-clients-ephemeral-gcm.sh
-```
-
-After checking the throughput, stop the clients.
-
-```Bash
-# on box1.kaist.ac.kr
-./stop-clients.sh
-```
-
-You can check with another cipher suite, DHE-RSA-AES-256-GCM-SHA256 by the script below.
-
-```Bash
-# on box1.kaist.ac.kr
-cd ~/mmTLS/proxies/mOS/mmTLS
-./run-splittls-clients-ephemeral-cbc.sh
-```
-
-After checking the key/s on the logs by 'key-server', stop the clients.
-
-```Bash
-# on box1.kaist.ac.kr
-./stop-clients.sh
-```
-
-To test single core nginx TLS proxy, open a new ssh session to the middlebox machine (box1.kaist.ac.kr).
-
-```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
-```
-
-Restart the nginx proxy with single configuration and see the throughput using the 'key-server'.
-
-```Bash
-# on box1.kaist.ac.kr
-cd ~/mmTLS/proxies/mOS/mmTLS
-./run-splittls-middlebox.sh 1 # means 1 core employed by nginx
-./run-splittls-keyserver-ephemeral.sh
-```
-
-Then, run the test scripts, and check the logs by 'key-server' running on the first ssh session.
-
-```Bash
-# on box1.kaist.ac.kr
-cd ~/mmTLS/proxies/mOS/mmTLS
-./run-splittls-clients-ephemeral-gcm.sh
-```
-
-After checking the key/s on the logs by 'key-server', stop the clients.
-
-```Bash
-./stop-clients.sh
-```
-
-For DHE-RSA-AES-256-GCM-SHA256, run below instead of 'run-splittls-clients-ephemeral-gcm.sh'.
-
-```Bash
-./run-splittls-clients-ephemeral-cbc.sh
-```
-
-After checking the throughput, stop the clients.
-
-```Bash
-./stop-clients.sh
-```
-
+This script will print the throughput in order of 1 core mmTLS, 16 core split-TLS (1), 1 core split-TLS (1), 16 core split-TLS (2), 1 core split-TLS (2), 16 core mcTLS, and 1 core mcTLS.
 
 
 
