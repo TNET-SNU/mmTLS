@@ -51,7 +51,7 @@ ssh -X [guest ID]@box3.kaist.ac.kr -p [port]
 
 ```Bash
 # on box3.kaist.ac.kr
-ssh -X box2.kaist.ac.kr
+ssh -X junghan@box2.kaist.ac.kr
 ```
 
 
