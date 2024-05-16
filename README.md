@@ -346,7 +346,7 @@ cd ~/mmTLS/proxies/mOS/mmTLS
 
 The script will take about **7 minutes** and print the result as below.
 
-<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/f5b5c638-9001-4a17-adf8-9d9afb211a42" />
+<img style="width:600px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/f5b5c638-9001-4a17-adf8-9d9afb211a42" />
 
 
 
