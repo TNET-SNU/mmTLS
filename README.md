@@ -118,63 +118,29 @@ Log in to box1.kaist.ac.kr first.
 ssh box1.kaist.ac.kr
 ```
 
-We have prepared a pre-built mmTLS application which decrypts (and runs DPI with the ‘-p’ option which means pattern matching on) the payload for the given size.
-The binary is in the mmTLS/proxies/mOS/mmTLS directory, so go to that directory and run the sample application.
+We have prepared a pre-built mmTLS application, 'my_ips', which decrypts the payload for the given size.
+Since mmTLS requires 'key-servere' to be run on the SmartNIC, we provide a script for executing 'my_ips' and 'key-server' at the same time.
+Go to the directory that has our scripts, and run the script 'run-mmtls-middlebox-persistent.sh'.
 
 ```Bash
 # on box1.kaist.ac.kr
 cd mmTLS/proxies/mOS/mmTLS
-sudo ./my_ips -c 16
+./run-mmtls-middlebox-persistent.sh
 ```
-
-my_ips is a script that runs the mmTLS application.
-
-'-c 16' means it should use 16 CPU cores.
-
-'-l [monitoring size]' means it should decrypt first [monitoring_size]KB of the HTTP response. (Default is 64, which decrypts first 64KB.)
-
-'-p' means run pattern matching using a snort3-10k-ruleset. We will use it on AE for figure 16.
 
 When it starts, it periodically prints out the throughput after initialization.
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/679cdfd6-0570-4ea0-9782-f4bb582bdcaa" />
 
-Then, on another ssh session to the middlebox machine (box1.kaist.ac.kr), ssh into the Bluefield-2 SmartNIC.
+
+Then, open one more new ssh session.
 
 ```Bash
 # on box3.kaist.ac.kr
 ssh box1.kaist.ac.kr
 ```
 
-```Bash
-# on box1.kaist.ac.kr
-ssh 192.168.100.2
-```
-
-Run the ‘key-server’ binary in the bf2_key_server directory.
-
-```Bash
-# on 192.168.100.2 (SmartNIC)
-cd bf2_key_server
-sudo ./key-server -c 8 -i p1
-```
-
-'-c 8' means it should use 8 CPU cores. (BF-2 has 8 cores.)
-
-'-i p1' means it uses 'p1' interface to send raw packets to the host.
-
-The ‘key-server’ will print out the trace on the secondary key channel as below.
-
-<img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/6164bba2-b499-4298-bbeb-2cb9d213ceee" />
-
-Then, open one more new ssh session and go to the same directory.
-
-```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
-```
-
-Then, execute ./run-mmtls-clients-persistent-gcm.sh to run all four client machines at the same time.
+Go to the same directory and execute ./run-mmtls-clients-persistent-gcm.sh to run all four client machines at the same time.
 
 ```Bash
 # on box1.kaist.ac.kr
@@ -192,6 +158,7 @@ With the trace, you can check the persistent throughput of mmTLS with ECDHE-RSA-
 After checking the throughput, you should stop the clients, as below.
 
 ```Bash
+# on box1.kaist.ac.kr
 ./stop-clients.sh
 ```
 
@@ -199,33 +166,55 @@ You can also test with DHE-RSA-AES-256-GCM-SHA256 with another script, run-mmtls
 Follow the same step above, but replace the script ‘run-mmtls-clients-persistent-gcm.sh’ with ‘run-mmtls-clients-persistent-cbc.sh’ as below.
 
 ```Bash
+# on box1.kaist.ac.kr (first ssh session)
+./run-mmtls-middlebox-persistent.sh
+```
+
+```Bash
+# on box1.kaist.ac.kr (second ssh session)
 ./run-mmtls-clients-persistent-cbc.sh 64k
 ```
 
+64k means the clients request 64KB objects from the server.
+You can use 1k, 4k, 16k, 64k, 256k, 1m, 4m as well.
 Then, you will see the throughput with DHE-RSA-AES-256-GCM-SHA25 from the trace by my_ips.
 When you are done, stop the clients and my_ips as instructed above.
 
+```Bash
+# on box1.kaist.ac.kr
+./stop-clients.sh
+```
+
 
 # Figure 8 - split-TLS (nginx TLS proxy)
-If you want to measure the throughput of split-TLS which is one of our baselines, stop my_ips and use nload on the middlebox instead.
+If you want to measure the throughput of split-TLS which is one of our baselines, first login to the middlebox machine (box1.kaist.ac.kr).
 
 ```Bash
+# on box3.kaist.ac.kr
+ssh box1.kaist.ac.kr
+```
+
+Then, start nginx TLS proxy using the script below and measure the throughput using 'nload' on the middlebox
+
+```Bash
+# on box1.kaist.ac.kr
+cd ~/mmTLS/proxies/mOS/mmTLS
+./run-splittls-middlebox.sh
 nload
 ```
 
-You can see other interfaces using arrow keys (e.g., <-, ->).
-nload prints the throughput of each interface in Gibps, so you should multiply (1.024 * 1.024 * 1.024) to convert it into Gbps.
+On 'nload', you can see other interfaces using arrow keys (e.g., <-, ->).
+'nload' prints the throughput of each interface in Gibps, so you should multiply (1.024 * 1.024 * 1.024) to convert it into Gbps.
 [(We have confirmed that the source code of nload is actually computing Gibps rather than Gbps.)](https://github.com/rolandriegel/nload/blob/8f92dc04fad283abdd2a4538cd4c2093d957d9da/src/statistics.cpp#L125)
-Or, you can check the bps by adding -u b option to nload.
+Or, you can check the bps by adding -u b option to 'nload'.
 
 ```Bash
 nload -u b
 ```
 
 It will show the throughput in 'bps'.
-Since nginx TLS proxy runs as background by default, you do not need to execute any middlebox application here.
 
-Now ssh into box1.kaist.ac.kr, and run the client script.
+Now ssh into the middlebox machine (box1.kaist.ac.kr), and run the client script.
 
 ```Bash
 # on box3.kaist.ac.kr
@@ -238,7 +227,7 @@ cd mmTLS/proxies/mOS/mmTLS
 ./run-splittls-clients-persistent-gcm.sh 64k
 ```
 
-Now, you can check the throughput in the logs of nload (first session).
+Now, you can check the throughput in the logs of 'nload' (first session).
 After checking the throughput, stop the clients, as below.
 
 ```Bash
@@ -251,7 +240,7 @@ You can also check DHE-RSA-AES-256-GCM-SHA256 with another script, run-splittls-
 ./run-splittls-clients-persistent-cbc.sh 64k
 ```
 
-Then, you will see the throughput withDHE-RSA-AES-256-GCM-SHA256 in the logs of nload.
+Then, you will see the throughput with DHE-RSA-AES-256-GCM-SHA256 in the logs of 'nload'.
 
 
 
@@ -288,6 +277,13 @@ ssh box1.kaist.ac.kr
 nload ens7f0np0
 ```
 
+After checking the throughput, stop the clients, as below.
+
+```Bash
+# on box1.kaist.ac.kr
+./stop-clients.sh
+```
+
 Again, nload will show the throughput in Gibps, so don’t forget to multiply (1.024 * 1.024 * 1.024) with the printed throughput.
 
 
@@ -303,10 +299,9 @@ First, log into box1.kaist.ac.kr.
 ssh box1.kaist.ac.kr
 ```
 
-Then, go to the directory including my_ips and run the sample application with a single CPU core as background and run the 'key-server' on the SmartNIC.
+Then, go to the directory including 'my_ips' and run the sample application with a single CPU core as background and run the 'key-server' on the SmartNIC.
 (We use only a single CPU core for the mmTLS middlebox as 4 clients and 2 servers are not enough to saturate the middlebox with ephemeral connections since they incur huge overhead at endpoints.)
-
-For your convenience, we provide the script below which runs the single core mmTLS middlebox on the host and 'key-server' on the SmartNIC.
+For your convenience, we provide the script below which runs the single core 'my_ips' on the host and the 'key-server' on the SmartNIC.
 
 ```Bash
 # on box1.kaist.ac.kr
@@ -314,7 +309,11 @@ cd mmTLS/proxies/mOS/mmTLS
 ./run-splittls-keyserver-ephemeral.sh
 ```
 
-It will print the E2E connection establishments in one second which is denoted as key/s in the printed logs.
+The script will print out the trace on the secondary key channel as below.
+
+<img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/6164bba2-b499-4298-bbeb-2cb9d213ceee" />
+
+The E2E connection establishments in one second is denoted as key/s in the printed logs.
 
 Now, open a new session to the middlebox machine (box1.kaist.ac.kr) and run ephemeral clients instead of persistent ones.
 
@@ -329,12 +328,9 @@ cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-mmtls-clients-ephemeral-gcm.sh
 ```
 
-Since we fix the size of requested objects as 1KB for ephemeral connections, the script does not need any other parameters.
-
-One thing different is that you should check the logs printed by ‘key-server’ running on SmartNIC.
 It will print the total keys, keys per second, total connections, connections per second.
 (In the context of key-server, a connection means the secondary key channel, which is persistent.)
-The second log, keys per second shows the E2E connections established in one second.
+**The second log, keys per second shows the E2E connections established in one second.**
 
 After checking the throughput, stop the clients, 'my_ips', and 'key-server'.
 
@@ -342,6 +338,7 @@ After checking the throughput, stop the clients, 'my_ips', and 'key-server'.
 # on box1.kaist.ac.kr
 ./stop-clients.sh
 ```
+
 
 
 # Figure 9 - split-TLS (nginx TLS proxy)
@@ -352,11 +349,12 @@ We use the 'key-server' on the SmartNIC to measure the E2E connections per secon
 ssh box1.kaist.ac.kr
 ```
 
-Again, for your convenience, we provide a script on the middlebox host to remotely execute the 'key-server' on the SmartNIC.
+Again, for your convenience, we provide a script on the middlebox host to run remotely execute the 'key-server' on the SmartNIC.
 
 ```Bash
 # on box1.kaist.ac.kr
 cd ~/mmTLS/proxies/mOS/mmTLS
+./run-splittls-middlebox.sh
 ./run-splittls-keyserver-ephemeral.sh
 ```
 
@@ -370,7 +368,7 @@ To start the clients, open a new session to the middlebox machine (box1.kaist.ac
 ssh box1.kaist.ac.kr
 ```
 
-Then, go to the directory including test scripts, and check the logs printed by the 'key-server' running on the SmartNIC.
+Then, run the test scripts, and check the logs by 'key-server' running on the first ssh session.
 
 ```Bash
 # on box1.kaist.ac.kr
@@ -393,7 +391,7 @@ cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-splittls-clients-ephemeral-cbc.sh
 ```
 
-After checking the throughput using nload, stop the clients.
+After checking the key/s on the logs by 'key-server', stop the clients.
 
 ```Bash
 # on box1.kaist.ac.kr
@@ -407,17 +405,16 @@ To test single core nginx TLS proxy, open a new ssh session to the middlebox mac
 ssh box1.kaist.ac.kr
 ```
 
-Restart the nginx proxy with single configuration and see the throughput using nload.
+Restart the nginx proxy with single configuration and see the throughput using the 'key-server'.
 
 ```Bash
 # on box1.kaist.ac.kr
-cd ~/nginx-1.24.0
-sudo killall nginx
-sudo killall nginx* # to stop our custom nginx binaries if they are running
-sudo ./nginx-dpi-0k -c /etc/nginx/1core.conf
+cd ~/mmTLS/proxies/mOS/mmTLS
+./run-splittls-middlebox.sh 1 # means 1 core employed by nginx
+./run-splittls-keyserver-ephemeral.sh
 ```
 
-On the first ssh session, run the script below and check the key/s printed by 'key-server' on SmartNIC.
+Then, run the test scripts, and check the logs by 'key-server' running on the first ssh session.
 
 ```Bash
 # on box1.kaist.ac.kr
@@ -425,13 +422,13 @@ cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-splittls-clients-ephemeral-gcm.sh
 ```
 
-After checking the throughput, stop the clients.
+After checking the key/s on the logs by 'key-server', stop the clients.
 
 ```Bash
 ./stop-clients.sh
 ```
 
-For DHE-RSA-AES-256-GCM-SHA256, run below.
+For DHE-RSA-AES-256-GCM-SHA256, run below instead of 'run-splittls-clients-ephemeral-gcm.sh'.
 
 ```Bash
 ./run-splittls-clients-ephemeral-cbc.sh
