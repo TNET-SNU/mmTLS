@@ -29,28 +29,28 @@ This page assumes that you have access to box3.kaist.ac.kr via ssh.
 
 ```Bash
 # on your local
-ssh [guest-ID]@box3.kaist.ac.kr -p [port]
+ssh atc-ae@box3.kaist.ac.kr -p [port]
 ```
 
 Now you can log into the middlebox machine (box1.kaist.ac.kr) which has the AE scripts for figure 8, 9, 10, 13, 14, and 16.
 
 ```Bash
 # on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
+ssh junghan@box1.kaist.ac.kr
 ```
 
 Or, you can log into the client machine (wood1.kaist.ac.kr) which has the AE scripts for figure 11, 12, and 17.
 
 ```Bash
 # on box3.kaist.ac.kr
-ssh wood1.kaist.ac.kr
+ssh junghan@wood1.kaist.ac.kr
 ```
 
 For figure 15, which requires compiled chromium, you should log into box2.kaist.ac.kr with -X option to use X window.
 
 ```Bash
 # on your local
-ssh -X [guest-ID]@box3.kaist.ac.kr -p [port]
+ssh -X atc-ae@box3.kaist.ac.kr -p [port]
 ```
 
 ```Bash
@@ -68,8 +68,8 @@ We have prepared a automated script to generate results for figure 8.
 Log in to box1.kaist.ac.kr first.
 
 ```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
+# on atc-ae@box3.kaist.ac.kr
+ssh junghan@box1.kaist.ac.kr
 ```
 
 Then, run the script, 'run-persistent.sh'
@@ -270,8 +270,8 @@ To simplify your evaluation, we have prepared a simple all-in-one script on the 
 Log into wood1.kaist.ac.kr first.
 
 ```Bash
-# on box3.kaist.ac.kr
-ssh wood1.kaist.ac.kr
+# on atc-ae@box3.kaist.ac.kr
+ssh junghan@wood1.kaist.ac.kr
 ```
 
 Since our script includes running the mmTLS or mcTLS (baseline) middlebox on box1.kaist.ac.kr as background program, you don't need to directly control the middlebox.
@@ -297,8 +297,8 @@ For figure 12, we have prepared a simple 'all-in-one.sh' script on the client si
 Log into wood1.kaist.ac.kr first.
 
 ```Bash
-# on box3.kaist.ac.kr
-ssh wood1.kaist.ac.kr
+# on atc-ae@box3.kaist.ac.kr
+ssh junghan@wood1.kaist.ac.kr
 ```
 
 Then, run below.
@@ -334,8 +334,8 @@ We will prepare other popular web sites to test split-TLS to WAN.
 Log into the middlebox machine, and just run the script, 'run-scalability.sh', which automatically tests mmTLS middlebox and nginx TLS proxy with various number of cores.
 
 ```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
+# on atc-ae@box3.kaist.ac.kr
+ssh junghan@box1.kaist.ac.kr
 ```
 
 ```Bash
@@ -357,8 +357,8 @@ The script will take about **7 minutes** and print the result as below.
 Login to the middlebox machine (box1.kaist.ac.kr).
 
 ```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
+# on atc-ae@box3.kaist.ac.kr
+ssh junghan@box1.kaist.ac.kr
 ```
 
 Run the script below.
@@ -383,8 +383,8 @@ Go to the openssl-modified directory on the mmTLS root directory, and run the 't
 It generates private tags in various methods for record size of 1KB, 2KB, 4KB, 8KB, and 16KB, then measures the relative overhead using average time spent.
 
 ```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
+# on atc-ae@box3.kaist.ac.kr
+ssh junghan@box1.kaist.ac.kr
 ```
 
 ```Bash
@@ -414,14 +414,14 @@ You should have been connected to the first access server (box3.kaist.ac.kr) wit
 
 ```Bash
 # on your local
-ssh -X [guest ID]@box3.kaist.ac.kr
+ssh -X atc-ae@box3.kaist.ac.kr
 ```
 
 Then, log in to the machine that has pre-built chromium with -X option.
 
 ```Bash
-# on box3.kaist.ac.kr
-ssh -X box2.kaist.ac.kr
+# on atc-aebox3.kaist.ac.kr
+ssh -X junghan@box2.kaist.ac.kr
 ```
 
 Before testing, unset mmTLS configuration and go to the chromium directory.
@@ -462,11 +462,11 @@ To test the mmTLS-ported chromium, ssh into the client machine with '-X' option.
 
 ```Bash
 # on your local
-ssh -X [guest-id]@box3.kaist.ac.kr -p [port]
+ssh -X atc-ae@box3.kaist.ac.kr -p [port]
 ```
 
 ```Bash
-# on box3.kaist.ac.kr
+# on atc-ae@box3.kaist.ac.kr
 ssh -X junghan@box2.kaist.ac.kr
 ```
 
@@ -510,8 +510,8 @@ After testing, you should stop the mmtls middlebox.
 First, login to the middlebox machine (box1.kaist.ac.kr).
 
 ```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
+# on atc-ae@box3.kaist.ac.kr
+ssh junghan@box1.kaist.ac.kr
 ```
 
 Then, run the script below.
@@ -536,8 +536,8 @@ We provide an all-in-one script that runs the mmTLS middlebox application, 'my_c
 Login to the client machine (wood1.kaist.ac.kr).
 
 ```Bash
-# on box3.kaist.ac.kr
-ssh wood1.kaist.ac.kr
+# on atc-ae@box3.kaist.ac.kr
+ssh junghan@wood1.kaist.ac.kr
 ```
 
 Then, go to the fig17 directory, and run 'all-in-one.sh' as below.
