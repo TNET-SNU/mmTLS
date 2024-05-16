@@ -139,7 +139,7 @@ Log into wood1.kaist.ac.kr first.
 ssh junghan@wood1.kaist.ac.kr
 ```
 
-Move to the fig11 directory and run 'all-in-one.sh' script. It takes about **7 minutes.**
+Move to the fig11 directory and run 'all-in-one.sh' script. It takes about **6 minutes.**
 
 ```Bash
 # on wood1.kaist.ac.kr
@@ -147,7 +147,7 @@ cd ~/fig11
 ./all-in-one.sh
 ```
 
-<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/8f266f7f-e2db-4367-85fe-19866089228c" />
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/44983fe6-d176-435b-b540-621020a0c2ce" />
 
 The result will be equivalent to figure 11 for both 11(a) -GCM- and 11(b) -CBC-.
 
