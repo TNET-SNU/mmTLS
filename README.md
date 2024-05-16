@@ -127,7 +127,7 @@ The script will print out the trace on the secondary key channel as below.
 
 The E2E connection establishments in one second is denoted as key/s in the printed logs.
 
-Now, open a new session to the middlebox machine (box1.kaist.ac.kr) and run ephemeral clients instead of persistent ones.
+Now, open a new session to the middlebox machine (box1.kaist.ac.kr) and run ephemeral clients.0
 
 ```Bash
 # on box3.kaist.ac.kr
