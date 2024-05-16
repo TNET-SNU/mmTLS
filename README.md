@@ -471,7 +471,7 @@ cd ~/fig11
 ./all-in-one.sh
 ```
 
-<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/d763d77f-a50c-4094-b8e4-acb174dbd4aa" />
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/8f266f7f-e2db-4367-85fe-19866089228c" />
 
 The result will be equivalent to figure 11 for both 11(a) -GCM- and 11(b) -CBC-.
 
