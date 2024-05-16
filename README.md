@@ -275,7 +275,7 @@ ssh wood1.kaist.ac.kr
 ```
 
 Since our script includes running the mmTLS or mcTLS (baseline) middlebox on box1.kaist.ac.kr as background program, you don't need to directly control the middlebox.
-Move to the fig11 directory and run 'all-in-one.sh' script. It takes about 6 minutes.
+Move to the fig11 directory and run 'all-in-one.sh' script. It takes about **7 minutes.**
 
 ```Bash
 # on wood1.kaist.ac.kr
@@ -313,7 +313,7 @@ cd ~/fig12
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/d763d77f-a50c-4094-b8e4-acb174dbd4aa" />
 
-It will take about 15 minutes.
+It will take about **15 minutes.**
 Note that this script modifies the default routing table entry to make the WAN traffic come and go via LAN (private network) interface instead of the default WAN (public network) interface.
 (Unless, WAN traffic will not go to the middlebox which is connected via the LAN interface.)
 If you are accessing via ssh to the WAN interface of the client (wood1), your ssh session will be lost.
@@ -346,7 +346,7 @@ cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-scalability.sh
 ```
 
-The script will take about 7 minutes and print the result as below.
+The script will take about **7 minutes** and print the result as below.
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/f5b5c638-9001-4a17-adf8-9d9afb211a42" />
 
@@ -371,9 +371,9 @@ cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-compare-with-e2e.sh
 ```
 
-It will take about 7 minutes and finally print the throughput of mmTLS and E2E-TLS as below.
+It will take about **7 minutes** and finally print the throughput of mmTLS and E2E-TLS as below.
 
-<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/1022ca28-3c4d-4590-9e6e-b008da11792a" />
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/aeaedb59-1974-4109-9d64-ed8ea14a1d20" />
 
 
 
@@ -395,7 +395,7 @@ cd mmTLS/proxies/mOS/mmTLS
 ./tag
 ```
 
-It will take about 1 minute.
+It will take about **1 minute.**
 Each column means Original (no private tag), mmTLS (optimal), Reusing ciphertext, and Double tags (naive), respectively.
 
 
@@ -508,8 +508,6 @@ After testing, you should stop the mmtls middlebox.
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/e83eee3c-58f2-4450-b8f9-446800c29a14" />
 
-## DPI on mmTLS
-
 First, login to the middlebox machine (box1.kaist.ac.kr).
 
 ```Bash
@@ -517,84 +515,16 @@ First, login to the middlebox machine (box1.kaist.ac.kr).
 ssh box1.kaist.ac.kr
 ```
 
-Run the script 'run-mmtls-middlebox-dpi.sh' which executes 'my_ips' app with option -p and -l on the middlebox machine.
-
-'-p' option means 'my_ips' should do DPI on the decrypted content.
-
-'-l [monitoring size]' option means it should decrypt first [monitoring_size]KB of the HTTP response. (Default is 64, which decrypts first 64KB.)
+Then, run the script below.
 
 ```Bash
 # on box1.kaist.ac.kr
 cd mmTLS/proxies/mOS/mmTLS
-./run-mmtls-middlebox-dpi.sh 16 # DPI on first 16KB
+./run-dpi.sh
 ```
 
-Then, open a new session and start the clients using the script, 'run-mmtls-clients-persistent-gcm.sh'.
+It will take about **6 minutes**, and print the result as below.
 
-```Bash
-# on box1.kaist.ac.kr
-./run-mmtls-clients-persistent-gcm.sh 1m
-```
-
-'run-mmtls-middlebox-dpi.sh' will print the real-time throughput.
-
-After checking the throughput, stop the clients.
-
-```Bash
-./stop-clients.sh
-```
-
-You can try DPI with 32KB, 64KB, and 128KB by replacing the argument as below.
-
-```Bash
-# on box1.kaist.ac.kr
-cd mmTLS/proxies/mOS/mmTLS
-./run-mmtls-middlebox-dpi.sh 128 # DPI on first 128KB
-```
-
-
-
-## DPI on split-TLS (nginx TLS proxy)
-
-To run split-TLS DPI, use the pre-built binaries, nginx-dpi-16k, nginx-dpi-32k, nginx-dpi-64k, and nginx-dpi-128k on nginx-1.24.0 directory at the middlebox machine (box1.kaist.ac.kr).
-
-```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
-```
-
-```Bash
-# on box1.kaist.ac.kr
-cd ~/mmTLS/proxies/mOS/mmTLS
-./run-splittls-middlebox-dpi.sh 16 # 16 means DPI on the first 16KB of HTTP response
-nload
-```
-
-nload will print the real-time throughput in Gibps.
-
-Then, start the clients using the script, 'run-splittls-clients-persistent-gcm.sh'.
-
-```Bash
-# on box1.kaist.ac.kr
-cd ~/mmTLS/proxies/mOS/mmTLS
-./run-splittls-clients-persistent-gcm.sh 1m
-```
-
-After checking the throughput, stop nload by entering Ctrl+C, and stop the clients.
-
-```Bash
-# on box1.kaist.ac.kr
-./stop-clients.sh
-```
-
-You can try DPI with 32KB, 64KB, and 128KB by replacing the argument as below.
-
-```Bash
-# on box1.kaist.ac.kr
-cd ~/mmTLS/proxies/mOS/mmTLS
-./run-splittls-middlebox-dpi.sh 128 # 128 means DPI on the first 128KB of HTTP response
-nload
-```
 
 
 
@@ -622,7 +552,7 @@ It will print whether the site is accessible from our testbed as below.
 
 <img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/5b94af03-2bac-4680-89e0-5b2a279ec0bd" />
 
-It will take about 30 minutes.
+It will take about **30 minutes.**
 At the end of the script, it will stop the middlebox and print the summarized result by reading it from the middlebox machine (box1.kaist.ac.kr).
 
 <img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/56dfbad2-3593-4c4a-b5c1-2f1ed14f0531" />
