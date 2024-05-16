@@ -107,7 +107,7 @@ cd ~/mmTLS/proxies/mOS/mmTLS
 This script will last about 1 minutes, and automatically terminate the middlebox at the end.
 64k means the clients request 64KB objects from the server.
 You can use 1k, 4k, 16k, 64k, 256k, 1m, 4m as well.
-The output should look like below.
+The output of the 'run-mmtls-middlebox-persistent.sh' script on the first ssh session should look like below.
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/c0919b1f-5056-4af6-9bc5-3489e3069513" />
 
