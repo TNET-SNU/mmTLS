@@ -856,15 +856,10 @@ It will print whether the site is accessible from our testbed as below.
 It will take about 30 minutes.
 At the end of the script, it will stop the middlebox and print the summarized result by reading it from the middlebox machine (box1.kaist.ac.kr).
 
-<img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/5b94af03-2bac-4680-89e0-5b2a279ec0bd" />
+<img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/56dfbad2-3593-4c4a-b5c1-2f1ed14f0531" />
 
 The result which is equivalent to the figure 17.
 Since the web sites on WAN are updated every hour, the result might not be exactly same as the figure.
-
-<img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/56dfbad2-3593-4c4a-b5c1-2f1ed14f0531" />
-
-
-
 
 
 
