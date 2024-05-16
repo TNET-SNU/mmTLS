@@ -864,38 +864,7 @@ nload
 
 
 # Figure 17
-
-Login to the middlebox machine and run the mmTLS application, 'my_cipherstat'.
-
-```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
-```
-
-```Bash
-# on box1.kaist.ac.kr
-cd ~/mmtls/proxies/mOS/mmTLS
-sudo ./my_cipherstat -c 1
-```
-
-Then, start the 'key-server' on the SmartNIC.
-
-```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
-```
-
-```Bash
-# on box1.kaist.ac.kr
-ssh 192.168.100.2
-```
-
-```Bash
-cd ~/bf2_key_server
-sudo ./key-server -c 8 -i p1
-```
-
-Now, it is ready for starting test.
+We provide an all-in-one script that runs the mmTLS middlebox application, 'my_cipherstat' on the middlebox machine (box1.kaist.ac.kr) and 'key-server' on the SmartNIC.
 Login to the client machine (wood1.kaist.ac.kr).
 
 ```Bash
@@ -903,15 +872,28 @@ Login to the client machine (wood1.kaist.ac.kr).
 ssh wood1.kaist.ac.kr
 ```
 
-Then, run the script, 'cipherstat.sh'.
+Then, go to the fig17 directory, and run 'all-in-one.sh' as below.
 
 ```Bash
-./cipherstat.sh alexa
+# on box1.kaist.ac.kr
+cd ~/fig17
+./all-in-one.sh alexa-test
 ```
 
-The mmTLS app, 'my_cipherstat' will make a CSV file consists of the cipher suites employed by 1K popular web sites in Alexa top 1M.
-
+It will print whether the site is accessible from our testbed.
 It will take about 10 minutes.
 
-After running above, stop the middlebox and see the alexa file on the mmTLS directory.
-The result will be equivalent to the figure 17.
+After running above, stop the middlebox and count and sort the alexa file on the mmTLS directory on the middlebox machine (box1.kaist.ac.kr).
+
+```Bash
+# on box3.kaist.ac.kr
+ssh box1.kaist.ac.kr
+```
+
+```Bash
+# on box1.kaist.ac.kr
+cd ~/mmTLS/proxies/mOS/mmTLS
+./count_cipher_suites.sh alexa-test
+```
+
+The script will show the result which is equivalent to the figure 17.
