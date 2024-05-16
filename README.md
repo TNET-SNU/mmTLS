@@ -239,6 +239,16 @@ Again, nload will show the throughput in Gibps, so don’t forget to multiply (1
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/8a8e8669-d295-4a11-ab8c-f2d6bc1a74dd" />
 
+
+```diff
+- For AE of Figure 9, we found that there was a mis-configuration at the last evaluation done before submitting our paper for AE.
+- The result that you reproduce in this section will be smaller than the figure, but it is correct result.
+- They will be about 40K/s, 0.63K/s, and 9K/s for 1 core mmTLS, 1 core nginx, and 16 core nginx, respectively.
+- We will update the final result for the camera-ready version.
+- Sorry for your inconvenience.
+```
+
+
 ## mmTLS
 It is similar to the evaluation of figure 8 as you run the middlebox on box1.kaist.ac.kr.
 First, log into box1.kaist.ac.kr.
@@ -288,14 +298,10 @@ After checking the throughput, stop the clients, 'my_ips', and 'key-server'.
 ./stop-clients.sh
 ```
 
-<span style="color:red">We found that there was a mis-configuration at the last evaluation done before submitting our paper for AE.</span>
-<span style="color:red">The result that you are seeing for current reproduction is the correct result. </span>
-<span style="color:red">They will be 0.63K/s, 9K/s for 1 core nginx and 16 core nginx, respectively. </span>
-We will update the result for the camera-ready version. Sorry for your incovenience.
-
 
 
 ## split-TLS (nginx TLS proxy)
+
 We use the 'key-server' on the SmartNIC to measure the E2E connections per second.
 
 ```Bash
@@ -394,9 +400,6 @@ After checking the throughput, stop the clients.
 ./stop-clients.sh
 ```
 
-<span style="color:red">We found that there was a mis-configuration at the last evaluation done before submitting our paper for AE.</span>
-<span style="color:red">The result that you are seeing for current reproduction is the correct result, about 40K/s. </span>
-We will update the result for the camera-ready version. Sorry for your incovenience.
 
 
 
