@@ -83,8 +83,7 @@ cd ~/mmTLS/proxies/mOS/mmTLS
 It will take about 25 minutes.
 The script will print the throughput of mmTLS (1), mmTLS (2), splitTLS (1), splitTLS (2), and mcTLS (2) as below.
 
-
-
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/1b3a9327-c972-438a-9243-bd70f2885b26" />
 
 
 
