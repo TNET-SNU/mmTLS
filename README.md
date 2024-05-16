@@ -333,10 +333,7 @@ We will prepare other popular web sites to test split-TLS to WAN.
 
 <img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/266cfaff-859c-48c0-a1ba-0a3b5b4da25b" />
 
-## mmTLS
-
-It is the same as figure 8.
-Log into the middlebox machine, and just run the script, 'run-mmtls-middlebox-persistent.sh' with an argument of 1, 2, 4, 8, or 16.
+Log into the middlebox machine, and just run the script, 'run-scalability.sh', which automatically tests mmTLS middlebox and nginx TLS proxy with various number of cores.
 
 ```Bash
 # on box3.kaist.ac.kr
@@ -346,95 +343,12 @@ ssh box1.kaist.ac.kr
 ```Bash
 # on box1.kaist.ac.kr
 cd ~/mmTLS/proxies/mOS/mmTLS
-run-mmtls-middlebox-persistent.sh 1 # 1 means the number of cores employed by the 'my_ips'
+./run-scalability.sh
 ```
 
-To run the clients to request 64KB objects, open a new session and run the script as below.
-
-```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
-```
-
-```Bash
-# on box1.kaist.ac.kr
-cd ~/mmTLS/proxies/mOS/mmTLS
-./run-mmtls-clients-persistent-gcm.sh 64k
-```
-
-Then, check the throughput log printed by 'run-mmtls-middlebox-persistent.sh' on the first session.
-Unlike the evaluation for figure 8, you should change the number of cores employed by 'run-mmtls-middlebox-persistent.sh', while fixing the size of objects requested as 64k.
-
-For example, to check the 2-core throughput, run as below.
-
-```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
-```
-
-```Bash
-# on box1.kaist.ac.kr
-cd ~/mmTLS/proxies/mOS/mmTLS
-run-mmtls-middlebox-persistent.sh 2 # 2 means the number of cores employed by the 'my_ips'
-```
-
-The following steps are the same as the single core test above.
-Run the clients with the script.
-
-```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
-```
-
-```Bash
-# on box1.kaist.ac.kr
-cd ~/mmTLS/proxies/mOS/mmTLS
-./run-mmtls-clients-persistent-gcm.sh 64k
-```
+The script will take about 7 minutes and print the result as below.
 
 
-
-## split-TLS (nginx TLS proxy)
-
-You can restart the nginx daemon with a smaller number of cores as below.
-Login to the middlebox machine (box1.kaist.ac.kr).
-
-```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
-```
-
-Then, run the nginx TLS proxy ans measure the throughput using nload.
-
-```Bash
-# on box1.kaist.ac.kr
-cd ~/mmTLS/proxies/mOS/mmTLS
-./run-splittls-middlebox.sh 16 # 16 means the number of cores employed by nginx
-nload
-```
-
-You can also try with 1, 2, 4, and 8 to change the number of cores employed by nginx.
-
-Then, open a new session and execute the clients using the script, 'run-splittls-clients-persistent-gcm.sh' which is used above.
-
-```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
-```
-
-```Bash
-# on box1.kaist.ac.kr
-cd ~/mmTLS/proxies/mOS/mmTLS
-./run-splittls-clients-persistent-gcm.sh 64k
-```
-
-After checking, stop the clients.
-
-```Bash
-# on box1.kaist.ac.kr
-cd ~/mmTLS/proxies/mOS/mmTLS
-./stop-clients.sh
-```
 
 
 
