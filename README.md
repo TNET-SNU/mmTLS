@@ -151,7 +151,15 @@ cd ~/fig11
 
 The result will be equivalent to figure 11 for both 11(a) -GCM- and 11(b) -CBC-.
 
-
+```diff
+- For AE of Figure 11 (a), we found that there were disk IO delays in E2E response time.
+- On this evaluation, we removed the disk IO by warming up the web servers.
+- For AE of Figure 11 (b), we found that the key exchange protocols were not consistent among mmTLS and the baselines.
+- mmTLS and Split-TLS were using RSA for key exchange while mcTLS was using DHE with 1024-bit DH parameter.
+- We make them use a common key exchange protocol, DHE with 2048-bit DH parameter, which is supported by mcTLS.
+- We will update the final result for the camera-ready version.
+- Sorry for your inconvenience.
+```
 
 # Figure 12
 
