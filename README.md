@@ -373,7 +373,7 @@ cd ~/mmTLS/proxies/mOS/mmTLS
 
 It will take about 7 minutes and finally print the throughput of mmTLS and E2E-TLS as below.
 
-<img style="width:800px;" src="" />
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/1022ca28-3c4d-4590-9e6e-b008da11792a" />
 
 
 
