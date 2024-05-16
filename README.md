@@ -480,6 +480,14 @@ The result will be equivalent to figure 11 for both 11(a) -GCM- and 11(b) -CBC-.
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/0a857799-c9bb-4baf-a151-13c7304f39a9" />
 
 For figure 12, we have prepared a simple 'all-in-one.sh' script on the client side as well as fig 11.
+Log into wood1.kaist.ac.kr first.
+
+```Bash
+# on box3.kaist.ac.kr
+ssh wood1.kaist.ac.kr
+```
+
+Then, run below.
 
 ```
 # on wood1.kaist.ac.kr
