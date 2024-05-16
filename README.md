@@ -212,28 +212,16 @@ Log into the middlebox machine.
 ssh box1.kaist.ac.kr
 ```
 
-Go to the directory including my_ips, and just run the script, run-mctls-test.sh.
+Go to the directory including my_ips, and just run the script, run-mctls-test.sh and nload to see the throughput.
 
 ```Bash
 # on box1.kaist.ac.kr
 cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-mctls-test.sh 64k # size of objects requested by clients
-```
-
-You can use the size of requested objects among 1k, 4k, 16k, 64k, 256k, 1m, and 4m.
-
-To see the throughput using nload, open a new ssh session to the middlebox machine (box1.kaist.ac.kr).
-
-```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
-```
-
-```Bash
-# on box1.kaist.ac.kr
 nload ens7f0np0
 ```
 
+You can use the size of requested objects among 1k, 4k, 16k, 64k, 256k, 1m, and 4m.
 After checking the throughput, stop the clients, as below.
 
 ```Bash
