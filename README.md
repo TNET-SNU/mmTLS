@@ -64,9 +64,7 @@ ssh -X junghan@box2.kaist.ac.kr
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/0ca8fc65-0562-465e-ac7c-f5c19882dc58" />
 
-## mmTLS
-
-You run the mmTLS middlebox on box1.kaist.ac.kr.
+We have prepared a automated script to generate results for figure 8.
 Log in to box1.kaist.ac.kr first.
 
 ```Bash
@@ -74,164 +72,19 @@ Log in to box1.kaist.ac.kr first.
 ssh box1.kaist.ac.kr
 ```
 
-We have prepared a pre-built mmTLS application, 'my_ips', which decrypts the payload for the given size.
-Since mmTLS requires 'key-servere' to be run on the SmartNIC, we provide a script for executing 'my_ips' and 'key-server' at the same time.
-Go to the directory that has our scripts, and run the script 'run-mmtls-middlebox-persistent.sh'.
+Then, run the script, 'run-persistent.sh'
 
 ```Bash
 # on box1.kaist.ac.kr
 cd ~/mmTLS/proxies/mOS/mmTLS
-./run-mmtls-middlebox-persistent.sh
+./run-persistent.sh
 ```
 
-When it starts, it periodically prints out the throughput after initialization.
-
-<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/679cdfd6-0570-4ea0-9782-f4bb582bdcaa" />
-
-
-Then, open one more new ssh session.
-
-```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
-```
-
-Go to the same directory and execute ./run-mmtls-clients-persistent-gcm.sh to run all four client machines at the same time.
-
-```Bash
-# on box1.kaist.ac.kr
-cd ~/mmTLS/proxies/mOS/mmTLS
-./run-mmtls-clients-persistent-gcm.sh 64k
-```
-
-This script will last about 1 minutes, and automatically terminate the middlebox at the end.
-64k means the clients request 64KB objects from the server.
-You can use 1k, 4k, 16k, 64k, 256k, 1m, 4m as well.
-The output of the 'run-mmtls-middlebox-persistent.sh' script on the first ssh session should look like below.
-
-<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/c0919b1f-5056-4af6-9bc5-3489e3069513" />
-
-With the trace, you can check the persistent throughput of mmTLS with ECDHE-RSA-AES-256-GCM-SHA384 on TLS 1.3.
-After checking the throughput, you can stop the clients, as below.
-
-```Bash
-# on box1.kaist.ac.kr
-./stop-clients.sh
-```
-
-You can also test with DHE-RSA-AES-256-GCM-SHA256 with another script, run-mmtls-clients-persistent-cbc.sh.
-Follow the same step above, but replace the script ‘run-mmtls-clients-persistent-gcm.sh’ with ‘run-mmtls-clients-persistent-cbc.sh’ as below.
-
-```Bash
-# on box1.kaist.ac.kr (first ssh session)
-./run-mmtls-middlebox-persistent.sh
-```
-
-```Bash
-# on box1.kaist.ac.kr (second ssh session)
-./run-mmtls-clients-persistent-cbc.sh 64k
-```
-
-64k means the clients request 64KB objects from the server.
-You can use 1k, 4k, 16k, 64k, 256k, 1m, 4m as well.
-Then, you will see the throughput with DHE-RSA-AES-256-GCM-SHA25 from the trace by my_ips.
-When you are done, stop the clients and my_ips as instructed above.
-
-```Bash
-# on box1.kaist.ac.kr
-./stop-clients.sh
-```
+It will take about 25 minutes.
+The script will print the throughput of mmTLS (1), mmTLS (2), splitTLS (1), splitTLS (2), and mcTLS (2) as below.
 
 
 
-## split-TLS (nginx TLS proxy)
-
-If you want to measure the throughput of split-TLS which is one of our baselines, first login to the middlebox machine (box1.kaist.ac.kr).
-
-```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
-```
-
-Then, start nginx TLS proxy using the script below and measure the throughput using 'nload' on the middlebox
-
-```Bash
-# on box1.kaist.ac.kr
-cd ~/mmTLS/proxies/mOS/mmTLS
-./run-splittls-middlebox.sh
-nload -m ens7f0np0 ens7f1np1
-```
-
-On 'nload', you can see other interfaces using arrow keys (e.g., <-, ->).
-'nload' prints the throughput of each interface in Gibps, so you should multiply (1.024 * 1.024 * 1.024) to convert it into Gbps.
-[(We have confirmed that the source code of nload is actually computing Gibps rather than Gbps.)](https://github.com/rolandriegel/nload/blob/8f92dc04fad283abdd2a4538cd4c2093d957d9da/src/statistics.cpp#L125)
-Or, you can check the bps by adding -u b option to 'nload'.
-
-```Bash
-nload -m ens7f0np0 ens7f1np1 -u b
-```
-
-It will show the throughput in 'bps'.
-
-Now ssh into the middlebox machine (box1.kaist.ac.kr), and run the client script.
-
-```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
-```
-
-```Bash
-# on box1.kaist.ac.kr
-cd mmTLS/proxies/mOS/mmTLS
-./run-splittls-clients-persistent-gcm.sh 64k
-```
-
-Now, you can check the throughput in the logs of 'nload' (first session).
-After checking the throughput, stop the clients, as below.
-
-```Bash
-./stop-clients.sh
-```
-
-You can also check DHE-RSA-AES-256-GCM-SHA256 with another script, run-splittls-clients-persistent-cbc.sh.
-
-```Bash
-./run-splittls-clients-persistent-cbc.sh 64k
-```
-
-Then, you will see the throughput with DHE-RSA-AES-256-GCM-SHA256 in the logs of 'nload'.
-
-
-
-## mcTLS
-
-We run mcTLS clients and an mcTLS server by ssh command to the clients and a server machine (wood1.kaist.ac.kr, core2.kaist.ac.kr, and box3.kaist.ac.kr, respectively) from the middlebox machine (box1.kaist.ac.kr).
-So you do not need to log into clients or servers to execute the mcTLS endpoints.
-Log into the middlebox machine.
-
-```Bash
-# on box3.kaist.ac.kr
-ssh box1.kaist.ac.kr
-```
-
-Go to the directory including my_ips, and just run the script, run-mctls-test.sh and nload to see the throughput.
-
-```Bash
-# on box1.kaist.ac.kr
-cd ~/mmTLS/proxies/mOS/mmTLS
-./run-mctls-test-persistent.sh 64k # size of objects requested by clients
-nload -m ens7f0np0
-```
-
-You can use the size of requested objects among 1k, 4k, 16k, 64k, 256k, 1m, and 4m.
-After checking the throughput, stop the clients, as below.
-
-```Bash
-# on box1.kaist.ac.kr
-./stop-clients.sh
-```
-
-Again, nload will show the throughput in Gibps, so don’t forget to multiply (1.024 * 1.024 * 1.024) with the printed throughput.
 
 
 
@@ -677,7 +530,7 @@ Before testing, unset mmTLS configuration and go to the chromium directory.
 
 ```Bash
 # on box2.kaist.ac.kr
-sudo ./unmmtls.sh
+sudo ~/unmmtls.sh
 cd chromium/src/out
 ```
 
@@ -723,7 +576,7 @@ Run the 'mmtls.sh' script to setup configuration for mmTLS and go to the chromiu
 
 ```Bash
 # on box2.kaist.ac.kr
-sudo ./mmtls.sh
+sudo ~/mmtls.sh
 cd chromium/src/out
 ```
 
@@ -731,6 +584,7 @@ Then, run the mmTLS middlebox and the key-server on the middlebox machine (box1.
 We provide a script that runs both automatically.
 
 ```Bash
+# on the same directory on box2.kaist.ac.kr
 ./run-mmtls-middlebox.sh
 ```
 
