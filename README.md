@@ -159,7 +159,7 @@ Then, start nginx TLS proxy using the script below and measure the throughput us
 # on box1.kaist.ac.kr
 cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-splittls-middlebox.sh
-nload
+nload -m ens7f0np0 ens7f1np1
 ```
 
 On 'nload', you can see other interfaces using arrow keys (e.g., <-, ->).
@@ -168,7 +168,7 @@ On 'nload', you can see other interfaces using arrow keys (e.g., <-, ->).
 Or, you can check the bps by adding -u b option to 'nload'.
 
 ```Bash
-nload -u b
+nload -m ens7f0np0 ens7f1np1 -u b
 ```
 
 It will show the throughput in 'bps'.
@@ -220,7 +220,7 @@ Go to the directory including my_ips, and just run the script, run-mctls-test.sh
 # on box1.kaist.ac.kr
 cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-mctls-test-persistent.sh 64k # size of objects requested by clients
-nload ens7f0np0
+nload -m ens7f0np0
 ```
 
 You can use the size of requested objects among 1k, 4k, 16k, 64k, 256k, 1m, and 4m.
