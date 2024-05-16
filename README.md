@@ -288,13 +288,11 @@ After checking the throughput, stop the clients, 'my_ips', and 'key-server'.
 ./stop-clients.sh
 ```
 
-<span style="color:red">
+<span style="color:red">We found that there was a mis-configuration at the last evaluation done before submitting our paper for AE.</span>
+<span style="color:red">The result that you are seeing for current reproduction is the correct result. </span>
+<span style="color:red">They will be 0.63K/s, 9K/s for 1 core nginx and 16 core nginx, respectively. </span>
+We will update the result for the camera-ready version. Sorry for your incovenience.
 
-We found that there was a mis-configuration at the last evaluation done before submitting AE.
-The result that you are seeing for current reproduction is the correct result.
-It will be about 40K/s.
-
-</span>
 
 
 ## split-TLS (nginx TLS proxy)
@@ -395,6 +393,10 @@ After checking the throughput, stop the clients.
 ```Bash
 ./stop-clients.sh
 ```
+
+<span style="color:red">We found that there was a mis-configuration at the last evaluation done before submitting our paper for AE.</span>
+<span style="color:red">The result that you are seeing for current reproduction is the correct result, about 40K/s. </span>
+We will update the result for the camera-ready version. Sorry for your incovenience.
 
 
 
