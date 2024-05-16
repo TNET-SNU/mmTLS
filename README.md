@@ -773,7 +773,7 @@ Now, you can run mmTLS-ported chromium.
 ./mmtls/chrome --ignore-certificate-errors --disable-proxy-certificate-handler --test-type
 ```
 
-To test mmTLS, type https://10.11.95.3:1443/"[number of embedding resources]".html on the URL apace.
+To test mmTLS, type https://10.11.95.3:1443/[number-of-embedding-resources].html on the URL apace.
 The other steps are the same with the section above.
 
 After testing, you should stop the mmtls middlebox.
