@@ -280,7 +280,6 @@ Move to the fig11 directory and run 'all-in-one.sh' script. It takes about **7 m
 ```Bash
 # on wood1.kaist.ac.kr
 cd ~/fig11
-./kill-others.sh # When something goes wrong, run kill-others.sh and restart.
 ./all-in-one.sh
 ```
 
@@ -307,7 +306,6 @@ Then, run below.
 ```
 # on wood1.kaist.ac.kr
 cd ~/fig12
-./kill-others.sh
 ./all-in-one.sh
 ```
 
