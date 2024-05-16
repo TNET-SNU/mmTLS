@@ -30,7 +30,7 @@ This page assumes that you have access to box3.kaist.ac.kr via ssh.
 
 ```Bash
 # on your local
-ssh [guest ID]@box3.kaist.ac.kr -p [port]
+ssh [guest-ID]@box3.kaist.ac.kr -p [port]
 ```
 
 Now you can log into the middlebox machine (box1.kaist.ac.kr) which has the AE scripts for figure 8, 9, 10, 13, 14, and 16.
@@ -42,11 +42,16 @@ ssh box1.kaist.ac.kr
 
 Or, you can log into the client machine (wood1.kaist.ac.kr) which has the AE scripts for figure 11, 12, and 17.
 
+```Bash
+# on box3.kaist.ac.kr
+ssh wood1.kaist.ac.kr
+```
+
 For figure 15, which requires compiled chromium, you should log into box2.kaist.ac.kr with -X option to use X window.
 
 ```Bash
 # on your local
-ssh -X [guest ID]@box3.kaist.ac.kr -p [port]
+ssh -X [guest-ID]@box3.kaist.ac.kr -p [port]
 ```
 
 ```Bash
@@ -697,7 +702,7 @@ To test the mmTLS-ported chromium, ssh into the client machine with '-X' option.
 
 ```Bash
 # on your local
-ssh -X box3.kaist.ac.kr
+ssh -X [guest-id]@box3.kaist.ac.kr -p [port]
 ```
 
 ```Bash
