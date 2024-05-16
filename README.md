@@ -13,7 +13,6 @@ mmTLS  achieves high throughput and low latency leveraging the techniques below.
 
 
 
-
 # Accessing machines remotely for AE
 
 mmTLS currently leverages the Bluefield-2 SmartNIC, so we recommend accessing our test machine with the SmartNIC from remotely and running test scripts on them.
@@ -217,7 +216,7 @@ Go to the directory including my_ips, and just run the script, run-mctls-test.sh
 ```Bash
 # on box1.kaist.ac.kr
 cd ~/mmTLS/proxies/mOS/mmTLS
-./run-mctls-test.sh 64k # size of objects requested by clients
+./run-mctls-test-persistent.sh 64k # size of objects requested by clients
 nload ens7f0np0
 ```
 
@@ -285,6 +284,13 @@ After checking the throughput, stop the clients, 'my_ips', and 'key-server'.
 ./stop-clients.sh
 ```
 
+<span style="color:red">
+
+We found that there was a mis-configuration at the last evaluation done before submitting AE.
+The result that you are seeing for current reproduction is the correct result.
+It will be about 40K/s.
+
+</span>
 
 
 # Figure 9 - split-TLS (nginx TLS proxy)
