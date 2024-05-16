@@ -232,10 +232,11 @@ Again, nload will show the throughput in Gibps, so don’t forget to multiply (1
 
 
 
-# Figure 9 - mmTLS
+# Figure 9
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/8a8e8669-d295-4a11-ab8c-f2d6bc1a74dd" />
 
+## mmTLS
 It is similar to the evaluation of figure 8 as you run the middlebox on box1.kaist.ac.kr.
 First, log into box1.kaist.ac.kr.
 
@@ -293,7 +294,7 @@ It will be about 40K/s.
 </span>
 
 
-# Figure 9 - split-TLS (nginx TLS proxy)
+## split-TLS (nginx TLS proxy)
 We use the 'key-server' on the SmartNIC to measure the E2E connections per second.
 
 ```Bash
@@ -468,9 +469,11 @@ We will prepare other popular web sites to test split-TLS to WAN.
 
 
 
-# Figure 13a - mmTLS
+# Figure 13a
 
 <img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/266cfaff-859c-48c0-a1ba-0a3b5b4da25b" />
+
+## mmTLS
 
 It is the same as figure 8.
 Log into the middlebox machine, and just run the script, 'run-mmtls-middlebox-persistent.sh' with an argument of 1, 2, 4, 8, or 16.
@@ -531,7 +534,7 @@ cd ~/mmTLS/proxies/mOS/mmTLS
 
 
 
-# Figure 13a - split-TLS (nginx TLS proxy)
+## split-TLS (nginx TLS proxy)
 
 You can restart the nginx daemon with a smaller number of cores as below.
 Login to the middlebox machine (box1.kaist.ac.kr).
@@ -575,9 +578,11 @@ cd ~/mmTLS/proxies/mOS/mmTLS
 
 
 
-# Figure 13b - E2E-TLS
+# Figure 13b
 
 <img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/7e0d5757-3172-4358-8d76-4c3228e25a48" />
+
+## E2E-TLS
 
 Since the throughput of mmTLS middlebox is already measured by evaluation for figure 8, it is enough to measure the throughput of an endpoint TLS server.
 Run the nginx as an endpoint TLS server and measure the throughput using nload.
@@ -635,9 +640,11 @@ Each column means Original (no private tag), mmTLS (optimal), Reusing ciphertext
 
 
 
-# Figure 15 - Default Chromium (for split-TLS and E2E-TLS)
+# Figure 15
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/b6a6ccdd-f3d8-4de2-9f8d-5670dbf6cfab" />
+
+## Default Chromium (for split-TLS and E2E-TLS)
 
 This evaluation needs chromium GUI application and the extension program.
 We manually measured the page load time shown by the chromium extension, so it is difficult to automatically reproduce the figure.
@@ -690,7 +697,7 @@ The number in the name of html file means the number of 136KB embedding resource
 
 
 
-# Figure 15 - mmTLS-ported Chromium
+## mmTLS-ported Chromium
 
 To test the mmTLS-ported chromium, ssh into the client machine with '-X' option.
 
@@ -736,9 +743,11 @@ After testing, you should stop the mmtls middlebox.
 
 
 
-# Figure 16 - DPI on mmTLS
+# Figure 16
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/e83eee3c-58f2-4450-b8f9-446800c29a14" />
+
+## DPI on mmTLS
 
 First, login to the middlebox machine (box1.kaist.ac.kr).
 
@@ -784,7 +793,7 @@ cd mmTLS/proxies/mOS/mmTLS
 
 
 
-# Figure 16 - DPI on split-TLS (nginx TLS proxy)
+## DPI on split-TLS (nginx TLS proxy)
 
 To run split-TLS DPI, use the pre-built binaries, nginx-dpi-16k, nginx-dpi-32k, nginx-dpi-64k, and nginx-dpi-128k on nginx-1.24.0 directory at the middlebox machine (box1.kaist.ac.kr).
 
