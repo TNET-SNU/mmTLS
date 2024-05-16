@@ -274,7 +274,6 @@ Log into wood1.kaist.ac.kr first.
 ssh junghan@wood1.kaist.ac.kr
 ```
 
-Since our script includes running the mmTLS or mcTLS (baseline) middlebox on box1.kaist.ac.kr as background program, you don't need to directly control the middlebox.
 Move to the fig11 directory and run 'all-in-one.sh' script. It takes about **7 minutes.**
 
 ```Bash
