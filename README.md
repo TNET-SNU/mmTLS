@@ -523,6 +523,7 @@ cd mmTLS/proxies/mOS/mmTLS
 
 It will take about **6 minutes**, and print the result as below.
 
+<img style="width:600px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/8a23a6ab-9701-4e3c-9f10-3f1a79cbc94c" />
 
 
 
