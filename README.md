@@ -903,6 +903,7 @@ cd ~/mmTLS/proxies/mOS/mmTLS
 ```
 
 The script will show the result which is equivalent to the figure 17.
+Since the web sites on WAN are updated every hour, the result might not be exactly same as the figure.
 
 <img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/56dfbad2-3593-4c4a-b5c1-2f1ed14f0531" />
 
