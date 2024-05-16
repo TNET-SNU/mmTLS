@@ -113,7 +113,7 @@ Then, run the script, 'run-ephemeral.sh' as below.
 cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-ephemeral.sh
 ```
-This script will print the throughput as below.
+This script will take about 5 minutes and print the throughput as below.
 
 <img style="width:600px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/ed67ad11-4847-430d-a050-ef2947eb31c5" />
 
