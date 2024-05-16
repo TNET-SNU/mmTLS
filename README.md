@@ -356,38 +356,24 @@ The script will take about 7 minutes and print the result as below.
 
 <img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/7e0d5757-3172-4358-8d76-4c3228e25a48" />
 
-## E2E-TLS
-
-Since the throughput of mmTLS middlebox is already measured by evaluation for figure 8, it is enough to measure the throughput of an endpoint TLS server.
-Run the nginx as an endpoint TLS server and measure the throughput using nload.
+Login to the middlebox machine (box1.kaist.ac.kr).
 
 ```Bash
 # on box3.kaist.ac.kr
 ssh box1.kaist.ac.kr
 ```
 
+Run the script below.
+
 ```Bash
 # on box1.kaist.ac.kr
 cd ~/mmTLS/proxies/mOS/mmTLS
-./run-splittls-middlebox.sh 16
-nload
+./run-compare-with-e2e.sh
 ```
 
-Then, run the clients.
+It will take about 7 minutes and finally print the throughput of mmTLS and E2E-TLS as below.
 
-```Bash
-./stop-clients.sh
-./run-e2e-clients-persistent-gcm.sh [file size]
-```
-
-After checking the throughput once, you should stop the clients by executing 'stop-clients.sh'.
-
-```Bash
-./stop-clients.sh
-```
-
-You might want to run the test for file size 1k, 4k, 16k, 64k, 256k, 1m, and 4m.
-Just replace the [file size] with one that you want to test with.
+<img style="width:800px;" src="" />
 
 
 
