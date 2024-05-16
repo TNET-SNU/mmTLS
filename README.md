@@ -44,7 +44,7 @@ Enter “mmTLS” directory from the home directory, and export the mmTLS direct
 
 ```Bash
 # on box1.kaist.ac.kr
-cd mmTLS
+cd ~/mmTLS
 export MMTLS_DIR=`pwd`
 ```
 
@@ -124,7 +124,7 @@ Go to the directory that has our scripts, and run the script 'run-mmtls-middlebo
 
 ```Bash
 # on box1.kaist.ac.kr
-cd mmTLS/proxies/mOS/mmTLS
+cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-mmtls-middlebox-persistent.sh
 ```
 
@@ -148,6 +148,7 @@ cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-mmtls-clients-persistent-gcm.sh 64k
 ```
 
+This script will last about 1 minutes, and automatically terminate the middlebox at the end.
 64k means the clients request 64KB objects from the server.
 You can use 1k, 4k, 16k, 64k, 256k, 1m, 4m as well.
 The output should look like below.
@@ -155,7 +156,7 @@ The output should look like below.
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/92782579/c0919b1f-5056-4af6-9bc5-3489e3069513" />
 
 With the trace, you can check the persistent throughput of mmTLS with ECDHE-RSA-AES-256-GCM-SHA384 on TLS 1.3.
-After checking the throughput, you should stop the clients, as below.
+After checking the throughput, you can stop the clients, as below.
 
 ```Bash
 # on box1.kaist.ac.kr
