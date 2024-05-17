@@ -94,7 +94,10 @@ The script will print the throughput of mmTLS (1), mmTLS (2), splitTLS (1), spli
 
 ```diff
 - For AE of Figure 9, we found that there was a mis-configuration at the last evaluation.
-- The result of mmTLS that you reproduce in this section will be about 40K/s, but it is correct result.
+- The result of mmTLS that you reproduce in this section will be about 40K/s, and it is correct result.
+- Also, the result of mcTLS will be much larger than the figure.
+- Here, we recommend you to check that the throughput of mmTLS is still much higher than others. (x40 ~ x60)
+
 - We will update the final result for the camera-ready version.
 - Sorry for your inconvenience.
 ```
@@ -152,6 +155,7 @@ The result will be equivalent to figure 11 for both 11(a) -GCM- and 11(b) -CBC-.
 - For AE of Figure 11 (b), we found that the key exchange protocols were not consistent among mmTLS and the baselines.
 - mmTLS and Split-TLS were using RSA for key exchange while mcTLS was using DHE with 1024-bit DH parameter.
 - We make them use a common key exchange protocol, DHE with 2048-bit DH parameter, which is supported by mcTLS.
+
 - We will update the final result for the camera-ready version.
 - Sorry for your inconvenience.
 ```
