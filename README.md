@@ -16,7 +16,6 @@ mmTLS  achieves high throughput and low latency leveraging the techniques below.
 # Accessing machines remotely for AE
 
 mmTLS currently leverages the Bluefield-2 SmartNIC, so we recommend accessing our test machine with the SmartNIC from remotely and running test scripts on them.
-If you want to build and run the system on your own, please refer to INSTALL.md.
 We have set up a simple testbed to evaluate the functionality of our work, used for ATC’24 artifact evaluation.
 Please let us know (cerotyki@gmail.com or HotCRP) and we will provide the credential to login to the test machine.
 Our testbed consists of 7 machines: 4 clients, 1 middlebox, and 2 backend servers (see the picture below) and all of them are accessible by ssh.
@@ -26,9 +25,11 @@ The figure below depicts the topology of our testbed.
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/7b82e7f2-834f-474c-9cad-c8b43e8ee3f1" />
 
 This page assumes that you have access to box3.kaist.ac.kr via ssh.
+The first login to the access machine should be done as "atc-ae", which is an account we provide for your first access.
+The second login to the other machines from the access machine should be done as "junghan", which has all the binaries and scripts.
 
 ```Bash
-# on your local
+# on your local machine
 ssh atc-ae@box3.kaist.ac.kr -p [port]
 ```
 
@@ -49,7 +50,7 @@ ssh junghan@wood1.kaist.ac.kr
 For figure 15, which requires compiled chromium, you should log into box2.kaist.ac.kr with -X option to use X window.
 
 ```Bash
-# on your local
+# on your local machine
 ssh -X atc-ae@box3.kaist.ac.kr -p [port]
 ```
 
@@ -93,13 +94,13 @@ The script will print the throughput of mmTLS (1), mmTLS (2), splitTLS (1), spli
 
 
 ```diff
-- For AE of Figure 9, we found that there was a mis-configuration at the last evaluation.
-- The result of mmTLS that you reproduce in this section will be about 40K/s, and it is the correct result.
-- Also, the result of mcTLS will be larger than the figure.
-- Here, we recommend you to check that the throughput of mmTLS is still much higher than others. (x40 ~ x60)
+- For AE of Figure 9, we have found a mis-configuration in our last evaluation.
+- With a correct configuration, mmTLS produces 40K/s, 20% lower than figure 9.
+- We also note that mcTLS achieves a higher performance.
+- Despite the change, we still observe that mmTLS achieves 40x to 60x performance improvement.
 
 - We will update the final result for the camera-ready version.
-- Sorry for your inconvenience.
+- Sorry for the confusion, but we will fix this graph for the camera-ready version.
 ```
 
 Login to the middlebox machine (box1.kaist.ac.kr).
@@ -156,8 +157,7 @@ The result will be equivalent to figure 11 for both 11(a) -GCM- and 11(b) -CBC-.
 - mmTLS and Split-TLS were using RSA for key exchange while mcTLS was using DHE with 1024-bit DH parameter.
 - We make them use a common key exchange protocol, DHE with 2048-bit DH parameter, which is supported by mcTLS.
 
-- We will update the final result for the camera-ready version.
-- Sorry for your inconvenience.
+- Sorry for the confusion, but we will fix this graph for the camera-ready version.
 ```
 
 # Figure 12 - Response Time - WAN (15 minutes)
@@ -294,7 +294,7 @@ First log in to the client machine, box2.kaist.ac.kr with -X option to enable X 
 You should have been connected to the first access server (box3.kaist.ac.kr) with -X option before ssh into the client machine.
 
 ```Bash
-# on your local
+# on your local machine
 ssh -X atc-ae@box3.kaist.ac.kr
 ```
 
