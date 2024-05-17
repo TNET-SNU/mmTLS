@@ -273,16 +273,22 @@ Each column means Original (no private tag), mmTLS (optimal), Reusing ciphertext
 
 # Figure 15 - Web Browser Test
 
+## Note
+
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/b6a6ccdd-f3d8-4de2-9f8d-5670dbf6cfab" />
+
+This evaluation needs chromium GUI application and the extension program, since we manually measure the page load time shown by the extension program.
+For the same reason, it is difficult to automatically reproduce the figure, so we only provide the manual test in this section.
 
 To execute GUI chromium, X window server should be installed on your local machine.
 Please make sure your terminal can open a GUI application via X window.
+There are many X window server for various platform.
+If you are not familiar with X window, use MobaXterm, which is a terminal with an embedded X window server.
 
-## Default Chromium (for split-TLS and E2E-TLS)
+Here, we note that the absolute result may not be exactly same as the figure above, since the chromium client machine is changed from the last evaluation.
+Again, we recommend you to check the gap between E2E-TLS/mmTLS and split-TLS in terms of the page load time.
 
-This evaluation needs chromium GUI application and the extension program.
-We manually measured the page load time shown by the chromium extension, so it is difficult to automatically reproduce the figure.
-Here, we only provide how to run the test manually.
+## Reproducing
 
 First log in to the client machine, box2.kaist.ac.kr with -X option to enable X window.
 You should have been connected to the first access server (box3.kaist.ac.kr) with -X option before ssh into the client machine.
@@ -292,89 +298,48 @@ You should have been connected to the first access server (box3.kaist.ac.kr) wit
 ssh -X atc-ae@box3.kaist.ac.kr
 ```
 
-Then, log in to the machine that has pre-built chromium with -X option.
+Then, log in to the machine that has the pre-built chromium with -X option.
 
 ```Bash
 # on atc-aebox3.kaist.ac.kr
 ssh -X junghan@box2.kaist.ac.kr
 ```
 
-Before testing, unset mmTLS configuration and go to the chromium directory.
+You can run the split-TLS chromium using the script below.
 
 ```Bash
 # on box2.kaist.ac.kr
-sudo ~/unmmtls.sh
-cd chromium/src/out
+./split-chromium.sh 200 # choose among 10, 20, 50, 100, and 200
 ```
 
-You can run the default chrome with some options as below.
-
-```Bash
-./Default/chrome --ignore-certificate-errors --disable-proxy-certificate-handler --test-type
-```
-
-If you want to test split-TLS, type https://10.11.95.1:21443/200.html on the URL space.
-Else if you want to test E2E-TLS, type https://10.11.95.3:1443/200.html on the URL space as below.
+It will load the page consists of 200 embedding resources as below.
 
 <img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/726cd67d-5768-4dfb-b56a-02f7e31a4e48" />
 
-It will load the page with a number of embedding resources.
 After loading, click the first extension and check the total loading timing. (754ms in the screenshot)
 You can repeat by typing **"Ctrl + F5". (No refresh button or "only F5", since they do not establish a new TLS connection.)**
 Since it's a LAN connection, the result will be pretty stable, even though you do not repeat it 100 times fully to measure the average.
 
-However, the absolute result will not be exactly same as the figure, since the chromium client machine is changed.
-Again, we recommend you to check the gap between E2E-TLS/mmTLS and split-TLS in terms of the page load time.
+If you want to change the number of embedding resources, run the script with an argument among 10, 20, 50, 100, and 200.
 
-If you want to change the number of embedding resources, change the name of requested html file to one among 10.html, 20.html, 50.html, 100.html, and 200.html
-The number in the name of html file means the number of embedding resources.
-
-
-
-## mmTLS-ported Chromium
-
-To test the mmTLS-ported chromium, ssh into the client machine with '-X' option.
-
-```Bash
-# on your local
-ssh -X atc-ae@box3.kaist.ac.kr -p [port]
-```
-
-```Bash
-# on atc-ae@box3.kaist.ac.kr
-ssh -X junghan@box2.kaist.ac.kr
-```
-
-Run the 'mmtls.sh' script to setup configuration for mmTLS and go to the chromium directory.
+After checking the page load time with Split-TLS chromium, close the browser using **"Alt + F4"** and open E2E-TLS chromium using the script below.
 
 ```Bash
 # on box2.kaist.ac.kr
-sudo ~/mmtls.sh
-cd chromium/src/out
+./e2e-chromium.sh 200 # choose among 10, 20, 50, 100, and 200
 ```
 
-Then, run the mmTLS middlebox and the key-server on the middlebox machine (box1.kaist.ac.kr).
-We provide a script that runs both automatically.
+You can repeat the page loading by typing "Ctrl + F5", and change the number of embedding resources as well.
+
+After checking the page load time with E2E-TLS chromium, close the browser and open mmTLS chromium using the script below.
 
 ```Bash
-# on the same directory on box2.kaist.ac.kr
-./run-mmtls-middlebox.sh
+# on box2.kaist.ac.kr
+./mm-chromium.sh 200 # choose among 10, 20, 50, 100, and 200
 ```
 
-Now, you can run mmTLS-ported chromium.
-
-```Bash
-./mmtls/chrome --ignore-certificate-errors --disable-proxy-certificate-handler --test-type
-```
-
-To test mmTLS, type https://10.11.95.3:1443/[number-of-embedding-resources].html on the URL apace.
-The other steps are the same with the section above.
-
-After testing, you should stop the mmtls middlebox.
-
-```Bash
-./stop-mmtls-middlebox.sh
-```
+This script will setup the mmTLS configuration and remotely runs the mmTLS middlebox.
+Again, you can repeat the test and change the number of embedding resources.
 
 
 
