@@ -314,9 +314,9 @@ You can run the split-TLS chromium using the script below.
 
 It will load the page consists of 200 embedding resources as below.
 
-<img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/726cd67d-5768-4dfb-b56a-02f7e31a4e48" />
+<img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/92fab4de-036c-41d9-8104-9eeeebce6e5b" />
 
-After loading, click the first extension and check the total loading timing. (754ms in the screenshot)
+After loading, click the first extension and check the total loading timing. (952ms in the screenshot)
 You can repeat by typing **"Ctrl + F5". (No refresh button or "only F5", since they do not establish a new TLS connection.)**
 Since it's a LAN connection, the result will be pretty stable, even though you do not repeat it 100 times fully to measure the average.
 
