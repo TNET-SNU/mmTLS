@@ -64,7 +64,7 @@ ssh -X junghan@box2.kaist.ac.kr
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/0ca8fc65-0562-465e-ac7c-f5c19882dc58" />
 
-We have prepared a automated script to generate results for figure 8.
+We have prepared an automated script to generate results for figure 8.
 Log in to box1.kaist.ac.kr first.
 
 ```Bash
@@ -94,8 +94,8 @@ The script will print the throughput of mmTLS (1), mmTLS (2), splitTLS (1), spli
 
 ```diff
 - For AE of Figure 9, we found that there was a mis-configuration at the last evaluation.
-- The result of mmTLS that you reproduce in this section will be about 40K/s, and it is correct result.
-- Also, the result of mcTLS will be much larger than the figure.
+- The result of mmTLS that you reproduce in this section will be about 40K/s, and it is the correct result.
+- Also, the result of mcTLS will be larger than the figure.
 - Here, we recommend you to check that the throughput of mmTLS is still much higher than others. (x40 ~ x60)
 
 - We will update the final result for the camera-ready version.
@@ -203,7 +203,7 @@ We will prepare other popular web sites to test split-TLS to WAN.
 
 <img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/266cfaff-859c-48c0-a1ba-0a3b5b4da25b" />
 
-Log into the middlebox machine, and just run the script, 'run-scalability.sh', which automatically tests mmTLS middlebox and nginx TLS proxy with various number of cores.
+Log into the middlebox machine, and just run the script, 'run-scalability.sh', which automatically tests mmTLS middlebox and nginx TLS proxy with various numbers of cores.
 
 ```Bash
 # on atc-ae@box3.kaist.ac.kr
@@ -312,7 +312,7 @@ You can run the split-TLS chromium using the script below.
 ./split-chromium.sh 200 # choose among 10, 20, 50, 100, and 200
 ```
 
-It will load the page consists of 200 embedding resources as below.
+It will load the page consisting of 200 embedding resources as below.
 
 <img style="width:1000px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/92fab4de-036c-41d9-8104-9eeeebce6e5b" />
 
@@ -395,7 +395,7 @@ It will print whether the site is accessible from our testbed as below.
 It will take about **30 minutes.**
 At the end of the script, it will stop the middlebox and print the summarized result by bringing it from the middlebox machine (box1.kaist.ac.kr).
 
-Since the web sites on WAN are updated every hour, the result might not be exactly same as the figure.
+Since the web sites on WAN are updated every hour, the result might not be exactly the same as the figure.
 
 
 
