@@ -38,14 +38,14 @@ ssh atc-ae@box3.kaist.ac.kr -p [port]
 Now you can log into the middlebox machine (box1.kaist.ac.kr) which has the AE scripts for figure 8, 9, 10, 13, 14, and 16.
 
 ```Bash
-# on box3.kaist.ac.kr
+# on atc-ae@box3.kaist.ac.kr
 ssh junghan@box1.kaist.ac.kr
 ```
 
 Or, you can log into the client machine (wood1.kaist.ac.kr) which has the AE scripts for figure 11, 12, and 17.
 
 ```Bash
-# on box3.kaist.ac.kr
+# on atc-ae@box3.kaist.ac.kr
 ssh junghan@wood1.kaist.ac.kr
 ```
 
@@ -57,7 +57,7 @@ ssh -X atc-ae@box3.kaist.ac.kr -p [port]
 ```
 
 ```Bash
-# on box3.kaist.ac.kr
+# on atc-ae@box3.kaist.ac.kr
 ssh -X junghan@box2.kaist.ac.kr
 ```
 
@@ -78,7 +78,7 @@ ssh junghan@box1.kaist.ac.kr
 Then, run the script, 'run-persistent.sh'
 
 ```Bash
-# on box1.kaist.ac.kr
+# on junghan@box1.kaist.ac.kr
 cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-persistent.sh
 ```
@@ -115,7 +115,7 @@ ssh junghan@box1.kaist.ac.kr
 Then, run the script, 'run-ephemeral.sh' as below.
 
 ```Bash
-# on box1.kaist.ac.kr
+# on junghan@box1.kaist.ac.kr
 cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-ephemeral.sh
 ```
@@ -143,7 +143,7 @@ ssh junghan@wood1.kaist.ac.kr
 Move to the fig11 directory and run 'all-in-one.sh' script. It takes about **6 minutes.**
 
 ```Bash
-# on wood1.kaist.ac.kr
+# on junghan@wood1.kaist.ac.kr
 cd ~/fig11
 ./all-in-one.sh
 ```
@@ -177,7 +177,7 @@ ssh junghan@wood1.kaist.ac.kr
 Then, run below.
 
 ```
-# on wood1.kaist.ac.kr
+# on junghan@wood1.kaist.ac.kr
 cd ~/fig12
 ./all-in-one.sh
 ```
@@ -213,7 +213,7 @@ ssh junghan@box1.kaist.ac.kr
 ```
 
 ```Bash
-# on box1.kaist.ac.kr
+# on junghan@box1.kaist.ac.kr
 cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-scalability.sh
 ```
@@ -238,7 +238,7 @@ ssh junghan@box1.kaist.ac.kr
 Run the script below.
 
 ```Bash
-# on box1.kaist.ac.kr
+# on junghan@box1.kaist.ac.kr
 cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-compare-with-e2e.sh
 ```
@@ -262,7 +262,7 @@ ssh junghan@box1.kaist.ac.kr
 ```
 
 ```Bash
-# on box1.kaist.ac.kr
+# on junghan@box1.kaist.ac.kr
 cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-tag.sh
 ```
@@ -303,14 +303,14 @@ ssh -X atc-ae@box3.kaist.ac.kr
 Then, log in to the machine that has the pre-built chromium with -X option.
 
 ```Bash
-# on atc-aebox3.kaist.ac.kr
+# on atc-ae@box3.kaist.ac.kr
 ssh -X junghan@box2.kaist.ac.kr
 ```
 
 You can run the split-TLS chromium using the script below.
 
 ```Bash
-# on box2.kaist.ac.kr
+# on junghan@box2.kaist.ac.kr
 ./split-chromium.sh 200 # choose among 10, 20, 50, 100, and 200
 ```
 
@@ -327,7 +327,7 @@ If you want to change the number of embedding resources, run the script with an 
 After checking the page load time with Split-TLS chromium, close the browser using **"Alt + F4"** and open E2E-TLS chromium using the script below.
 
 ```Bash
-# on box2.kaist.ac.kr
+# on junghan@box2.kaist.ac.kr
 ./e2e-chromium.sh 200 # choose among 10, 20, 50, 100, and 200
 ```
 
@@ -336,7 +336,7 @@ You can repeat the page loading by typing "Ctrl + F5", and change the number of 
 After checking the page load time with E2E-TLS chromium, close the browser and open mmTLS chromium using the script below.
 
 ```Bash
-# on box2.kaist.ac.kr
+# on junghan@box2.kaist.ac.kr
 ./mm-chromium.sh 200 # choose among 10, 20, 50, 100, and 200
 ```
 
@@ -359,7 +359,7 @@ ssh junghan@box1.kaist.ac.kr
 Then, run the script below.
 
 ```Bash
-# on box1.kaist.ac.kr
+# on junghan@box1.kaist.ac.kr
 cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-dpi.sh
 ```
@@ -385,7 +385,7 @@ ssh junghan@wood1.kaist.ac.kr
 Then, go to the fig17 directory, and run 'all-in-one.sh' as below.
 
 ```Bash
-# on box1.kaist.ac.kr
+# on junghan@wood1.kaist.ac.kr
 cd ~/fig17
 ./all-in-one.sh alexa-test
 ```
