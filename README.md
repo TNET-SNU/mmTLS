@@ -25,8 +25,10 @@ The figure below depicts the topology of our testbed.
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/7b82e7f2-834f-474c-9cad-c8b43e8ee3f1" />
 
 This page assumes that you have access to box3.kaist.ac.kr via ssh.
-The first login to the access machine should be done as "atc-ae", which is an account we provide for your first access.
-The second login to the other machines from the access machine should be done as "junghan", which has all the binaries and scripts.
+
+**The first login to the access machine should be done as "atc-ae", which is an account we provide for your first access.**
+
+**The second login to the other machines from the access machine should be done as "junghan", which has all the binaries and scripts.**
 
 ```Bash
 # on your local machine
