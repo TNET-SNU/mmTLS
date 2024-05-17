@@ -176,7 +176,7 @@ ssh junghan@wood1.kaist.ac.kr
 
 Then, run below.
 
-```
+```Bash
 # on junghan@wood1.kaist.ac.kr
 cd ~/fig12
 ./all-in-one.sh
@@ -408,49 +408,49 @@ If you want to test without the script we prepared, make h2load or ab on the cli
 Note that svr0 and svr1 refer to box3.kaist.ac.kr and box4.kaist.ac.kr, respectively.
 
 ```
-	# LAN
+# LAN
 
-	# endpoint:	0xxxx,	proxy to svr0: 	1xxxx,	proxy to svr1:	2xxxx
-	# persistent: 	x0xxx, 	ephemeral: 	x1xxx,
-	# TCP:		xx080, 	TLS12: 		xx442, 	TLS13:		xx443
+# endpoint:	0xxxx,	proxy to svr0: 	1xxxx,	proxy to svr1:	2xxxx
+# persistent: 	x0xxx, 	ephemeral: 	x1xxx,
+# TCP:		xx080, 	TLS12: 		xx442, 	TLS13:		xx443
 
-	# 00080: endpoint persistent		TCP
-	# 01080: endpoint ephemeral		TCP
+# 00080: endpoint persistent		TCP
+# 01080: endpoint ephemeral		TCP
 
-	# 00442: endpoint persistent		TLS12
-	# 01442: endpoint ephemeral		TLS12
+# 00442: endpoint persistent		TLS12
+# 01442: endpoint ephemeral		TLS12
 
-	# 00443: endpoint persistent		TLS13
-	# 01443: endpoint ephemeral		TLS13
-	
-	# 10080: proxy to svr0 persistent	TCP 
-	# 11080: proxy to svr0 ephemeral	TCP
+# 00443: endpoint persistent		TLS13
+# 01443: endpoint ephemeral		TLS13
 
-	# 10442: proxy to svr0 persistent	TLS12
-	# 11442: proxy to svr0 ephemeral	TLS12
+# 10080: proxy to svr0 persistent	TCP 
+# 11080: proxy to svr0 ephemeral	TCP
 
-	# 10443: proxy to svr0 persistent	TLS13
-	# 11443: proxy to svr0 ephemeral	TLS13
+# 10442: proxy to svr0 persistent	TLS12
+# 11442: proxy to svr0 ephemeral	TLS12
 
-	# 20080: proxy to svr1 persistent	TCP
-	# 21080: proxy to svr1 ephemeral	TCP
+# 10443: proxy to svr0 persistent	TLS13
+# 11443: proxy to svr0 ephemeral	TLS13
 
-	# 20442: proxy to svr1 persistent	TLS12
-	# 21442: proxy to svr1 ephemeral	TLS12
+# 20080: proxy to svr1 persistent	TCP
+# 21080: proxy to svr1 ephemeral	TCP
 
-	# 20443: proxy to svr1 persistent	TLS13
-	# 21443: proxy to svr1 ephemeral	TLS13
+# 20442: proxy to svr1 persistent	TLS12
+# 21442: proxy to svr1 ephemeral	TLS12
+
+# 20443: proxy to svr1 persistent	TLS13
+# 21443: proxy to svr1 ephemeral	TLS13
 
 
-	# WAN
+# WAN
 
-	# proxy to WAN:		3xxxx
+# proxy to WAN:		3xxxx
 
-	# 30443: proxy to usatoday		ephemeral	TLS13
-	# 31443: proxy to bbc			ephemeral	TLS13
-	# 32443: proxy to nytimes		ephemeral	TLS13
-	# 33443: proxy to cnn			ephemeral	TLS13
-	# 34443: proxy to washingtonpost	ephemeral	TLS13
+# 30443: proxy to usatoday		ephemeral	TLS13
+# 31443: proxy to bbc			ephemeral	TLS13
+# 32443: proxy to nytimes		ephemeral	TLS13
+# 33443: proxy to cnn			ephemeral	TLS13
+# 34443: proxy to washingtonpost	ephemeral	TLS13
 ```
 
 The configuration of nginx as endpoints is a subset of above. Endpoints (box3, box4) use only upper 6 ports; 80, 1080, 442, 1442, 443, 1443.
