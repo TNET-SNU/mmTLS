@@ -247,7 +247,7 @@ It will take about **7 minutes** and finally print the throughput of mmTLS and E
 
 
 
-# Figure 14 - Overhead on Tag Generation (1 minute)
+# Figure 14 - Overhead on Tag Generation (2 minutes)
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/8b8620b1-af71-4ea4-aa2c-2b77fc8d571a" />
 
@@ -265,7 +265,7 @@ cd ~/mmTLS/proxies/mOS/mmTLS
 ./run-tag.sh
 ```
 
-It will take about **1 minute.**
+It will take about **2 minutes.**
 Each column means Original (no private tag), mmTLS (optimal), Reusing ciphertext, and Double tags (naive), respectively.
 
 <img style="width:600px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/026543e1-c9f4-43dd-b173-a8318528322b" />
