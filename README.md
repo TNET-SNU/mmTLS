@@ -130,7 +130,7 @@ This script will take about **5 minutes** and print the throughput as below.
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/8490913b-e9f3-4a3d-a99d-b5b59136eb1b" />
 
-<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/867552f4-17bb-4ae3-95fd-f0ce04cefcc1" />
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/21c1a7e7-5a7f-48e2-aea1-5ab7cfd444d9" />
 
 We measure the average of 100 LAN response times and 100 WAN response times.
 To simplify your evaluation, we have prepared a simple all-in-one script on the client side.
