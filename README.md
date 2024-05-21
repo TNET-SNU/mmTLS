@@ -348,7 +348,7 @@ Again, you can repeat the test and change the number of embedding resources.
 
 # Figure 16 - DPI Application on the TLS Middlebox (6 minutes)
 
-<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/e83eee3c-58f2-4450-b8f9-446800c29a14" />
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/d6be32c0-c020-4155-a2c5-a35e4603459a" />
 
 First, login to the middlebox machine (box1.kaist.ac.kr).
 
