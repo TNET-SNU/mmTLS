@@ -204,7 +204,7 @@ We will prepare other popular web sites to test split-TLS to WAN.
 
 # Figure 13a - Scalability (7 minutes)
 
-<img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/266cfaff-859c-48c0-a1ba-0a3b5b4da25b" />
+<img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/f1c02e03-5670-43c8-a8d4-422d312e2171" />
 
 Log into the middlebox machine, and just run the script, 'run-scalability.sh', which automatically tests mmTLS middlebox and nginx TLS proxy with various numbers of cores.
 
