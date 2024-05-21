@@ -65,7 +65,7 @@ ssh -X junghan@box2.kaist.ac.kr
 
 # Figure 8 - Persistent Connection Test (25 minutes)
 
-<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/0ca8fc65-0562-465e-ac7c-f5c19882dc58" />
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/31e60709-9b3c-4b2d-80e3-1e761b82ea95" />
 
 We have prepared an automated script to generate results for figure 8.
 Log in to box1.kaist.ac.kr first.
