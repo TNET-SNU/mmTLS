@@ -65,7 +65,7 @@ ssh -X junghan@box2.kaist.ac.kr
 
 # Figure 8 - Persistent Connection Test (25 minutes)
 
-<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/31e60709-9b3c-4b2d-80e3-1e761b82ea95" />
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/b6d409f0-f0a1-4153-9da3-1328d5fce9d8" />
 
 We have prepared an automated script to generate results for figure 8.
 Log in to box1.kaist.ac.kr first.
@@ -88,6 +88,7 @@ The script will print the throughput of mmTLS (1), mmTLS (2), splitTLS (1), spli
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/1b3a9327-c972-438a-9243-bd70f2885b26" />
 
+The reason why mmTLS (2) achieves much higher throughput for larger files ( > 64KB) is our mmTLS application decrypts only first 64KB of HTTP response.
 
 
 # Figure 9 - Ephemeral Connection Test (5 minutes)
