@@ -93,7 +93,7 @@ The reason why mmTLS (2) achieves much higher throughput for larger files ( > 64
 
 # Figure 9 - Ephemeral Connection Test (5 minutes)
 
-<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/8a8e8669-d295-4a11-ab8c-f2d6bc1a74dd" />
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/aec5b956-5157-46cf-8542-ac032b9e549e" />
 
 
 ```diff
