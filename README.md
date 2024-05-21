@@ -227,7 +227,7 @@ The script will take about **7 minutes** and print the result as below.
 
 # Figure 13b - Comparison with E2E TLS Server (7 minutes)
 
-<img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/7e0d5757-3172-4358-8d76-4c3228e25a48" />
+<img style="width:400px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/f909c22a-c711-418b-a2f4-3bda7314fecb" />
 
 Login to the middlebox machine (box1.kaist.ac.kr).
 
