@@ -252,7 +252,7 @@ It will take about **7 minutes** and finally print the throughput of mmTLS and E
 
 # Figure 14 - Overhead on Tag Generation (2 minutes)
 
-<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/8b8620b1-af71-4ea4-aa2c-2b77fc8d571a" />
+<img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/4fd082f9-a32a-4be8-8e32-f4cae7bcfb21" />
 
 Go to the openssl-modified directory on the mmTLS root directory, and run the 'run-tag.sh' script.
 It generates private tags in various methods for record size of 1KB, 2KB, 4KB, 8KB, and 16KB, then measures the relative overhead using average time spent.
