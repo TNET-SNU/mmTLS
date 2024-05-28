@@ -63,6 +63,7 @@ ssh -X junghan@box2.kaist.ac.kr
 
 
 
+
 # Figure 8 - Persistent Connection Test (25 minutes)
 
 <img style="width:800px;" src="https://github.com/TNET-SNU/mmTLS/assets/53930924/d9216fee-a3e0-4e0e-ac74-f18e5df5f1e6" />
@@ -399,6 +400,101 @@ It will take about **30 minutes.**
 At the end of the script, it will stop the middlebox and print the summarized result by bringing it from the middlebox machine (box1.kaist.ac.kr).
 
 Since the web sites on WAN are updated every hour, the result might not be exactly the same as the figure.
+
+
+
+
+# Functionality Check
+
+In this section, we provide how to manually run the mmTLS middlebox for functionality check.
+
+## mmTLS middlebox application
+
+Log in to box1.kaist.ac.kr first.
+
+```Bash
+# on atc-ae@box3.kaist.ac.kr
+ssh junghan@box1.kaist.ac.kr
+```
+
+Then, go to the directory with our mmTLS application, "my_ips", which decrypts first 64KB of HTTP response.
+
+```Bash
+# on junghan@box1.kaist.ac.kr
+cd ~/mmTLS/proxies/mOS/mmTLS
+```
+
+Run the script for configuring ARP table of endpoints.
+
+```Bash
+./setup-mmtls-endpoints.sh
+```
+
+Run the "my_ips" application.
+
+```Bash
+sudo ./my_ips -c 16
+```
+
+"-c" option means the number of cores used by "my-ips".
+You will see the logs of real-time throughput after initializing DPDK EAL.
+They are used for measuring the throughput of persistent connections.
+
+
+
+## mmTLS key-server on the SmartNIC
+
+To run "key-server" on the SmartNIC, open one more terminal and login to the SmartNIC on box1.kaist.ac.kr.
+
+```Bash
+# on atc-ae@box3.kaist.ac.kr
+ssh junghan@box1.kaist.ac.kr
+```
+
+```Bash
+# on junghan@box1.kaist.ac.kr
+ssh 192.168.100.2
+```
+
+Then, you can run "key-server" on the SmartNIC as below.
+
+```Bash
+# on junghan@192.168.100.2
+cd bf2_key_server
+sudo ./key-server -c 8 -i p1
+```
+
+"-c" option means the number of cores used by "key-server" and "-i" option means the interface for sending raw UDP packet.
+You will see the logs of number of keys processed by the "key-server".
+They are used for measuring the throughput of ephemeral connections.
+
+
+
+## h2load as an mmTLS client
+
+Finally, open one more terminal and run the "h2load" as a client on one of our clients, wood1.kaist.ac.kr.
+
+```Bash
+# on atc-ae@box3.kaist.ac.kr
+ssh junghan@wood1.kaist.ac.kr
+```
+
+```Bash
+# on junghan@wood1.kaist.ac.kr
+~/nghttp2/src/h2load https://10.11.90.3:443/1k/test0 --tls13-ciphers=TLS_AES_256_GCM_SHA384 --key-send
+```
+
+"--key-send" option means that the client sends session keys to the "key-server".
+
+
+
+## Quit
+
+After receiving the response, quit "my-ips" and "key-server".
+Close the third terminal which runned h2load by typing Ctrl + D.
+Then, go to the second terminal which runs "key-server", quit it by typing Ctrl + C, and close the second terminal by typing Ctrl + D.
+Similarly, go to the first terminal which runs "my-ips", quit it by typing Ctrl + C, and close the first termnal by typing Ctrl + D.
+
 
 
 
