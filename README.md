@@ -410,7 +410,7 @@ In this section, we provide how to manually run the mmTLS middlebox for function
 
 ## mmTLS middlebox application
 
-Log in to box1.kaist.ac.kr first.
+Login to box1.kaist.ac.kr first.
 
 ```Bash
 # on atc-ae@box3.kaist.ac.kr
@@ -424,7 +424,7 @@ Then, go to the directory with our mmTLS application, "my_ips", which decrypts f
 cd ~/mmTLS/proxies/mOS/mmTLS
 ```
 
-Run the script for configuring ARP table of endpoints.
+Run the script, "setup-mmtls-endpoints.sh" for configuring ARP tables of endpoints.
 
 ```Bash
 ./setup-mmtls-endpoints.sh
@@ -436,7 +436,7 @@ Run the "my_ips" application.
 sudo ./my_ips -c 16
 ```
 
-"-c" option means the number of cores used by "my-ips".
+The "-c" option means the number of cores used by "my-ips".
 You will see the logs of real-time throughput after initializing DPDK EAL.
 They are used for measuring the throughput of persistent connections.
 
@@ -464,7 +464,7 @@ cd bf2_key_server
 sudo ./key-server -c 8 -i p1
 ```
 
-"-c" option means the number of cores used by "key-server" and "-i" option means the interface for sending raw UDP packet.
+The "-c" option means the number of cores used by "key-server" and the "-i" option means the interface for sending raw UDP packet.
 You will see the logs of number of keys processed by the "key-server".
 They are used for measuring the throughput of ephemeral connections.
 
@@ -484,7 +484,7 @@ ssh junghan@wood1.kaist.ac.kr
 ~/nghttp2/src/h2load https://10.11.90.3:443/1k/test0 --tls13-ciphers=TLS_AES_256_GCM_SHA384 --key-send
 ```
 
-"--key-send" option means that the client sends session keys to the "key-server".
+The "--key-send" option means that the client sends session keys to the "key-server".
 
 
 
@@ -498,7 +498,7 @@ Similarly, go to the first terminal which runs "my-ips", quit it by typing Ctrl 
 
 
 
-# Configuring nginx a baseline middlebox (Split-TLS) and endpoints
+# Configuring nginx for a baseline middlebox (Split-TLS) and endpoints
 
 The configuration of nginx as a Split-TLS middlebox is shown below.
 If you want to test without the script we prepared, make h2load or ab on the client machines send requests to the responsible port.
