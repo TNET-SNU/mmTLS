@@ -539,7 +539,6 @@ void keysend_callback(const SSL *ssl, const char *line) {
 
   /* send */
   /* use channels evenly */
-  channel_id = sched_getcpu() % channel->num_chan;
   ssl_ctx = SSL_get_SSL_CTX(ssl);
   if (!ssl_ctx) {
     ERR_print_errors_fp(stderr);
@@ -552,6 +551,7 @@ void keysend_callback(const SSL *ssl, const char *line) {
   }
 
   /* guarantee atomicity for each channel */
+  channel_id = sched_getcpu() % channel->num_chan;
   pthread_mutex_lock(&channel->mutex[channel_id]);
   do {
     bytes = SSL_write(channel->key_ssl[channel_id], payload + offset,
