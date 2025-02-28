@@ -158,30 +158,6 @@ make -j
 You will have h2load on nghttp2/src directory.
 
 
-# ab
-To build httpd, make sure APR and PCRE are installed on your system. If not, run below.
-```
-sudo apt install libapr1-dev libaprutil1-dev libpcre3 libpcre3-dev
-```
-Then, go to httpd-2.4.54 directory and configure it to be linked with libkeysend.a. KEYSEND_DIR should be the path of libkeysend.a you compiled above.
-Now you can build httpd including ab.
-
-```Bash
-cd httpd-2.4.54
-./configure LDFLAGS=$KEYSEND_DIR/libkeysend.a
-make -j
-```
-
-Now you have ab on httpd-2.4.54/support directory.
-
-
-# Chromium
-Building and linking chromium to keysend library is similar to the cases of h2load and ab.
-However, building chromium from scratch takes so long time.
-So, we have already prepared the binary of default chromium and mmTLS-ported chromium on one of our client machine, box2.kaist.ac.kr.
-Both have a browser extension which measures page load time.
-
-
 # Test
 Before start testing, you should configure an address of the key server.
 ```
